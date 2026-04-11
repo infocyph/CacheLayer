@@ -1,0 +1,7 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Infocyph\CacheLayer\Cache\Item;
+
+final class SqliteCacheItem extends AbstractCacheItem {}
