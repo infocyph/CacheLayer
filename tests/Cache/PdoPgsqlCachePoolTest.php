@@ -21,7 +21,7 @@ try {
 }
 
 beforeEach(function () use ($dsn, $user, $pass) {
-    $this->cache = Cache::postgres('pg-tests', $dsn, $user, $pass, null, 'cachelayer_entries');
+    $this->cache = Cache::pdo('pg-tests', $dsn, $user, $pass, null, 'cachelayer_entries');
     $this->cache->clear();
 });
 
@@ -29,19 +29,19 @@ afterEach(function () {
     $this->cache->clear();
 });
 
-test('postgres adapter set and get', function () {
+test('pdo adapter set and get on pgsql', function () {
     expect($this->cache->set('alpha', 11))->toBeTrue()
         ->and($this->cache->get('alpha'))->toBe(11);
 });
 
-test('postgres adapter ttl expiry', function () {
+test('pdo adapter ttl expiry on pgsql', function () {
     $this->cache->set('ttl', 'v', 1);
     usleep(2_000_000);
 
     expect($this->cache->get('ttl'))->toBeNull();
 });
 
-test('postgres adapter delete and count', function () {
+test('pdo adapter delete and count on pgsql', function () {
     $this->cache->set('a', 'A');
     $this->cache->set('b', 'B');
 

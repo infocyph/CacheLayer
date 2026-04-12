@@ -7,7 +7,7 @@
  */
 
 use Infocyph\CacheLayer\Cache\Cache;
-use Infocyph\CacheLayer\Cache\Item\SqliteCacheItem;
+use Infocyph\CacheLayer\Cache\Item\GenericCacheItem;
 use Infocyph\CacheLayer\Serializer\ValueSerializer;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 use Psr\Cache\InvalidArgumentException as Psr6InvalidArgumentException;
@@ -67,7 +67,7 @@ test('sqlite set()/get()', function () {
 test('get returns default when key missing (sqlite)', function () {
     expect($this->cache->get('none', 'dflt'))->toBe('dflt');
 
-    $val = $this->cache->get('compute', function (SqliteCacheItem $item) {
+    $val = $this->cache->get('compute', function (GenericCacheItem $item) {
         $item->expiresAfter(1);
         return 'val';
     });
@@ -87,7 +87,7 @@ test('get throws for invalid key (sqlite)', function () {
 /* ── 2. PSR-6 behaviour ─────────────────────────────────────────── */
 test('getItem()/save() (sqlite)', function () {
     $item = $this->cache->getItem('psr');
-    expect($item)->toBeInstanceOf(SqliteCacheItem::class)
+    expect($item)->toBeInstanceOf(GenericCacheItem::class)
         ->and($item->isHit())->toBeFalse();
 
     $item->set(42)->save();
@@ -159,5 +159,4 @@ test('SQLite adapter multiFetch()', function () {
         ->and($items['s2']->get())->toBe('B')
         ->and($items['void']->isHit())->toBeFalse();
 });
-
 
