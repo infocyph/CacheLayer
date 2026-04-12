@@ -4,27 +4,27 @@
 Value Serialization
 =====================
 
-`Infocyph\CacheLayer\Serializer\ValueSerializer` is used by adapters to encode
+``Infocyph\CacheLayer\Serializer\ValueSerializer`` is used by adapters to encode
 and decode cached payloads.
 
 What it handles
 ---------------
 
 * scalar values and arrays
-* closures (via `opis/closure`)
+* closures (via ``opis/closure``)
 * registered resource types
 
 Core Methods
 ------------
 
-* `serialize(mixed $value): string`
-* `unserialize(string $blob): mixed`
-* `encode(mixed $value, bool $base64 = true): string`
-* `decode(string $payload, bool $base64 = true): mixed`
-* `wrap(mixed $value): mixed`
-* `unwrap(mixed $value): mixed`
-* `registerResourceHandler(string $type, callable $wrapFn, callable $restoreFn): void`
-* `clearResourceHandlers(): void`
+* ``serialize(mixed $value): string``
+* ``unserialize(string $blob): mixed``
+* ``encode(mixed $value, bool $base64 = true): string``
+* ``decode(string $payload, bool $base64 = true): mixed``
+* ``wrap(mixed $value): mixed``
+* ``unwrap(mixed $value): mixed``
+* ``registerResourceHandler(string $type, callable $wrapFn, callable $restoreFn): void``
+* ``clearResourceHandlers(): void``
 
 Resource Handler Example
 ------------------------
@@ -56,6 +56,6 @@ Resource Handler Example
 Notes
 -----
 
-* Registering the same resource type twice throws `InvalidArgumentException`.
-* Wrapping/serializing unregistered resources throws `InvalidArgumentException`.
+* Registering the same resource type twice throws ``InvalidArgumentException``.
+* Wrapping/serializing unregistered resources throws ``InvalidArgumentException``.
 * Closure detection has an internal bounded memo cache.

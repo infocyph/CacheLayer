@@ -9,10 +9,10 @@ in-process calls.
 
 Available components:
 
-* `Infocyph\CacheLayer\Memoize\Memoizer`
-* `Infocyph\CacheLayer\Memoize\OnceMemoizer`
-* `Infocyph\CacheLayer\Memoize\MemoizeTrait`
-* global helpers `memoize()`, `remember()`, and `once()`
+* ``Infocyph\CacheLayer\Memoize\Memoizer``
+* ``Infocyph\CacheLayer\Memoize\OnceMemoizer``
+* ``Infocyph\CacheLayer\Memoize\MemoizeTrait``
+* global helpers ``memoize()``, ``remember()``, and ``once()``
 
 .. toctree::
    :maxdepth: 1

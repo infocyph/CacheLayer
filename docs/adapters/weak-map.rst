@@ -1,15 +1,15 @@
 .. _adapters.weak_map:
 
 ===============================
-WeakMap Adapter (`weakMap`)
+WeakMap Adapter (``weakMap``)
 ===============================
 
-Factory: `Cache::weakMap(string $namespace = 'default')`
+Factory: ``Cache::weakMap(string $namespace = 'default')``
 
 Hybrid in-process adapter:
 
 * scalar/array values stored as encoded blobs
-* object values stored via `WeakReference`/`WeakMap`
+* object values stored via ``WeakReference``/``WeakMap``
 
 Object entries remain available while strongly referenced elsewhere. When an
 object is collected, its cache entry can disappear naturally.

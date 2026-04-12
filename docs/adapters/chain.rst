@@ -1,10 +1,10 @@
 .. _adapters.chain:
 
 =========================
-Chain Adapter (`chain`)
+Chain Adapter (``chain``)
 =========================
 
-Factory: `Cache::chain(array $pools)`
+Factory: ``Cache::chain(array $pools)``
 
 Composes multiple PSR-6 pools into a tiered cache.
 
@@ -16,8 +16,8 @@ Behavior:
 
 Typical layout:
 
-* L1: in-memory (`ArrayCacheAdapter`)
-* L2: network cache (`RedisCacheAdapter`)
+* L1: in-memory (``ArrayCacheAdapter``)
+* L2: network cache (``RedisCacheAdapter``)
 
 Example:
 

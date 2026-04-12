@@ -1,17 +1,17 @@
 .. _adapters.mongodb:
 
 =============================
-MongoDB Adapter (`mongodb`)
+MongoDB Adapter (``mongodb``)
 =============================
 
 Factories:
 
-* `Cache::mongodb(...)`
-* `MongoDbCacheAdapter::fromClient(...)` (adapter-level)
+* ``Cache::mongodb(...)``
+* ``MongoDbCacheAdapter::fromClient(...)`` (adapter-level)
 
 Requirements:
 
-* `mongodb/mongodb` package for default client path, or
+* ``mongodb/mongodb`` package for default client path, or
 * injected collection/client compatible with expected methods
 
 Highlights:
@@ -22,8 +22,8 @@ Highlights:
 
 Supported injected collection methods:
 
-* `findOne`
-* `updateOne`
-* `deleteOne`
-* `deleteMany`
-* `countDocuments`
+* ``findOne``
+* ``updateOne``
+* ``deleteOne``
+* ``deleteMany``
+* ``countDocuments``

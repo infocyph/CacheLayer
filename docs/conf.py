@@ -43,6 +43,8 @@ extensions = [
 ]
 
 source_suffix = ".rst"
+pygments_style = "sphinx"
+pygments_dark_style = "native"
 
 autodoc_default_options = {
     "members": True,

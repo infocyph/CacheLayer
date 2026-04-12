@@ -1,17 +1,17 @@
 .. _memoize.trait:
 
 =====================
-`MemoizeTrait`
+``MemoizeTrait``
 =====================
 
-`Infocyph\CacheLayer\Memoize\MemoizeTrait` provides lightweight per-object
+``Infocyph\CacheLayer\Memoize\MemoizeTrait`` provides lightweight per-object
 memoization for class internals.
 
 API
 ---
 
-* `memoize(string $key, callable $producer): mixed`
-* `memoizeClear(?string $key = null): void`
+* ``memoize(string $key, callable $producer): mixed``
+* ``memoizeClear(?string $key = null): void``
 
 Example
 -------
