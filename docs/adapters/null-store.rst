@@ -15,3 +15,15 @@ Behavior:
 * ``remember()`` recomputes every call
 
 Useful for disabling caching without changing calling code.
+
+Example
+-------
+
+.. code-block:: php
+
+   use Infocyph\CacheLayer\Cache\Cache;
+
+   $cache = Cache::nullStore();
+
+   $cache->set('foo', 'bar');
+   $value = $cache->get('foo', 'fallback'); // "fallback"

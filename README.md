@@ -4,6 +4,11 @@ CacheLayer is a standalone cache toolkit for modern PHP applications.
 It provides a unified API over PSR-6 and PSR-16 with local, distributed,
 and cloud adapters.
 
+## Project Background
+
+CacheLayer was separated from the existing Intermix project to improve package
+visibility, maintenance focus, and faster feature enrichment for caching.
+
 ## Features
 
 - Unified `Cache` facade implementing PSR-6, PSR-16, `ArrayAccess`, and `Countable`
@@ -57,12 +62,7 @@ $metrics = $cache->exportMetrics();
 
 ## Documentation
 
-- User docs are in `docs/`
-- Build docs locally with Sphinx (if installed):
-
-```bash
-make -C docs html
-```
+https://docs.infocyph.com/projects/CacheLayer
 
 ## Testing
 

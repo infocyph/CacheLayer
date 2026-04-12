@@ -13,6 +13,20 @@ CacheLayer is a standalone caching toolkit for PHP 8.3+ with:
 * value serialization for closures and resources
 * process-local memoization helpers (``memoize``, ``remember``, ``once``)
 
+Project Background
+------------------
+
+CacheLayer was separated from the existing Intermix project for better package
+visibility and focused feature enrichment around caching.
+
+How to Use This Manual
+----------------------
+
+1. Start with ``cache`` for the unified API and factory overview.
+2. Read ``adapters/index`` to choose a backend and copy its example.
+3. Follow ``cookbook`` for complete end-to-end process flows.
+4. Use ``metrics-and-locking`` for production visibility and stampede control.
+
 Quick Start
 -----------
 
@@ -35,6 +49,7 @@ Quick Start
 
    cache
    adapters/index
+   cookbook
    metrics-and-locking
    serializer
    memoize

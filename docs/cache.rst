@@ -15,6 +15,9 @@ It implements:
 It also adds tagged invalidation, stampede-safe ``remember()``, lock provider
 selection, metrics hooks, and payload compression controls.
 
+CacheLayer was separated from the existing Intermix project for better
+standalone visibility and faster cache-specific feature enrichment.
+
 Installation
 ------------
 
@@ -190,12 +193,12 @@ Methods:
 
 Default collector is ``InMemoryCacheMetricsCollector``.
 
-Metrics are grouped by adapter class and metric name, for example:
+Metrics are grouped by readable adapter name and metric name, for example:
 
 .. code-block:: php
 
    [
-       'Infocyph\\CacheLayer\\Cache\\Adapter\\FileCacheAdapter' => [
+       'file' => [
            'hit' => 10,
            'miss' => 4,
            'set' => 3,

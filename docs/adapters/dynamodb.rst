@@ -26,3 +26,18 @@ Supported injected client methods:
 * ``deleteItem``
 * ``scan``
 * ``batchWriteItem``
+
+Example
+-------
+
+.. code-block:: php
+
+   use Infocyph\CacheLayer\Cache\Cache;
+
+   $cache = Cache::dynamoDb(
+       namespace: 'edge',
+       table: 'cachelayer_entries',
+       config: ['region' => 'us-east-1', 'version' => 'latest'],
+   );
+
+   $cache->set('homepage:blocks', $blocks, 45);

@@ -22,3 +22,18 @@ Highlights:
 * ``setNamespaceAndDirectory()`` supported
 
 Best for local/single-host environments.
+
+Example
+-------
+
+.. code-block:: php
+
+   use Infocyph\CacheLayer\Cache\Cache;
+
+   $cache = Cache::file('catalog', __DIR__ . '/storage/cache');
+
+   $cache->setTagged('category:shoes', ['count' => 120], ['catalog'], 300);
+   $payload = $cache->get('category:shoes');
+
+   // Flush all catalog-tagged entries after product import.
+   $cache->invalidateTag('catalog');

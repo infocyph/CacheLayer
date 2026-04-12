@@ -24,3 +24,17 @@ DSN notes:
 
 * host/port parsed from DSN
 * optional password and DB selection (``/db-index``) are supported
+
+Example
+-------
+
+.. code-block:: php
+
+   use Infocyph\CacheLayer\Cache\Cache;
+
+   $cache = Cache::redis('api', 'redis://127.0.0.1:6379/0');
+
+   $response = $cache->remember('endpoint:/v1/users?page=1', function ($item) {
+       $item->expiresAfter(30);
+       return fetchApiPayload();
+   }, tags: ['users']);

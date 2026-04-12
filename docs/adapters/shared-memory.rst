@@ -20,3 +20,13 @@ Notes:
 
 * data is not portable across hosts
 * capacity limited by shared memory segment size
+
+Example
+-------
+
+.. code-block:: php
+
+   use Infocyph\CacheLayer\Cache\Cache;
+
+   $cache = Cache::sharedMemory('worker-bus', 8 * 1024 * 1024);
+   $cache->set('heartbeat:worker-1', time(), 15);

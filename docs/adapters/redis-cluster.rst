@@ -19,3 +19,17 @@ Highlights:
 * tracks namespace key membership through an index set (``<ns>:__keys``) for clear/count operations
 
 Useful when using Redis Cluster topology.
+
+Example
+-------
+
+.. code-block:: php
+
+   use Infocyph\CacheLayer\Cache\Cache;
+
+   $cache = Cache::redisCluster(
+       'checkout',
+       ['10.0.0.11:6379', '10.0.0.12:6379', '10.0.0.13:6379'],
+   );
+
+   $cache->set('cart:token:abc', ['items' => 3], 1200);
