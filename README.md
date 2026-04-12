@@ -1,5 +1,13 @@
 # CacheLayer
 
+[![Security & Standards](https://github.com/infocyph/CacheLayer/actions/workflows/build.yml/badge.svg)](https://github.com/infocyph/CacheLayer/actions/workflows/build.yml)
+![Packagist Downloads](https://img.shields.io/packagist/dt/infocyph/CacheLayer?color=green\&link=https%3A%2F%2Fpackagist.org%2Fpackages%2Finfocyph%2FCacheLayer)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
+![Packagist Version](https://img.shields.io/packagist/v/infocyph/CacheLayer)
+![Packagist PHP Version](https://img.shields.io/packagist/dependency-v/infocyph/CacheLayer/php)
+![GitHub Code Size](https://img.shields.io/github/languages/code-size/infocyph/CacheLayer)
+[![Documentation](https://img.shields.io/badge/Documentation-CacheLayer-blue?logo=readthedocs&logoColor=white)](https://docs.infocyph.com/projects/CacheLayer/)
+
 CacheLayer is a standalone cache toolkit for modern PHP applications.
 It provides a unified API over PSR-6 and PSR-16 with local, distributed,
 and cloud adapters.
