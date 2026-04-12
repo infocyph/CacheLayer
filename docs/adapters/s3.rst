@@ -1,16 +1,16 @@
 .. _adapters.s3:
 
 =====================
-S3 Adapter (`s3`)
+S3 Adapter (``s3``)
 =====================
 
 Factory:
 
-`Cache::s3(string $namespace = 'default', string $bucket = 'cachelayer', ?object $client = null, array $config = [], string $prefix = 'cachelayer')`
+``Cache::s3(string $namespace = 'default', string $bucket = 'cachelayer', ?object $client = null, array $config = [], string $prefix = 'cachelayer')``
 
 Requirements:
 
-* `aws/aws-sdk-php` for default client path, or
+* ``aws/aws-sdk-php`` for default client path, or
 * injected S3-compatible client implementing required methods
 
 Highlights:
@@ -21,8 +21,8 @@ Highlights:
 
 Supported injected client methods:
 
-* `putObject`
-* `getObject`
-* `deleteObject`
-* `listObjectsV2`
-* `deleteObjects`
+* ``putObject``
+* ``getObject``
+* ``deleteObject``
+* ``listObjectsV2``
+* ``deleteObjects``

@@ -7,12 +7,12 @@ Memoize Function Helpers
 memoize(callable, params)
 -------------------------
 
-`memoize($callable, $params)` caches return values by:
+``memoize($callable, $params)`` caches return values by:
 
 * callable signature
 * normalized parameters hash
 
-Internally this uses `Memoizer::get()`.
+Internally this uses ``Memoizer::get()``.
 
 .. code-block:: php
 
@@ -21,8 +21,8 @@ Internally this uses `Memoizer::get()`.
 remember(object, callable, params)
 ----------------------------------
 
-`remember($object, $callable, $params)` caches values per object instance
-(using `WeakMap` inside `Memoizer`).
+``remember($object, $callable, $params)`` caches values per object instance
+(using ``WeakMap`` inside ``Memoizer``).
 
 When the object is garbage-collected, its memoized bucket is removable.
 
@@ -35,7 +35,7 @@ When the object is garbage-collected, its memoized bucket is removable.
 once(callback)
 --------------
 
-`once($callback)` is call-site based memoization via `OnceMemoizer`.
+``once($callback)`` is call-site based memoization via ``OnceMemoizer``.
 
 Key details:
 

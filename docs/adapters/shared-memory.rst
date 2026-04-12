@@ -1,14 +1,14 @@
 .. _adapters.shared_memory:
 
 ========================================
-Shared Memory Adapter (`sharedMemory`)
+Shared Memory Adapter (``sharedMemory``)
 ========================================
 
-Factory: `Cache::sharedMemory(string $namespace = 'default', int $segmentSize = 16777216)`
+Factory: ``Cache::sharedMemory(string $namespace = 'default', int $segmentSize = 16777216)``
 
 Requirements:
 
-* `ext-sysvshm`
+* ``ext-sysvshm``
 
 Highlights:
 

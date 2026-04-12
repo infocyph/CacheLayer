@@ -4,7 +4,7 @@
 Global Helper Functions
 ==========================
 
-CacheLayer autoloads helper functions from `src/functions.php`.
+CacheLayer autoloads helper functions from ``src/functions.php``.
 
 sanitize_cache_ns()
 -------------------
@@ -15,7 +15,7 @@ Normalizes namespaces into safe key prefixes.
 
 Behavior:
 
-* Replaces any character outside `[A-Za-z0-9_-]` with `_`
+* Replaces any character outside ``[A-Za-z0-9_-]`` with ``_``
 * Uses an internal static memoization map for repeated inputs
 
 Example:
@@ -32,8 +32,8 @@ memoize()
 
 Two modes:
 
-* `memoize()` returns the singleton `Infocyph\CacheLayer\Memoize\Memoizer`
-* `memoize($callable, $params)` executes memoized call lookup for global/static scope
+* ``memoize()`` returns the singleton ``Infocyph\CacheLayer\Memoize\Memoizer``
+* ``memoize($callable, $params)`` executes memoized call lookup for global/static scope
 
 Example:
 
@@ -55,10 +55,10 @@ Object-scoped memoization helper.
 
 Two modes:
 
-* `remember()` returns the singleton `Memoizer`
-* `remember($object, $callable, $params)` caches value per object instance
+* ``remember()`` returns the singleton ``Memoizer``
+* ``remember($object, $callable, $params)`` caches value per object instance
 
-If object is provided but callable is missing, it throws `InvalidArgumentException`.
+If object is provided but callable is missing, it throws ``InvalidArgumentException``.
 
 once()
 ------
@@ -66,7 +66,7 @@ once()
 .. php:function:: once(callable $callback): mixed
 
 Executes callback once per call site context using
-`Infocyph\CacheLayer\Memoize\OnceMemoizer`.
+``Infocyph\CacheLayer\Memoize\OnceMemoizer``.
 
 Useful for one-time initialization inside request/process scope.
 

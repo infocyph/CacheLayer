@@ -4,7 +4,7 @@
 Serialization in Adapters
 ===================================
 
-All adapters rely on `CachePayloadCodec` and `ValueSerializer` to persist
+All adapters rely on ``CachePayloadCodec`` and ``ValueSerializer`` to persist
 arbitrary values consistently.
 
 The payload format stores:

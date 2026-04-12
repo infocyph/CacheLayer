@@ -9,21 +9,21 @@ Metrics
 
 Cache facade metrics API:
 
-* `setMetricsCollector(CacheMetricsCollectorInterface $metrics): self`
-* `exportMetrics(): array`
-* `setMetricsExportHook(?callable $hook): self`
+* ``setMetricsCollector(CacheMetricsCollectorInterface $metrics): self``
+* ``exportMetrics(): array``
+* ``setMetricsExportHook(?callable $hook): self``
 
-Default collector is `InMemoryCacheMetricsCollector`.
+Default collector is ``InMemoryCacheMetricsCollector``.
 
 Metric counters are tracked per adapter class, for example:
 
-* `hit`
-* `miss`
-* `set`
-* `delete`
-* `delete_batch`
-* `remember_hit`
-* `remember_miss`
+* ``hit``
+* ``miss``
+* ``set``
+* ``delete``
+* ``delete_batch``
+* ``remember_hit``
+* ``remember_miss``
 
 .. code-block:: php
 
@@ -39,25 +39,25 @@ Metric counters are tracked per adapter class, for example:
 Locking and Stampede Protection
 -------------------------------
 
-`Cache::remember()` acquires a lock to prevent duplicate recomputation.
+``Cache::remember()`` acquires a lock to prevent duplicate recomputation.
 
 Default:
 
-* `FileLockProvider`
+* ``FileLockProvider``
 
 Optional providers:
 
-* `RedisLockProvider`
-* `MemcachedLockProvider`
-* `PdoLockProvider`
+* ``RedisLockProvider``
+* ``MemcachedLockProvider``
+* ``PdoLockProvider``
 
 Facade helpers:
 
-* `setLockProvider(LockProviderInterface $provider): self`
-* `useRedisLock(?Redis $client = null, string $prefix = 'cachelayer:lock:'): self`
-* `useMemcachedLock(?Memcached $client = null, string $prefix = 'cachelayer:lock:'): self`
+* ``setLockProvider(LockProviderInterface $provider): self``
+* ``useRedisLock(?Redis $client = null, string $prefix = 'cachelayer:lock:'): self``
+* ``useMemcachedLock(?Memcached $client = null, string $prefix = 'cachelayer:lock:'): self``
 
-Custom lock providers can implement `LockProviderInterface`:
+Custom lock providers can implement ``LockProviderInterface``:
 
 .. code-block:: php
 
@@ -67,11 +67,11 @@ Custom lock providers can implement `LockProviderInterface`:
        public function release(?LockHandle $handle): void;
    }
 
-`LockHandle` carries key/token/resource metadata used by providers to release locks safely.
+``LockHandle`` carries key/token/resource metadata used by providers to release locks safely.
 
 Adapter defaults:
 
-* Redis adapter factory sets `RedisLockProvider`
-* Memcached adapter factory sets `MemcachedLockProvider`
-* PDO/SQLite adapter factories set `PdoLockProvider`
-* all other adapters use `FileLockProvider` by default
+* Redis adapter factory sets ``RedisLockProvider``
+* Memcached adapter factory sets ``MemcachedLockProvider``
+* PDO/SQLite adapter factories set ``PdoLockProvider``
+* all other adapters use ``FileLockProvider`` by default

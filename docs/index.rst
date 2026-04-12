@@ -4,14 +4,14 @@ CacheLayer Manual
 
 CacheLayer is a standalone caching toolkit for PHP 8.3+ with:
 
-* PSR-6 and PSR-16 support behind one facade (`Cache`)
+* PSR-6 and PSR-16 support behind one facade (``Cache``)
 * local, distributed, and cloud cache adapters
-* tag-version invalidation (`setTagged`, `invalidateTag`, `invalidateTags`)
-* stampede-safe `remember()` with pluggable lock providers
+* tag-version invalidation (``setTagged``, ``invalidateTag``, ``invalidateTags``)
+* stampede-safe ``remember()`` with pluggable lock providers
 * adapter-level metrics export hooks
 * payload compression controls
 * value serialization for closures and resources
-* process-local memoization helpers (`memoize`, `remember`, `once`)
+* process-local memoization helpers (``memoize``, ``remember``, ``once``)
 
 Quick Start
 -----------

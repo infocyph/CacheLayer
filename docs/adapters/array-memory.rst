@@ -1,10 +1,10 @@
 .. _adapters.array_memory:
 
 ============================
-Array Adapter (`memory`)
+Array Adapter (``memory``)
 ============================
 
-Factory: `Cache::memory(string $namespace = 'default')`
+Factory: ``Cache::memory(string $namespace = 'default')``
 
 In-process array-backed adapter for fast ephemeral caching.
 
