@@ -232,12 +232,7 @@ final class Cache implements CacheInterface
         return new self(new Adapter\NullCacheAdapter());
     }
 
-    public static function phpFiles(string $namespace = 'default', ?string $dir = null): self
-    {
-        return new self(new Adapter\PhpFilesCacheAdapter($namespace, $dir));
-    }
-
-    public static function postgres(
+    public static function pdo(
         string $namespace = 'default',
         ?string $dsn = null,
         ?string $username = null,
@@ -245,7 +240,22 @@ final class Cache implements CacheInterface
         ?\PDO $pdo = null,
         string $table = 'cachelayer_entries',
     ): self {
-        return new self(new Adapter\PostgresCacheAdapter($namespace, $dsn, $username, $password, $pdo, $table));
+        $adapter = new Adapter\PdoCacheAdapter($namespace, $dsn, $username, $password, $pdo, $table);
+        $lockProvider = new FileLockProvider();
+        $pdoLockProviderClass = \Infocyph\CacheLayer\Cache\Lock\PdoLockProvider::class;
+        if (class_exists($pdoLockProviderClass)) {
+            /** @var LockProviderInterface $lockProvider */
+            $lockProvider = new $pdoLockProviderClass($adapter->getClient());
+        }
+
+        return (new self($adapter))->setLockProvider(
+            $lockProvider,
+        );
+    }
+
+    public static function phpFiles(string $namespace = 'default', ?string $dir = null): self
+    {
+        return new self(new Adapter\PhpFilesCacheAdapter($namespace, $dir));
     }
 
     /**
@@ -324,7 +334,12 @@ final class Cache implements CacheInterface
      */
     public static function sqlite(string $namespace = 'default', ?string $file = null): self
     {
-        return new self(new Adapter\SqliteCacheAdapter($namespace, $file));
+        $dbPath = $file ?? (sys_get_temp_dir() . '/cache_' . sanitize_cache_ns($namespace) . '.sqlite');
+
+        return self::pdo(
+            namespace: $namespace,
+            dsn: 'sqlite:' . $dbPath,
+        );
     }
 
     public static function weakMap(string $namespace = 'default'): self

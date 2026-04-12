@@ -5,7 +5,7 @@ CacheLayer is a standalone cache toolkit for modern PHP applications.
 It provides:
 
 - PSR-6 and PSR-16 compatible `Cache` facade
-- Adapters for `APCu`, `File`, `Memcached`, `Redis`, `Redis Cluster`, `SQLite`, `PostgreSQL`
+- Adapters for `APCu`, `File`, `Memcached`, `Redis`, `Redis Cluster`, `PDO (default SQLite; also MySQL/MariaDB/PostgreSQL/etc.)`
 - In-process adapters: `memory` (array), `weakMap`, `nullStore`, `chain`
 - Filesystem/Opcode adapter: `phpFiles`
 - Shared-memory adapter: `sharedMemory` (sysvshm)
@@ -40,8 +40,9 @@ Cache::phpFiles('ns', __DIR__ . '/storage/cache');
 Cache::memcache('ns');
 Cache::redis('ns');
 Cache::redisCluster('ns', ['127.0.0.1:6379']);
+Cache::pdo('ns'); // defaults to sqlite file in sys temp dir
 Cache::sqlite('ns');
-Cache::postgres('ns');
+Cache::pdo('ns', 'mysql:host=127.0.0.1;port=3306;dbname=app', 'user', 'pass');
 Cache::memory('ns');
 Cache::weakMap('ns');
 Cache::sharedMemory('ns');
