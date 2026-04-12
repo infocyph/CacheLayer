@@ -1,6 +1,7 @@
 <?php
 
 use Infocyph\CacheLayer\Cache\Cache;
+use Infocyph\CacheLayer\Cache\Lock\FileLockProvider;
 
 if (!in_array('sqlite', PDO::getAvailableDrivers(), true)) {
     test('PDO SQLite driver not present')->skip();
@@ -46,4 +47,18 @@ test('pdo defaults to sqlite driver when no dsn is provided', function () {
     $dbFile = sys_get_temp_dir() . '/cache_' . sanitize_cache_ns($namespace) . '.sqlite';
     $cache->clear();
     @unlink($dbFile);
+});
+
+test('pdo factory configures pdo lock provider', function () {
+    $cache = Cache::pdo('pdo-lock-tests', 'sqlite::memory:');
+    $prop = (new ReflectionObject($cache))->getProperty('lockProvider');
+    $provider = $prop->getValue($cache);
+    $pdoLockProviderClass = 'Infocyph\\CacheLayer\\Cache\\Lock\\PdoLockProvider';
+
+    if (class_exists($pdoLockProviderClass)) {
+        expect($provider)->toBeInstanceOf($pdoLockProviderClass);
+        return;
+    }
+
+    expect($provider)->toBeInstanceOf(FileLockProvider::class);
 });

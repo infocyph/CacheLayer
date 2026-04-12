@@ -172,6 +172,13 @@ Lock provider selection:
 * `useRedisLock(?Redis $client = null, string $prefix = 'cachelayer:lock:'): self`
 * `useMemcachedLock(?Memcached $client = null, string $prefix = 'cachelayer:lock:'): self`
 
+Factory defaults:
+
+* `Cache::redis(...)` auto-configures `RedisLockProvider`
+* `Cache::memcache(...)` auto-configures `MemcachedLockProvider`
+* `Cache::pdo(...)` / `Cache::sqlite(...)` auto-configure `PdoLockProvider`
+* other adapters default to `FileLockProvider`
+
 Metrics and Export Hooks
 ------------------------
 

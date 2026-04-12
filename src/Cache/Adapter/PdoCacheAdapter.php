@@ -85,6 +85,11 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
         return $stmt->execute($mapped);
     }
 
+    public function getClient(): PDO
+    {
+        return $this->pdo;
+    }
+
     public function getItem(string $key): GenericCacheItem
     {
         $stmt = $this->pdo->prepare(

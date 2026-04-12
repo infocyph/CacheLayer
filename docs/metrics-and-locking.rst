@@ -49,6 +49,7 @@ Optional providers:
 
 * `RedisLockProvider`
 * `MemcachedLockProvider`
+* `PdoLockProvider`
 
 Facade helpers:
 
@@ -67,3 +68,10 @@ Custom lock providers can implement `LockProviderInterface`:
    }
 
 `LockHandle` carries key/token/resource metadata used by providers to release locks safely.
+
+Adapter defaults:
+
+* Redis adapter factory sets `RedisLockProvider`
+* Memcached adapter factory sets `MemcachedLockProvider`
+* PDO/SQLite adapter factories set `PdoLockProvider`
+* all other adapters use `FileLockProvider` by default
