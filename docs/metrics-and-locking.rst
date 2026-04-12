@@ -14,8 +14,10 @@ Cache facade metrics API:
 * ``setMetricsExportHook(?callable $hook): self``
 
 Default collector is ``InMemoryCacheMetricsCollector``.
+Exported snapshots use readable adapter keys such as ``file``, ``pdo``,
+``redis``, ``memory``, and ``redis_cluster``.
 
-Metric counters are tracked per adapter class, for example:
+Metric counters are tracked per adapter name, for example:
 
 * ``hit``
 * ``miss``
@@ -35,6 +37,7 @@ Metric counters are tracked per adapter class, for example:
    $cache->get('k');
 
    $metrics = $cache->exportMetrics();
+   // ['file' => ['set' => 1, 'hit' => 1, ...]]
 
 Locking and Stampede Protection
 -------------------------------

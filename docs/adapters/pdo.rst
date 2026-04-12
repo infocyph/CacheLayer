@@ -47,3 +47,20 @@ Examples:
        'postgres',
        'postgres',
    );
+
+Typical Usage
+-------------
+
+.. code-block:: php
+
+   use Infocyph\CacheLayer\Cache\Cache;
+
+   $cache = Cache::pdo('orders');
+
+   $summary = $cache->remember('orders:summary:today', function ($item) {
+       $item->expiresAfter(60);
+       return loadOrderSummary();
+   }, tags: ['orders']);
+
+   // Invalidate all related records after an order mutation.
+   $cache->invalidateTag('orders');

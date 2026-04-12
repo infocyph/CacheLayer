@@ -21,3 +21,15 @@ Highlights:
 * ``setNamespaceAndDirectory()`` supported
 
 Good for environments where opcode cache integration is desired.
+
+Example
+-------
+
+.. code-block:: php
+
+   use Infocyph\CacheLayer\Cache\Cache;
+
+   $cache = Cache::phpFiles('view-cache', __DIR__ . '/storage/php-cache');
+   $cache->set('compiled:home', $compiledTemplate, 900);
+
+   $compiled = $cache->get('compiled:home');

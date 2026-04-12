@@ -487,11 +487,13 @@ final class Cache implements CacheInterface
     }
 
     /**
+     * Returns metrics grouped by readable adapter name.
+     *
      * @return array<string, array<string, int>>
      */
     public function exportMetrics(): array
     {
-        $snapshot = $this->metrics->export();
+        $snapshot = $this->readableMetricsSnapshot($this->metrics->export());
         if ($this->metricsExportHook !== null) {
             ($this->metricsExportHook)($snapshot);
         }
@@ -1172,6 +1174,50 @@ final class Cache implements CacheInterface
     {
         $this->adapter->deleteItem($key);
         $this->adapter->deleteItem($this->tagMetaKey($key));
+    }
+
+    private function readableAdapterName(string $adapterClass): string
+    {
+        $short = $adapterClass;
+        if (str_contains($short, '\\')) {
+            $parts = explode('\\', $short);
+            $short = end($parts);
+        }
+
+        if (str_ends_with($short, 'CacheAdapter')) {
+            $short = substr($short, 0, -strlen('CacheAdapter'));
+        }
+
+        return match ($short) {
+            'Array' => 'memory',
+            'MemCache' => 'memcache',
+            'Null' => 'null_store',
+            'PhpFiles' => 'php_files',
+            'SharedMemory' => 'shared_memory',
+            'WeakMap' => 'weak_map',
+            'RedisCluster' => 'redis_cluster',
+            'DynamoDb' => 'dynamodb',
+            'MongoDb' => 'mongodb',
+            default => strtolower((string) preg_replace('/(?<!^)[A-Z]/', '_$0', $short)),
+        };
+    }
+
+    /**
+     * @param array<string, array<string, int>> $snapshot
+     * @return array<string, array<string, int>>
+     */
+    private function readableMetricsSnapshot(array $snapshot): array
+    {
+        $readable = [];
+
+        foreach ($snapshot as $adapterClass => $counters) {
+            $name = $this->readableAdapterName((string) $adapterClass);
+            foreach ($counters as $metric => $count) {
+                $readable[$name][$metric] = ($readable[$name][$metric] ?? 0) + (int) $count;
+            }
+        }
+
+        return $readable;
     }
 
     private function stampedeLockKey(string $key): string

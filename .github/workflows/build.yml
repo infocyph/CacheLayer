@@ -116,7 +116,7 @@ jobs:
           CACHELAYER_PG_USER: postgres
           CACHELAYER_PG_PASS: postgres
         run: |
-          find src tests -name '*.php' -print0 | xargs -0 -n1 php -l > /dev/null
+          composer test:syntax
           composer test:code
           composer test:lint
           composer test:sniff
@@ -156,7 +156,7 @@ jobs:
         run: composer install --no-interaction --prefer-dist --no-progress
 
       - name: Composer Audit (Release Guard)
-        run: composer audit --abandoned=ignore
+        run: composer release:audit
 
       - name: Quality Gate (PHPStan)
         run: composer test:static

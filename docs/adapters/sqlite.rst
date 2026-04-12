@@ -15,3 +15,13 @@ Equivalent behavior:
 
 Use ``Cache::pdo(...)`` directly if you want to switch to MySQL/MariaDB/PostgreSQL
 without changing the rest of your cache usage pattern.
+
+Example
+-------
+
+.. code-block:: php
+
+   use Infocyph\CacheLayer\Cache\Cache;
+
+   $cache = Cache::sqlite('jobs', __DIR__ . '/storage/cache/jobs.sqlite');
+   $cache->set('job:run:summary', ['ok' => 12, 'failed' => 1], 300);

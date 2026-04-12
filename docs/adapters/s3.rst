@@ -26,3 +26,19 @@ Supported injected client methods:
 * ``deleteObject``
 * ``listObjectsV2``
 * ``deleteObjects``
+
+Example
+-------
+
+.. code-block:: php
+
+   use Infocyph\CacheLayer\Cache\Cache;
+
+   $cache = Cache::s3(
+       namespace: 'reports',
+       bucket: 'my-cache-bucket',
+       config: ['region' => 'us-east-1', 'version' => 'latest'],
+       prefix: 'cachelayer/reports',
+   );
+
+   $cache->set('monthly:2026-04', $reportPayload, 3600);

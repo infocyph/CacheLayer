@@ -27,3 +27,19 @@ Supported injected collection methods:
 * ``deleteOne``
 * ``deleteMany``
 * ``countDocuments``
+
+Example
+-------
+
+.. code-block:: php
+
+   use Infocyph\CacheLayer\Cache\Cache;
+
+   $cache = Cache::mongodb(
+       'analytics',
+       database: 'app_cache',
+       collectionName: 'entries',
+       uri: 'mongodb://127.0.0.1:27017',
+   );
+
+   $cache->set('dashboard:kpi', ['orders' => 120, 'refunds' => 4], 120);

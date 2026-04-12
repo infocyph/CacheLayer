@@ -13,4 +13,16 @@ The payload format stores:
 * absolute expiration timestamp (or null)
 * internal format marker
 
+Example
+-------
+
+.. code-block:: php
+
+   use Infocyph\CacheLayer\Cache\Cache;
+
+   $cache = Cache::memory('serialize-demo');
+   $cache->set('payload', ['a' => 1, 'b' => [2, 3]], 60);
+
+   $payload = $cache->get('payload');
+
 See :ref:`serializer` for resource handlers, closure support, and serializer API details.

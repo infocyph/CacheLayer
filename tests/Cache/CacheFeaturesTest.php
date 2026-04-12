@@ -169,7 +169,7 @@ test('metrics collector exports hit and miss counters', function () {
     $this->cache->get('x');
 
     $metrics = $this->cache->exportMetrics();
-    $adapter = Infocyph\CacheLayer\Cache\Adapter\FileCacheAdapter::class;
+    $adapter = 'file';
 
     expect($metrics[$adapter]['miss'] ?? 0)->toBeGreaterThanOrEqual(1)
         ->and($metrics[$adapter]['hit'] ?? 0)->toBeGreaterThanOrEqual(1)
@@ -201,5 +201,4 @@ test('payload compression can be enabled without changing values', function () {
 
     $this->cache->configurePayloadCompression(null);
 });
-
 
