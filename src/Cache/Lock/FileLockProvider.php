@@ -47,7 +47,12 @@ final readonly class FileLockProvider implements LockProviderInterface
             usleep($this->retrySleepMicros);
         }
 
-        $token = hash('xxh3', $key . '|' . uniqid('', true));
+        $token = self::generateToken();
+        if ($token === null) {
+            @flock($handle, LOCK_UN);
+            @fclose($handle);
+            return null;
+        }
         $activeLocks[$key] = true;
 
         return new LockHandle($key, $token, $handle);
@@ -76,5 +81,14 @@ final readonly class FileLockProvider implements LockProviderInterface
     {
         static $registry = [];
         return $registry;
+    }
+
+    private static function generateToken(): ?string
+    {
+        try {
+            return bin2hex(random_bytes(16));
+        } catch (\Throwable) {
+            return null;
+        }
     }
 }

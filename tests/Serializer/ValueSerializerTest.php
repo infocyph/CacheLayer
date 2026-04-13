@@ -6,6 +6,7 @@ use Infocyph\CacheLayer\Serializer\ValueSerializer;
 
 beforeEach(function () {
     ValueSerializer::clearResourceHandlers();
+    ValueSerializer::useCompatibilitySecurity();
 });
 
 it('serialises and unserialises scalars and arrays', function () {
@@ -71,4 +72,12 @@ it('keeps serialized closure memo cache bounded', function () {
     expect(count($memo->getValue()))->toBeLessThanOrEqual(2048);
 });
 
+it('strict security mode blocks closure payloads', function () {
+    ValueSerializer::useStrictSecurity();
+
+    expect(fn () => ValueSerializer::serialize(fn () => 1))
+        ->toThrow(InvalidArgumentException::class);
+
+    ValueSerializer::useCompatibilitySecurity();
+});
 

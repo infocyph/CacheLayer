@@ -47,6 +47,15 @@ final readonly class PdoLockProvider implements LockProviderInterface
         };
     }
 
+    private static function generateToken(): ?string
+    {
+        try {
+            return bin2hex(random_bytes(16));
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
     private static function signedCrc32(string $value): int
     {
         $u = crc32($value);
@@ -61,7 +70,10 @@ final readonly class PdoLockProvider implements LockProviderInterface
     {
         $deadline = microtime(true) + max(0.0, $waitSeconds);
         $lockKey = $this->prefix . hash('xxh128', $key);
-        $token = hash('xxh128', uniqid($key, true));
+        $token = self::generateToken();
+        if ($token === null) {
+            return null;
+        }
 
         do {
             try {
@@ -88,7 +100,10 @@ final readonly class PdoLockProvider implements LockProviderInterface
         $deadline = microtime(true) + max(0.0, $waitSeconds);
         $lockKey = $this->prefix . hash('xxh128', $key);
         $advisoryKey = self::signedCrc32($lockKey);
-        $token = hash('xxh128', uniqid($key, true));
+        $token = self::generateToken();
+        if ($token === null) {
+            return null;
+        }
 
         do {
             try {

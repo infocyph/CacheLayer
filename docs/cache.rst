@@ -217,6 +217,33 @@ Notes:
 * Requires ``gzencode``/``gzdecode`` functions.
 * Compression configuration is global (``CachePayloadCodec`` static state).
 
+Payload and Serialization Security
+----------------------------------
+
+Methods:
+
+* ``configurePayloadSecurity(?string $integrityKey = null, ?int $maxPayloadBytes = 8388608): self``
+* ``configureSerializationSecurity(bool $allowClosurePayloads = true, bool $allowObjectPayloads = true): self``
+
+Example:
+
+.. code-block:: php
+
+   $cache
+       ->configurePayloadSecurity(
+           integrityKey: 'replace-with-strong-secret',
+           maxPayloadBytes: 8_388_608,
+       )
+       ->configureSerializationSecurity(
+           allowClosurePayloads: false,
+           allowObjectPayloads: false,
+       );
+
+Environment variables:
+
+* ``CACHELAYER_PAYLOAD_INTEGRITY_KEY``
+* ``CACHELAYER_MAX_PAYLOAD_BYTES``
+
 Convenience Features
 --------------------
 

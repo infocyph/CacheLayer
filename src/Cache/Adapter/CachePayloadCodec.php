@@ -14,8 +14,12 @@ final class CachePayloadCodec
 {
     private const string COMPRESSED_PREFIX = 'imx-gz:';
     private const string FORMAT = 'imx-record-v1';
+    private const string SIGNED_PREFIX = 'imx-sig-v1:';
     private static int $compressionLevel = 6;
     private static ?int $compressionThresholdBytes = null;
+    private static ?string $integrityKey = null;
+    private static ?int $maxPayloadBytes = 8_388_608;
+    private static bool $securityBootstrapped = false;
 
     public static function configureCompression(?int $thresholdBytes = null, int $level = 6): void
     {
@@ -23,12 +27,36 @@ final class CachePayloadCodec
         self::$compressionLevel = max(1, min(9, $level));
     }
 
+    public static function configureSecurity(
+        ?string $integrityKey = null,
+        ?int $maxPayloadBytes = 8_388_608,
+    ): void {
+        self::$integrityKey = $integrityKey !== null && $integrityKey !== '' ? $integrityKey : null;
+        self::$maxPayloadBytes = $maxPayloadBytes === null ? null : max(1, $maxPayloadBytes);
+        self::$securityBootstrapped = true;
+    }
+
     /**
      * @return array{value:mixed,expires:int|null}|null
      */
     public static function decode(string $blob): ?array
     {
-        $decoded = self::tryUnserialize(self::expandIfCompressed($blob));
+        self::bootstrapSecurityFromEnvironment();
+        if (self::isPayloadTooLarge($blob)) {
+            return null;
+        }
+
+        $verifiedBlob = self::verifyAndExtractSignature($blob);
+        if (!is_string($verifiedBlob)) {
+            return null;
+        }
+
+        $expanded = self::expandIfCompressed($verifiedBlob);
+        if (self::isPayloadTooLarge($expanded)) {
+            return null;
+        }
+
+        $decoded = self::tryUnserialize($expanded);
         if ($decoded === null) {
             return null;
         }
@@ -43,6 +71,7 @@ final class CachePayloadCodec
 
     public static function encode(mixed $value, ?int $expiresAt): string
     {
+        self::bootstrapSecurityFromEnvironment();
         $encoded = ValueSerializer::serialize([
             '__imx_cache' => self::FORMAT,
             'value' => $value,
@@ -50,19 +79,19 @@ final class CachePayloadCodec
         ]);
 
         if (self::$compressionThresholdBytes === null || self::$compressionThresholdBytes < 1) {
-            return $encoded;
+            return self::attachSignature($encoded);
         }
 
         if (strlen($encoded) < self::$compressionThresholdBytes || !function_exists('gzencode')) {
-            return $encoded;
+            return self::attachSignature($encoded);
         }
 
         $compressed = gzencode($encoded, self::$compressionLevel);
         if (!is_string($compressed) || strlen($compressed) >= strlen($encoded)) {
-            return $encoded;
+            return self::attachSignature($encoded);
         }
 
-        return self::COMPRESSED_PREFIX . base64_encode($compressed);
+        return self::attachSignature(self::COMPRESSED_PREFIX . base64_encode($compressed));
     }
 
     /**
@@ -84,6 +113,34 @@ final class CachePayloadCodec
     public static function toDateTime(?int $expiresAt): ?DateTimeInterface
     {
         return $expiresAt === null ? null : (new DateTimeImmutable())->setTimestamp($expiresAt);
+    }
+
+    private static function attachSignature(string $payload): string
+    {
+        if (self::$integrityKey === null) {
+            return $payload;
+        }
+
+        $signature = hash_hmac('sha256', $payload, self::$integrityKey);
+        return self::SIGNED_PREFIX . $signature . ':' . $payload;
+    }
+
+    private static function bootstrapSecurityFromEnvironment(): void
+    {
+        if (self::$securityBootstrapped) {
+            return;
+        }
+
+        $key = getenv('CACHELAYER_PAYLOAD_INTEGRITY_KEY');
+        $max = getenv('CACHELAYER_MAX_PAYLOAD_BYTES');
+
+        $integrityKey = is_string($key) && $key !== '' ? $key : null;
+        $maxBytes = null;
+        if (is_string($max) && $max !== '' && ctype_digit($max)) {
+            $maxBytes = (int) $max;
+        }
+
+        self::configureSecurity($integrityKey, $maxBytes ?? self::$maxPayloadBytes);
     }
 
     /**
@@ -154,6 +211,11 @@ final class CachePayloadCodec
         return is_string($decoded) ? $decoded : $blob;
     }
 
+    private static function isPayloadTooLarge(string $blob): bool
+    {
+        return self::$maxPayloadBytes !== null && strlen($blob) > self::$maxPayloadBytes;
+    }
+
     private static function normalizeExpires(mixed $expires): ?int
     {
         return is_int($expires) ? $expires : null;
@@ -166,5 +228,45 @@ final class CachePayloadCodec
         } catch (Throwable) {
             return null;
         }
+    }
+
+    private static function verifyAndExtractSignature(string $blob): ?string
+    {
+        if (!str_starts_with($blob, self::SIGNED_PREFIX)) {
+            return self::$integrityKey === null ? $blob : null;
+        }
+
+        if (self::$integrityKey === null) {
+            return null;
+        }
+
+        $prefixLength = strlen(self::SIGNED_PREFIX);
+        $rest = substr($blob, $prefixLength);
+        if ($rest === '') {
+            return null;
+        }
+
+        $separatorPos = strpos($rest, ':');
+        if ($separatorPos === false) {
+            return null;
+        }
+
+        $signature = substr($rest, 0, $separatorPos);
+        $payload = substr($rest, $separatorPos + 1);
+
+        if (strlen($signature) !== 64) {
+            return null;
+        }
+
+        if (!ctype_xdigit($signature)) {
+            return null;
+        }
+
+        $expected = hash_hmac('sha256', $payload, self::$integrityKey);
+        if (!hash_equals($expected, strtolower($signature))) {
+            return null;
+        }
+
+        return $payload;
     }
 }

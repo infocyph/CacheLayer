@@ -27,7 +27,10 @@ final readonly class MemcachedLockProvider implements LockProviderInterface
     {
         $deadline = microtime(true) + max(0.0, $waitSeconds);
         $lockKey = $this->prefix . hash('xxh128', $key);
-        $token = hash('xxh128', uniqid($key, true));
+        $token = self::generateToken();
+        if ($token === null) {
+            return null;
+        }
         $ttlSeconds = max(1, (int) ceil($waitSeconds + 1.0));
 
         do {
@@ -56,6 +59,15 @@ final readonly class MemcachedLockProvider implements LockProviderInterface
             }
         } catch (Throwable) {
             // Best effort unlock.
+        }
+    }
+
+    private static function generateToken(): ?string
+    {
+        try {
+            return bin2hex(random_bytes(16));
+        } catch (Throwable) {
+            return null;
         }
     }
 }

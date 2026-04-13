@@ -10,6 +10,7 @@ use RuntimeException;
 
 final class PhpFilesCacheAdapter extends AbstractCacheAdapter
 {
+    private const string DEFAULT_BASE_DIR = 'cachelayer/phpfiles';
     private string $dir;
 
     public function __construct(string $namespace = 'default', ?string $baseDir = null)
@@ -165,19 +166,53 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
         return $item instanceof GenericCacheItem;
     }
 
+    private function assertPathNotSymlink(string $path, string $label): void
+    {
+        if (is_link($path)) {
+            throw new RuntimeException($label . " must not be a symlink: {$path}");
+        }
+    }
+
+    private function assertSecureDirectory(string $path, string $label): void
+    {
+        $this->assertPathNotSymlink($path, $label);
+
+        $perms = fileperms($path);
+        if ($perms !== false && (($perms & 0x0002) === 0x0002)) {
+            throw new RuntimeException($label . " must not be world-writable: {$path}");
+        }
+    }
+
     private function createDirectory(string $ns, ?string $baseDir): void
     {
-        $baseDir = rtrim($baseDir ?? sys_get_temp_dir(), DIRECTORY_SEPARATOR);
+        $baseDir = rtrim($baseDir ?? $this->defaultBaseDirectory(), DIRECTORY_SEPARATOR);
         $ns = sanitize_cache_ns($ns);
         $this->dir = $baseDir . DIRECTORY_SEPARATOR . 'phpcache_' . $ns . DIRECTORY_SEPARATOR;
 
-        if (!is_dir($this->dir) && !@mkdir($this->dir, 0770, true) && !is_dir($this->dir)) {
+        $this->assertPathNotSymlink($baseDir, 'PHP cache base directory');
+        $this->assertPathNotSymlink($this->dir, 'PHP cache directory');
+
+        if (!is_dir($baseDir) && !@mkdir($baseDir, 0700, true) && !is_dir($baseDir)) {
+            throw new RuntimeException("Unable to create PHP cache base directory: {$baseDir}");
+        }
+
+        if (!is_dir($this->dir) && !@mkdir($this->dir, 0700, true) && !is_dir($this->dir)) {
             throw new RuntimeException("Unable to create PHP cache directory: {$this->dir}");
         }
 
+        $this->assertSecureDirectory($baseDir, 'PHP cache base directory');
         if (!is_writable($this->dir)) {
             throw new RuntimeException("PHP cache directory is not writable: {$this->dir}");
         }
+
+        $this->assertSecureDirectory($this->dir, 'PHP cache directory');
+    }
+
+    private function defaultBaseDirectory(): string
+    {
+        return rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR)
+            . DIRECTORY_SEPARATOR
+            . str_replace('/', DIRECTORY_SEPARATOR, self::DEFAULT_BASE_DIR);
     }
 
     private function fileFor(string $key): string

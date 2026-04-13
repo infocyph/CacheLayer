@@ -27,7 +27,10 @@ final readonly class RedisLockProvider implements LockProviderInterface
     {
         $deadline = microtime(true) + max(0.0, $waitSeconds);
         $lockKey = $this->prefix . hash('xxh128', $key);
-        $token = hash('xxh128', uniqid($key, true));
+        $token = self::generateToken();
+        if ($token === null) {
+            return null;
+        }
         $ttlMs = max(1_000, (int) ceil(($waitSeconds + 1.0) * 1000));
 
         do {
@@ -61,6 +64,15 @@ LUA;
             $this->redis->eval($script, [$handle->key, $handle->token], 1);
         } catch (Throwable) {
             // Best effort unlock.
+        }
+    }
+
+    private static function generateToken(): ?string
+    {
+        try {
+            return bin2hex(random_bytes(16));
+        } catch (Throwable) {
+            return null;
         }
     }
 }

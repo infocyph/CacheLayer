@@ -1,6 +1,7 @@
 <?php
 
 use Infocyph\CacheLayer\Cache\Cache;
+use Infocyph\CacheLayer\Cache\Adapter\PdoCacheAdapter;
 use Infocyph\CacheLayer\Cache\Lock\FileLockProvider;
 
 if (!in_array('sqlite', PDO::getAvailableDrivers(), true)) {
@@ -44,7 +45,7 @@ test('pdo defaults to sqlite driver when no dsn is provided', function () {
     $again = Cache::pdo($namespace);
     expect($again->get('x'))->toBe('X');
 
-    $dbFile = sys_get_temp_dir() . '/cache_' . sanitize_cache_ns($namespace) . '.sqlite';
+    $dbFile = PdoCacheAdapter::defaultSqliteFileForNamespace($namespace);
     $cache->clear();
     @unlink($dbFile);
 });
