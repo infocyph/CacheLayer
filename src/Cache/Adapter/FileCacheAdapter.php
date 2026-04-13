@@ -19,6 +19,7 @@ use RuntimeException;
  */
 class FileCacheAdapter extends AbstractCacheAdapter
 {
+    private const string DEFAULT_BASE_DIR = 'cachelayer/files';
     private string $dir;
 
     /**
@@ -135,6 +136,23 @@ class FileCacheAdapter extends AbstractCacheAdapter
         return $item instanceof FileCacheItem;
     }
 
+    private function assertPathNotSymlink(string $path, string $label): void
+    {
+        if (is_link($path)) {
+            throw new RuntimeException($label . " must not be a symlink: {$path}");
+        }
+    }
+
+    private function assertSecureDirectory(string $path, string $label): void
+    {
+        $this->assertPathNotSymlink($path, $label);
+
+        $perms = fileperms($path);
+        if ($perms !== false && (($perms & 0x0002) === 0x0002)) {
+            throw new RuntimeException($label . " must not be world-writable: {$path}");
+        }
+    }
+
     private function assertWritableDirectory(string $path, string $message): void
     {
         if (!is_writable($path)) {
@@ -144,44 +162,61 @@ class FileCacheAdapter extends AbstractCacheAdapter
 
     private function createDirectory(string $ns, ?string $baseDir): void
     {
-        $baseDir = rtrim($baseDir ?? sys_get_temp_dir(), DIRECTORY_SEPARATOR);
+        $baseDir = rtrim($baseDir ?? $this->defaultBaseDirectory(), DIRECTORY_SEPARATOR);
         $ns = sanitize_cache_ns($ns);
         $this->dir = $baseDir . DIRECTORY_SEPARATOR . 'cache_' . $ns . DIRECTORY_SEPARATOR;
 
         if (is_dir($this->dir)) {
             $this->assertWritableDirectory($this->dir, "Cache directory '$this->dir' exists but is not writable");
+            $this->assertSecureDirectory($this->dir, 'Cache directory');
             return;
         }
 
         $this->ensureBaseDirectoryExists($baseDir);
         $this->ensureCacheDirectoryExists($this->dir);
         $this->assertWritableDirectory($this->dir, 'Cache directory ' . $this->dir . ' is not writable');
+        $this->assertSecureDirectory($this->dir, 'Cache directory');
+    }
+
+    private function defaultBaseDirectory(): string
+    {
+        return rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR)
+            . DIRECTORY_SEPARATOR
+            . str_replace('/', DIRECTORY_SEPARATOR, self::DEFAULT_BASE_DIR);
     }
 
     private function ensureBaseDirectoryExists(string $baseDir): void
     {
+        $this->assertPathNotSymlink($baseDir, 'Cache base directory');
+
         if (file_exists($baseDir) && !is_dir($baseDir)) {
             throw new RuntimeException(
                 'Cache base path ' . realpath($baseDir) . ' exists and is *not* a directory',
             );
         }
 
-        if (!is_dir($baseDir) && !@mkdir($baseDir, 0770, true) && !is_dir($baseDir)) {
+        if (!is_dir($baseDir) && !@mkdir($baseDir, 0700, true) && !is_dir($baseDir)) {
             $this->throwCreationError('Failed to create base directory ' . $baseDir);
         }
+
+        $this->assertSecureDirectory($baseDir, 'Cache base directory');
     }
 
     private function ensureCacheDirectoryExists(string $cacheDir): void
     {
+        $this->assertPathNotSymlink($cacheDir, 'Cache directory');
+
         if (file_exists($cacheDir) && !is_dir($cacheDir)) {
             throw new RuntimeException(
                 realpath($cacheDir) . ' exists and is not a directory',
             );
         }
 
-        if (!@mkdir($cacheDir, 0770, true) && !is_dir($cacheDir)) {
+        if (!@mkdir($cacheDir, 0700, true) && !is_dir($cacheDir)) {
             $this->throwCreationError('Failed to create cache directory ' . $cacheDir);
         }
+
+        $this->assertSecureDirectory($cacheDir, 'Cache directory');
     }
 
     private function fileFor(string $key): string

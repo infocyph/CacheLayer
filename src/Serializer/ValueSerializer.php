@@ -4,13 +4,17 @@ declare(strict_types=1);
 
 namespace Infocyph\CacheLayer\Serializer;
 
+use Closure;
 use InvalidArgumentException;
 
 use function Opis\Closure\{serialize as oc_serialize, unserialize as oc_unserialize};
 
 final class ValueSerializer
 {
+    private const array NATIVE_SERIALIZED_PREFIXES = ['N', 'b', 'i', 'd', 's', 'a'];
     private const int SERIALIZED_CLOSURE_MEMO_LIMIT = 2048;
+    private static bool $allowClosurePayloads = true;
+    private static bool $allowObjectPayloads = true;
 
     /** @var array<string,array{wrap:callable,restore:callable}> */
     private static array $resourceHandlers = [];
@@ -28,6 +32,14 @@ final class ValueSerializer
     {
         self::$resourceHandlers = [];
         self::$serializedClosureMemo = [];
+    }
+
+    public static function configureSecurity(
+        bool $allowClosurePayloads = true,
+        bool $allowObjectPayloads = true,
+    ): void {
+        self::$allowClosurePayloads = $allowClosurePayloads;
+        self::$allowObjectPayloads = $allowObjectPayloads;
     }
 
     /**
@@ -140,10 +152,14 @@ final class ValueSerializer
      */
     public static function serialize(mixed $value): string
     {
-        if (is_scalar($value) || $value === null) {
-            return serialize($value);
+        self::assertAllowedBySecurityPolicy($value);
+
+        $wrapped = self::wrapRecursive($value);
+        if (!self::requiresOpisSerialization($wrapped)) {
+            return serialize($wrapped);
         }
-        return oc_serialize(self::wrapRecursive($value));
+
+        return oc_serialize($wrapped);
     }
 
 
@@ -161,9 +177,22 @@ final class ValueSerializer
      */
     public static function unserialize(string $blob): mixed
     {
-        if (!ValueSerializer::isSerializedClosure($blob) && str_starts_with($blob, 's:')) {
-            return unserialize($blob, ['allowed_classes' => true]);
+        if (self::isNativeSerializedPayload($blob) && !self::containsOpisPayloadMarker($blob)) {
+            return self::unwrapRecursive(unserialize($blob, ['allowed_classes' => false]));
         }
+
+        if (self::isSerializedClosure($blob)) {
+            if (!self::$allowClosurePayloads) {
+                throw new InvalidArgumentException('Closure payload deserialization is disabled by security policy.');
+            }
+
+            return self::unwrapRecursive(oc_unserialize($blob));
+        }
+
+        if (!self::$allowObjectPayloads) {
+            throw new InvalidArgumentException('Object payload deserialization is disabled by security policy.');
+        }
+
         return self::unwrapRecursive(oc_unserialize($blob));
     }
 
@@ -180,6 +209,22 @@ final class ValueSerializer
     public static function unwrap(mixed $resource): mixed
     {
         return self::unwrapRecursive($resource);
+    }
+
+    public static function useCompatibilitySecurity(): void
+    {
+        self::configureSecurity(
+            allowClosurePayloads: true,
+            allowObjectPayloads: true,
+        );
+    }
+
+    public static function useStrictSecurity(): void
+    {
+        self::configureSecurity(
+            allowClosurePayloads: false,
+            allowObjectPayloads: false,
+        );
     }
 
 
@@ -199,6 +244,44 @@ final class ValueSerializer
         return self::wrapRecursive($value);
     }
 
+    private static function assertAllowedBySecurityPolicy(mixed $value): void
+    {
+        if (!is_array($value)) {
+            self::assertAllowedScalarOrNode($value);
+            return;
+        }
+
+        foreach ($value as $item) {
+            self::assertAllowedBySecurityPolicy($item);
+        }
+    }
+
+    private static function assertAllowedScalarOrNode(mixed $value): void
+    {
+        if ($value instanceof Closure) {
+            if (!self::$allowClosurePayloads) {
+                throw new InvalidArgumentException('Closure payload serialization is disabled by security policy.');
+            }
+
+            return;
+        }
+
+        if (is_object($value) && !self::$allowObjectPayloads) {
+            throw new InvalidArgumentException('Object payload serialization is disabled by security policy.');
+        }
+    }
+
+    private static function containsOpisPayloadMarker(string $blob): bool
+    {
+        return str_contains($blob, 'Opis\\Closure\\');
+    }
+
+    private static function isNativeSerializedPayload(string $blob): bool
+    {
+        $first = $blob[0] ?? '';
+        return in_array($first, self::NATIVE_SERIALIZED_PREFIXES, true);
+    }
+
     private static function rememberSerializedClosureMemo(string $key, bool $value): bool
     {
         if (!array_key_exists($key, self::$serializedClosureMemo)
@@ -211,6 +294,25 @@ final class ValueSerializer
 
         self::$serializedClosureMemo[$key] = $value;
         return $value;
+    }
+
+    private static function requiresOpisSerialization(mixed $value): bool
+    {
+        if (is_object($value) || is_resource($value)) {
+            return true;
+        }
+
+        if (!is_array($value)) {
+            return false;
+        }
+
+        foreach ($value as $item) {
+            if (self::requiresOpisSerialization($item)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

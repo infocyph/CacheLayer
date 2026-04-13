@@ -31,6 +31,13 @@ interface CacheInterface extends CacheItemPoolInterface, SimpleCacheInterface, A
 
     public function configurePayloadCompression(?int $thresholdBytes = null, int $level = 6): self;
 
+    public function configurePayloadSecurity(?string $integrityKey = null, ?int $maxPayloadBytes = 8_388_608): self;
+
+    public function configureSerializationSecurity(
+        bool $allowClosurePayloads = true,
+        bool $allowObjectPayloads = true,
+    ): self;
+
     /**
      * Returns metrics grouped by readable adapter name (for example ``file``,
      * ``pdo``, ``redis``) and metric name.

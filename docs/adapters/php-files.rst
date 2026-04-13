@@ -10,7 +10,7 @@ Persists cache records as PHP files that return payload arrays.
 
 Path layout:
 
-* base dir: provided ``$dir`` or ``sys_get_temp_dir()``
+* base dir: provided ``$dir`` or ``sys_get_temp_dir() . '/cachelayer/phpfiles'``
 * namespace dir: ``phpcache_<sanitized-namespace>``
 * file name: ``hash('xxh128', $key) . '.php'``
 
@@ -21,6 +21,8 @@ Highlights:
 * ``setNamespaceAndDirectory()`` supported
 
 Good for environments where opcode cache integration is desired.
+Use only in trusted environments, since cache entries are stored as executable
+PHP files.
 
 Example
 -------

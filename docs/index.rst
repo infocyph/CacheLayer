@@ -51,6 +51,7 @@ Quick Start
    adapters/index
    cookbook
    metrics-and-locking
+   security
    serializer
    memoize
    functions

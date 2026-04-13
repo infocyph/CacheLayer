@@ -10,7 +10,7 @@ Stores one cache payload per file under a namespace directory.
 
 Path layout:
 
-* base dir: provided ``$dir`` or ``sys_get_temp_dir()``
+* base dir: provided ``$dir`` or ``sys_get_temp_dir() . '/cachelayer/files'``
 * namespace dir: ``cache_<sanitized-namespace>``
 * file name: ``hash('xxh128', $key) . '.cache'``
 

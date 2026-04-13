@@ -29,7 +29,7 @@ Examples:
 
 .. code-block:: php
 
-   // Default sqlite file under sys temp dir
+   // Default sqlite file under sys temp: /tmp/cachelayer/pdo/cache_<namespace>.sqlite
    $cacheDefault = Cache::pdo('app');
 
    // MySQL / MariaDB

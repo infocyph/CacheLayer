@@ -54,7 +54,7 @@ composer require infocyph/cachelayer
 ```php
 use Infocyph\CacheLayer\Cache\Cache;
 
-$cache = Cache::pdo('app'); // defaults to sqlite file in sys temp dir
+$cache = Cache::pdo('app'); // defaults to sqlite file under sys temp cachelayer/pdo
 
 $cache->setTagged('user:1', ['name' => 'Ada'], ['users'], 300);
 
@@ -67,6 +67,29 @@ $cache->invalidateTag('users');
 
 $metrics = $cache->exportMetrics();
 ```
+
+## Security Hardening
+
+CacheLayer includes optional payload/serialization hardening controls:
+
+```php
+$cache
+    ->configurePayloadSecurity(
+        integrityKey: 'replace-with-strong-secret',
+        maxPayloadBytes: 8_388_608,
+    )
+    ->configureSerializationSecurity(
+        allowClosurePayloads: false,
+        allowObjectPayloads: false,
+    );
+```
+
+You can also set:
+
+- `CACHELAYER_PAYLOAD_INTEGRITY_KEY`
+- `CACHELAYER_MAX_PAYLOAD_BYTES`
+
+See `SECURITY.md` for deployment guidance and threat model notes.
 
 ## Documentation
 

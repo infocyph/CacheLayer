@@ -12,6 +12,7 @@ use RuntimeException;
 
 final class PdoCacheAdapter extends AbstractCacheAdapter
 {
+    private const string DEFAULT_SQLITE_DIR = 'cachelayer/pdo';
     private readonly string $driver;
     private readonly string $ns;
     private readonly PDO $pdo;
@@ -33,7 +34,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
         $this->table = $table;
         $resolvedDsn = $dsn;
         if ($pdo === null && $resolvedDsn === null) {
-            $resolvedDsn = 'sqlite:' . sys_get_temp_dir() . "/cache_{$this->ns}.sqlite";
+            $resolvedDsn = 'sqlite:' . self::defaultSqliteFileForNamespace($this->ns);
         }
 
         $this->pdo = $pdo ?? new PDO((string) $resolvedDsn, $username, $password);
@@ -42,6 +43,18 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
 
         $this->configureDriverDefaults();
         $this->createSchemaIfMissing();
+    }
+
+    public static function defaultSqliteFileForNamespace(string $namespace): string
+    {
+        $ns = sanitize_cache_ns($namespace);
+        $baseDir = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR)
+            . DIRECTORY_SEPARATOR
+            . str_replace('/', DIRECTORY_SEPARATOR, self::DEFAULT_SQLITE_DIR);
+
+        self::ensureSecureDirectory($baseDir, 0700);
+
+        return $baseDir . DIRECTORY_SEPARATOR . "cache_{$ns}.sqlite";
     }
 
     public function clear(): bool
@@ -201,6 +214,30 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
     protected function supportsItem(CacheItemInterface $item): bool
     {
         return $item instanceof GenericCacheItem;
+    }
+
+    private static function ensureSecureDirectory(string $path, int $mode): void
+    {
+        if (is_link($path)) {
+            throw new RuntimeException("Refusing symlinked SQLite cache directory: {$path}");
+        }
+
+        if (!is_dir($path) && !@mkdir($path, $mode, true) && !is_dir($path)) {
+            throw new RuntimeException("Unable to create SQLite cache directory: {$path}");
+        }
+
+        if (!is_writable($path)) {
+            throw new RuntimeException("SQLite cache directory is not writable: {$path}");
+        }
+
+        if (is_link($path)) {
+            throw new RuntimeException("Refusing symlinked SQLite cache directory: {$path}");
+        }
+
+        $perms = fileperms($path);
+        if ($perms !== false && (($perms & 0x0002) === 0x0002)) {
+            throw new RuntimeException("SQLite cache directory must not be world-writable: {$path}");
+        }
     }
 
     private function configureDriverDefaults(): void

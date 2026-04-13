@@ -16,6 +16,7 @@ use Infocyph\CacheLayer\Cache\Lock\RedisLockProvider;
 use Infocyph\CacheLayer\Cache\Metrics\CacheMetricsCollectorInterface;
 use Infocyph\CacheLayer\Cache\Metrics\InMemoryCacheMetricsCollector;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
+use Infocyph\CacheLayer\Serializer\ValueSerializer;
 use Psr\Cache\CacheItemInterface;
 use Psr\Cache\CacheItemPoolInterface;
 use Psr\Cache\InvalidArgumentException as Psr6InvalidArgumentException;
@@ -330,11 +331,11 @@ final class Cache implements CacheInterface
      * Static factory for SQLite-based cache.
      *
      * @param string $namespace Cache prefix. Will be suffixed to each key.
-     * @param string|null $file Path to SQLite file (or null → sys temp dir).
+     * @param string|null $file Path to SQLite file (or null → cachelayer temp subdirectory).
      */
     public static function sqlite(string $namespace = 'default', ?string $file = null): self
     {
-        $dbPath = $file ?? (sys_get_temp_dir() . '/cache_' . sanitize_cache_ns($namespace) . '.sqlite');
+        $dbPath = $file ?? Adapter\PdoCacheAdapter::defaultSqliteFileForNamespace($namespace);
 
         return self::pdo(
             namespace: $namespace,
@@ -384,6 +385,24 @@ final class Cache implements CacheInterface
     public function configurePayloadCompression(?int $thresholdBytes = null, int $level = 6): self
     {
         Adapter\CachePayloadCodec::configureCompression($thresholdBytes, $level);
+        return $this;
+    }
+
+    public function configurePayloadSecurity(?string $integrityKey = null, ?int $maxPayloadBytes = 8_388_608): self
+    {
+        Adapter\CachePayloadCodec::configureSecurity($integrityKey, $maxPayloadBytes);
+        return $this;
+    }
+
+    public function configureSerializationSecurity(
+        bool $allowClosurePayloads = true,
+        bool $allowObjectPayloads = true,
+    ): self {
+        ValueSerializer::configureSecurity(
+            allowClosurePayloads: $allowClosurePayloads,
+            allowObjectPayloads: $allowObjectPayloads,
+        );
+
         return $this;
     }
 
