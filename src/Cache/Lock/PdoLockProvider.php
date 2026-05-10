@@ -13,20 +13,17 @@ final readonly class PdoLockProvider implements LockProviderInterface
 
     private string $driver;
 
-    private FileLockProvider $fallback;
-
     private int $retrySleepMicros;
 
     public function __construct(
         private PDO $pdo,
         private string $prefix = 'cachelayer:lock:',
         int $retrySleepMicros = 50_000,
-        ?FileLockProvider $fallback = null,
+        private FileLockProvider $fallback = new FileLockProvider(),
     ) {
         $this->retrySleepMicros = max(1_000, $retrySleepMicros);
         $driver = $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
         $this->driver = is_string($driver) ? $driver : '';
-        $this->fallback = $fallback ?? new FileLockProvider();
     }
 
     public function acquire(string $key, float $waitSeconds): ?LockHandle

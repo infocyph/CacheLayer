@@ -44,10 +44,6 @@ final class Cache implements CacheInterface
 
     private const string TAG_VERSION_PREFIX = '__im_tagv_';
 
-    private LockProviderInterface $lockProvider;
-
-    private CacheMetricsCollectorInterface $metrics;
-
     private ?Closure $metricsExportHook = null;
 
     /**
@@ -57,12 +53,9 @@ final class Cache implements CacheInterface
      */
     public function __construct(
         private readonly CacheItemPoolInterface $adapter,
-        ?LockProviderInterface $lockProvider = null,
-        ?CacheMetricsCollectorInterface $metrics = null,
-    ) {
-        $this->lockProvider = $lockProvider ?? new FileLockProvider();
-        $this->metrics = $metrics ?? new InMemoryCacheMetricsCollector();
-    }
+        private LockProviderInterface $lockProvider = new FileLockProvider(),
+        private CacheMetricsCollectorInterface $metrics = new InMemoryCacheMetricsCollector(),
+    ) {}
 
     /**
      * Retrieves a value from the cache using magic property access.
