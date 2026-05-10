@@ -11,27 +11,28 @@
 
 use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Cache\Item\RedisCacheItem;
-use Infocyph\CacheLayer\Serializer\ValueSerializer;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
-use Psr\Cache\InvalidArgumentException as Psr6InvalidArgumentException;
+use Infocyph\CacheLayer\Serializer\ValueSerializer;
 
 /* ── skip whole file when Redis unavailable ───────────────────────── */
-if (!class_exists(Redis::class)) {
+if (! class_exists(Redis::class)) {
     test('phpredis ext not loaded – skipping')->skip();
+
     return;
 }
 try {
-    $probe = new Redis();
+    $probe = new Redis;
     $probe->connect('127.0.0.1', 6379, 0.5);
     $probe->ping();
 } catch (Throwable) {
     test('Redis server unreachable – skipping')->skip();
+
     return;
 }
 
 /* ── bootstrap / teardown ────────────────────────────────────────── */
 beforeEach(function () {
-    $client = new Redis();
+    $client = new Redis;
     $client->connect('127.0.0.1', 6379);
     $client->flushDB();                               // fresh DB 0
     ValueSerializer::clearResourceHandlers();
@@ -46,13 +47,14 @@ beforeEach(function () {
         'stream',
         // ----- wrap ----------------------------------------------------
         function (mixed $res): array {
-            if (!is_resource($res)) {
+            if (! is_resource($res)) {
                 throw new InvalidArgumentException('Expected resource');
             }
             $meta = stream_get_meta_data($res);
             rewind($res);
+
             return [
-                'mode'    => $meta['mode'],
+                'mode' => $meta['mode'],
                 'content' => stream_get_contents($res),
             ];
         },
@@ -61,6 +63,7 @@ beforeEach(function () {
             $s = fopen('php://memory', $data['mode']);
             fwrite($s, $data['content']);
             rewind($s);
+
             return $s;                                 // <- real resource
         }
     );
@@ -83,6 +86,7 @@ test('get returns default when key missing (redis)', function () {
 
     $val = $this->cache->get('dynamic', function (RedisCacheItem $item) {
         $item->expiresAfter(1);
+
         return 'xyz';
     });
     expect($val)->toBe('xyz');
@@ -173,5 +177,3 @@ test('Redis adapter multiFetch()', function () {
         ->and($items['r2']->get())->toBe(20)
         ->and($items['none']->isHit())->toBeFalse();
 });
-
-

@@ -2,8 +2,9 @@
 
 use Infocyph\CacheLayer\Cache\Cache;
 
-if (!in_array('pgsql', PDO::getAvailableDrivers(), true)) {
+if (! in_array('pgsql', PDO::getAvailableDrivers(), true)) {
     test('PostgreSQL PDO driver not present')->skip();
+
     return;
 }
 
@@ -17,6 +18,7 @@ try {
     $probe->query('SELECT 1');
 } catch (Throwable) {
     test('PostgreSQL server unreachable')->skip();
+
     return;
 }
 

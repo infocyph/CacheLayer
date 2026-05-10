@@ -10,18 +10,19 @@
 
 use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Cache\Item\ApcuCacheItem;
-use Infocyph\CacheLayer\Serializer\ValueSerializer;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
-use Psr\Cache\InvalidArgumentException as Psr6InvalidArgumentException;
+use Infocyph\CacheLayer\Serializer\ValueSerializer;
 
 /* ── skip entirely if APCu unavailable ─────────────────────────────── */
-if (!extension_loaded('apcu')) {
+if (! extension_loaded('apcu')) {
     test('APCu not loaded – skipping adapter tests')->skip();
+
     return;
 }
 ini_set('apcu.enable_cli', 1);
-if (!apcu_enabled()) {
+if (! apcu_enabled()) {
     test('APCu not enabled – skipping adapter tests')->skip();
+
     return;
 }
 
@@ -36,13 +37,14 @@ beforeEach(function () {
         'stream',
         // ----- wrap ----------------------------------------------------
         function (mixed $res): array {
-            if (!is_resource($res)) {
+            if (! is_resource($res)) {
                 throw new InvalidArgumentException('Expected resource');
             }
             $meta = stream_get_meta_data($res);
             rewind($res);
+
             return [
-                'mode'    => $meta['mode'],
+                'mode' => $meta['mode'],
                 'content' => stream_get_contents($res),
             ];
         },
@@ -51,6 +53,7 @@ beforeEach(function () {
             $s = fopen('php://memory', $data['mode']);
             fwrite($s, $data['content']);
             rewind($s);
+
             return $s;                                 // <- real resource
         }
     );
@@ -75,6 +78,7 @@ test('get returns default when key missing (apcu)', function () {
     // Callable default without prior set
     $computed = $this->cache->get('dyn', function (ApcuCacheItem $item) {
         $item->expiresAfter(1);
+
         return 'computed';
     });
     expect($computed)->toBe('computed');
@@ -170,5 +174,3 @@ test('APCu adapter multiFetch()', function () {
         ->and($items['y']->get())->toBe('Y')
         ->and($items['z']->isHit())->toBeFalse();
 });
-
-

@@ -27,7 +27,8 @@ it('caches repeated calls from the same caller', function () {
 it('isolates cache entries by caller context', function () {
     $counter = 0;
 
-    $caller = new class () {
+    $caller = new class
+    {
         public function one(int &$counter): int
         {
             return OnceMemoizer::instance()->once(function () use (&$counter) {
@@ -64,7 +65,7 @@ it('keeps internal cache bounded', function () {
     $seedCache = [];
     $seedOrder = [];
     for ($i = 0; $i < 2048; $i++) {
-        $key = 'seed-' . $i;
+        $key = 'seed-'.$i;
         $seedCache[$key] = $i;
         $seedOrder[] = $key;
     }

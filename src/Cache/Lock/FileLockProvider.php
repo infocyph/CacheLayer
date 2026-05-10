@@ -7,6 +7,7 @@ namespace Infocyph\CacheLayer\Cache\Lock;
 final readonly class FileLockProvider implements LockProviderInterface
 {
     private string $directory;
+
     private int $retrySleepMicros;
 
     public function __construct(
@@ -41,6 +42,7 @@ final readonly class FileLockProvider implements LockProviderInterface
         while (!@flock($handle, LOCK_EX | LOCK_NB)) {
             if (microtime(true) >= $deadline) {
                 @fclose($handle);
+
                 return null;
             }
 
@@ -51,6 +53,7 @@ final readonly class FileLockProvider implements LockProviderInterface
         if ($token === null) {
             @flock($handle, LOCK_UN);
             @fclose($handle);
+
             return null;
         }
         $activeLocks[$key] = true;
@@ -79,7 +82,9 @@ final readonly class FileLockProvider implements LockProviderInterface
      */
     private static function &activeRegistry(): array
     {
+        /** @var array<string, bool> $registry */
         static $registry = [];
+
         return $registry;
     }
 

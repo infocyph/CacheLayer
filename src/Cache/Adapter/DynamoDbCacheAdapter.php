@@ -51,8 +51,13 @@ final class DynamoDbCacheAdapter extends AbstractCacheAdapter
                 $params['ExclusiveStartKey'] = $lastKey;
             }
 
-            $result = $this->toArray($this->client->scan($params)) ?? [];
-            foreach ($result['Items'] ?? [] as $item) {
+            $result = AdapterValueNormalizer::fromArrayLikeOrToArray($this->client->scan($params)) ?? [];
+            $items = is_array($result['Items'] ?? null) ? $result['Items'] : [];
+            foreach ($items as $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+
                 if (is_array($item['ckey'] ?? null) && is_string($item['ckey']['S'] ?? null)) {
                     $keys[] = $item['ckey']['S'];
                 }
@@ -72,12 +77,13 @@ final class DynamoDbCacheAdapter extends AbstractCacheAdapter
         }
 
         $this->deferred = [];
+
         return true;
     }
 
     public function count(): int
     {
-        $result = $this->toArray($this->client->scan([
+        $result = AdapterValueNormalizer::fromArrayLikeOrToArray($this->client->scan([
             'TableName' => $this->table,
             'FilterExpression' => '#ns = :ns AND (attribute_not_exists(#exp) OR #exp > :now)',
             'Select' => 'COUNT',
@@ -91,7 +97,9 @@ final class DynamoDbCacheAdapter extends AbstractCacheAdapter
             ],
         ]));
 
-        return (int) ($result['Count'] ?? 0);
+        $count = $result['Count'] ?? 0;
+
+        return is_numeric($count) ? max(0, (int) $count) : 0;
     }
 
     public function deleteItem(string $key): bool
@@ -104,6 +112,9 @@ final class DynamoDbCacheAdapter extends AbstractCacheAdapter
         return true;
     }
 
+    /**
+     * @param list<string> $keys
+     */
     public function deleteItems(array $keys): bool
     {
         foreach ($keys as $key) {
@@ -115,7 +126,7 @@ final class DynamoDbCacheAdapter extends AbstractCacheAdapter
 
     public function getItem(string $key): GenericCacheItem
     {
-        $result = $this->toArray($this->client->getItem([
+        $result = AdapterValueNormalizer::fromArrayLikeOrToArray($this->client->getItem([
             'TableName' => $this->table,
             'Key' => ['ckey' => ['S' => $this->map($key)]],
             'ConsistentRead' => true,
@@ -126,39 +137,10 @@ final class DynamoDbCacheAdapter extends AbstractCacheAdapter
             return new GenericCacheItem($this, $key);
         }
 
-        $payload = $row['payload']['S'] ?? null;
-        if (!is_string($payload)) {
-            $this->deleteItem($key);
-            return new GenericCacheItem($this, $key);
-        }
+        $payloadAttr = is_array($row['payload'] ?? null) ? $row['payload'] : null;
+        $payload = is_array($payloadAttr) ? ($payloadAttr['S'] ?? null) : null;
 
-        $expiresAt = is_array($row['expires'] ?? null) && is_string($row['expires']['N'] ?? null)
-            ? (int) $row['expires']['N']
-            : null;
-        if (CachePayloadCodec::isExpired($expiresAt)) {
-            $this->deleteItem($key);
-            return new GenericCacheItem($this, $key);
-        }
-
-        $blob = base64_decode($payload, true);
-        if (!is_string($blob)) {
-            $this->deleteItem($key);
-            return new GenericCacheItem($this, $key);
-        }
-
-        $record = CachePayloadCodec::decode($blob);
-        if ($record === null || CachePayloadCodec::isExpired($record['expires'])) {
-            $this->deleteItem($key);
-            return new GenericCacheItem($this, $key);
-        }
-
-        $item = new GenericCacheItem($this, $key);
-        $item->set($record['value']);
-        if ($record['expires'] !== null) {
-            $item->expiresAt(CachePayloadCodec::toDateTime($record['expires']));
-        }
-
-        return $item;
+        return $this->genericFromBase64($key, is_string($payload) ? $payload : null);
     }
 
     public function hasItem(string $key): bool
@@ -166,42 +148,34 @@ final class DynamoDbCacheAdapter extends AbstractCacheAdapter
         return $this->getItem($key)->isHit();
     }
 
+    /**
+     * @param list<string> $keys
+     * @return array<string, GenericCacheItem>
+     */
     public function multiFetch(array $keys): array
     {
-        $items = [];
-        foreach ($keys as $key) {
-            $items[(string) $key] = $this->getItem((string) $key);
-        }
-
-        return $items;
+        return $this->multiFetchItems($keys, $this->getItem(...));
     }
 
     public function save(CacheItemInterface $item): bool
     {
-        if (!$this->supportsItem($item)) {
-            return false;
-        }
+        return $this->saveEncoded($item, function (CacheItemInterface $saveItem, array $expires): bool {
+            $itemMap = [
+                'ckey' => ['S' => $this->map($saveItem->getKey())],
+                'ns' => ['S' => $this->ns],
+                'payload' => ['S' => base64_encode(CachePayloadCodec::encode($saveItem->get(), $expires['expiresAt']))],
+            ];
+            if ($expires['expiresAt'] !== null) {
+                $itemMap['expires'] = ['N' => (string) $expires['expiresAt']];
+            }
 
-        $expires = CachePayloadCodec::expirationFromItem($item);
-        if ($expires['ttl'] === 0) {
-            return $this->deleteItem($item->getKey());
-        }
+            $this->client->putItem([
+                'TableName' => $this->table,
+                'Item' => $itemMap,
+            ]);
 
-        $itemMap = [
-            'ckey' => ['S' => $this->map($item->getKey())],
-            'ns' => ['S' => $this->ns],
-            'payload' => ['S' => base64_encode(CachePayloadCodec::encode($item->get(), $expires['expiresAt']))],
-        ];
-        if ($expires['expiresAt'] !== null) {
-            $itemMap['expires'] = ['N' => (string) $expires['expiresAt']];
-        }
-
-        $this->client->putItem([
-            'TableName' => $this->table,
-            'Item' => $itemMap,
-        ]);
-
-        return true;
+            return true;
+        });
     }
 
     protected function supportsItem(CacheItemInterface $item): bool
@@ -212,35 +186,5 @@ final class DynamoDbCacheAdapter extends AbstractCacheAdapter
     private function map(string $key): string
     {
         return $this->ns . ':' . $key;
-    }
-
-    /**
-     * @return array<string, mixed>|null
-     */
-    private function toArray(mixed $value): ?array
-    {
-        if ($value === null) {
-            return null;
-        }
-
-        if (is_array($value)) {
-            return $value;
-        }
-
-        if ($value instanceof \ArrayAccess && $value instanceof \Traversable) {
-            $out = [];
-            foreach ($value as $k => $v) {
-                $out[(string) $k] = $v;
-            }
-
-            return $out;
-        }
-
-        if (method_exists($value, 'toArray')) {
-            $arr = $value->toArray();
-            return is_array($arr) ? $arr : null;
-        }
-
-        return null;
     }
 }

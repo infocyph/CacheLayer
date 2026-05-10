@@ -19,13 +19,13 @@ it('serialises and unserialises scalars and arrays', function () {
 
     foreach ($values as $v) {
         $blob = ValueSerializer::serialize($v);
-        $out  = ValueSerializer::unserialize($blob);
+        $out = ValueSerializer::unserialize($blob);
         expect($out)->toBe($v);
     }
 });
 
 it('round-trips closures', function () {
-    $fn   = fn (int $x): int => $x + 2;
+    $fn = fn (int $x): int => $x + 2;
     $blob = ValueSerializer::serialize($fn);
     $rest = ValueSerializer::unserialize($blob);
 
@@ -35,7 +35,7 @@ it('round-trips closures', function () {
 });
 
 it('wraps and unwraps without full serialization', function () {
-    $data    = ['foo' => 'bar', 'baz' => [1, 2, 3]];
+    $data = ['foo' => 'bar', 'baz' => [1, 2, 3]];
     $wrapped = ValueSerializer::wrap($data);
     expect($wrapped)->toBe($data);
 
@@ -63,7 +63,7 @@ it('throws when registering the same resource handler twice', function () {
 
 it('keeps serialized closure memo cache bounded', function () {
     for ($i = 0; $i < 2200; $i++) {
-        ValueSerializer::isSerializedClosure('x' . $i);
+        ValueSerializer::isSerializedClosure('x'.$i);
     }
 
     $ref = new ReflectionClass(ValueSerializer::class);
@@ -80,4 +80,3 @@ it('strict security mode blocks closure payloads', function () {
 
     ValueSerializer::useCompatibilitySecurity();
 });
-

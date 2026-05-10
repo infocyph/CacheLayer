@@ -17,10 +17,12 @@ test('remember always recomputes with null adapter', function () {
 
     $a = $this->cache->remember('k', function () use (&$calls) {
         $calls++;
+
         return 'v';
     });
     $b = $this->cache->remember('k', function () use (&$calls) {
         $calls++;
+
         return 'v';
     });
 

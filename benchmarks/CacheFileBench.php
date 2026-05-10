@@ -12,6 +12,7 @@ use PhpBench\Attributes as Bench;
 final class CacheFileBench
 {
     private Cache $cache;
+
     private string $dir;
 
     public function setUp(): void

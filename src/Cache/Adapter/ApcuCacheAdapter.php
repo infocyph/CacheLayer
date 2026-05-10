@@ -26,6 +26,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter
      * Creates a new APCu cache adapter.
      *
      * @param string $namespace A namespace prefix to avoid key collisions.
+     *
      * @throws RuntimeException If the APCu extension is not enabled.
      */
     public function __construct(string $namespace = 'default')
@@ -42,6 +43,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter
             apcu_delete($apcuKey);
         }
         $this->deferred = [];
+
         return true;
     }
 
@@ -60,12 +62,16 @@ class ApcuCacheAdapter extends AbstractCacheAdapter
         return apcu_delete($mapped);
     }
 
+    /**
+     * @param list<string> $keys
+     */
     public function deleteItems(array $keys): bool
     {
         $ok = true;
         foreach ($keys as $k) {
             $ok = $ok && $this->deleteItem($k);
         }
+
         return $ok;
     }
 
@@ -76,18 +82,14 @@ class ApcuCacheAdapter extends AbstractCacheAdapter
         $raw = apcu_fetch($apcuKey, $success);
 
         if ($success && is_string($raw)) {
-            $record = CachePayloadCodec::decode($raw);
-            if ($record !== null && !CachePayloadCodec::isExpired($record['expires'])) {
-                return new ApcuCacheItem(
-                    $this,
-                    $key,
-                    $record['value'],
-                    true,
-                    CachePayloadCodec::toDateTime($record['expires']),
-                );
+            $item = $this->hitItemFromBlob($key, $raw);
+            if ($item instanceof ApcuCacheItem) {
+                return $item;
             }
+
             apcu_delete($apcuKey);
         }
+
         return new ApcuCacheItem($this, $key);
     }
 
@@ -96,6 +98,10 @@ class ApcuCacheAdapter extends AbstractCacheAdapter
         return apcu_exists($this->map($key));
     }
 
+    /**
+     * @param list<string> $keys
+     * @return array<string, ApcuCacheItem>
+     */
     public function multiFetch(array $keys): array
     {
         if ($keys === []) {
@@ -103,24 +109,25 @@ class ApcuCacheAdapter extends AbstractCacheAdapter
         }
         $prefixed = array_map($this->map(...), $keys);
         $raw = apcu_fetch($prefixed);
+        if (!is_array($raw)) {
+            $raw = [];
+        }
 
         $items = [];
         $stale = [];
         foreach ($keys as $k) {
             $p = $this->map($k);
             if (array_key_exists($p, $raw)) {
-                $record = CachePayloadCodec::decode((string) $raw[$p]);
-                if ($record !== null && !CachePayloadCodec::isExpired($record['expires'])) {
-                    $items[$k] = new ApcuCacheItem(
-                        $this,
-                        $k,
-                        $record['value'],
-                        true,
-                        CachePayloadCodec::toDateTime($record['expires']),
-                    );
-                    continue;
+                if (is_string($raw[$p])) {
+                    $item = $this->hitItemFromBlob($k, $raw[$p]);
+                    if ($item instanceof ApcuCacheItem) {
+                        $items[$k] = $item;
+
+                        continue;
+                    }
+
+                    $stale[] = $p;
                 }
-                $stale[] = $p;
             }
             $items[$k] = new ApcuCacheItem($this, $k);
         }
@@ -141,10 +148,12 @@ class ApcuCacheAdapter extends AbstractCacheAdapter
         $ttl = $expires['ttl'];
         if ($ttl === 0) {
             apcu_delete($this->map($item->getKey()));
+
             return true;
         }
 
         $blob = CachePayloadCodec::encode($item->get(), $expires['expiresAt']);
+
         return apcu_store($this->map($item->getKey()), $blob, $ttl ?? 0);
     }
 
@@ -153,6 +162,27 @@ class ApcuCacheAdapter extends AbstractCacheAdapter
         return $item instanceof ApcuCacheItem;
     }
 
+    private function hitItemFromBlob(string $key, string $blob): ?ApcuCacheItem
+    {
+        $record = $this->decodeRecordFromBlob($blob);
+        if ($record === null) {
+            return null;
+        }
+
+        $expiresAt = CachePayloadCodec::toDateTime($record['expires']);
+
+        return new ApcuCacheItem(
+            pool: $this,
+            key: $key,
+            value: $record['value'],
+            hit: true,
+            exp: $expiresAt,
+        );
+    }
+
+    /**
+     * @return list<string>
+     */
     private function listKeys(): array
     {
         $iter = new \APCUIterator(
@@ -163,6 +193,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter
         foreach ($iter as $k => $unused) {
             $out[] = $k;
         }
+
         return $out;
     }
 

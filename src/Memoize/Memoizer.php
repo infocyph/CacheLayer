@@ -11,9 +11,12 @@ use WeakMap;
 
 final class Memoizer
 {
+    use MemoizeTrait;
+
     private static ?self $instance = null;
 
     private int $hits = 0;
+
     private int $misses = 0;
 
     /** @var WeakMap<object, array<string, mixed>> */
@@ -40,6 +43,8 @@ final class Memoizer
     }
 
     /**
+     * @param array<int, mixed> $params
+     *
      * @throws ReflectionException
      */
     public function get(callable $callable, array $params = []): mixed
@@ -51,16 +56,20 @@ final class Memoizer
 
         if (array_key_exists($cacheKey, $this->staticCache)) {
             $this->hits++;
+
             return $this->staticCache[$cacheKey];
         }
 
         $this->misses++;
         $value = $callable(...$params);
         $this->staticCache[$cacheKey] = $value;
+
         return $value;
     }
 
     /**
+     * @param array<int, mixed> $params
+     *
      * @throws ReflectionException
      */
     public function getFor(object $object, callable $callable, array $params = []): mixed
@@ -73,6 +82,7 @@ final class Memoizer
         $bucket = $this->objectCache[$object] ?? [];
         if (array_key_exists($cacheKey, $bucket)) {
             $this->hits++;
+
             return $bucket[$cacheKey];
         }
 
@@ -80,6 +90,7 @@ final class Memoizer
         $value = $callable(...$params);
         $bucket[$cacheKey] = $value;
         $this->objectCache[$object] = $bucket;
+
         return $value;
     }
 
@@ -95,6 +106,9 @@ final class Memoizer
         ];
     }
 
+    /**
+     * @param array<int, mixed> $params
+     */
     private static function buildCacheKey(string $signature, array $params): string
     {
         if ($params === []) {
@@ -102,6 +116,7 @@ final class Memoizer
         }
 
         $normalized = array_map(self::normalizeParam(...), $params);
+
         return $signature . '|' . hash('xxh3', serialize($normalized));
     }
 
@@ -113,6 +128,7 @@ final class Memoizer
         if ($callable instanceof Closure) {
             $rf = new ReflectionFunction($callable);
             $file = $rf->getFileName() ?: 'internal';
+
             return 'closure:' . $file . ':' . $rf->getStartLine() . '-' . $rf->getEndLine();
         }
 
@@ -121,7 +137,8 @@ final class Memoizer
         }
 
         if (is_array($callable)) {
-            $target = is_object($callable[0]) ? $callable[0]::class : (string) $callable[0];
+            $target = is_object($callable[0]) ? $callable[0]::class : $callable[0];
+
             return 'array:' . $target . '::' . $callable[1];
         }
 
@@ -131,6 +148,7 @@ final class Memoizer
 
         $rf = new ReflectionFunction(Closure::fromCallable($callable));
         $file = $rf->getFileName() ?: 'internal';
+
         return 'callable:' . $file . ':' . $rf->getStartLine() . '-' . $rf->getEndLine();
     }
 

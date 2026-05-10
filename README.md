@@ -20,7 +20,7 @@ visibility, maintenance focus, and faster feature enrichment for caching.
 ## Features
 
 - Unified `Cache` facade implementing PSR-6, PSR-16, `ArrayAccess`, and `Countable`
-- Adapter support for APCu, File, PHP Files, Memcached, Redis, Redis Cluster, PDO (SQLite default), Shared Memory, MongoDB, DynamoDB, and S3
+- Adapter support for APCu, File, PHP Files, Memcached, Redis, Redis Cluster, PDO (SQLite default), Shared Memory, MongoDB, and DynamoDB
 - Tagged invalidation with versioned tags: `setTagged()`, `invalidateTag()`, `invalidateTags()`
 - Stampede-safe `remember()` with pluggable lock providers
 - Per-adapter metrics counters and export hooks

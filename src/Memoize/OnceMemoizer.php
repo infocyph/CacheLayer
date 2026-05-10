@@ -66,7 +66,7 @@ final class OnceMemoizer
         return match (true) {
             $callback instanceof Closure => $this->closureFingerprint($callback),
             is_string($callback) => 'string:' . $callback,
-            is_array($callback) => 'array:' . (is_object($callback[0]) ? $callback[0]::class : (string) $callback[0]) . '::' . ($callback[1] ?? ''),
+            is_array($callback) => 'array:' . (is_object($callback[0]) ? $callback[0]::class : $callback[0]) . '::' . $callback[1],
             is_object($callback) => 'invokable:' . $callback::class,
             default => 'callable:' . get_debug_type($callback),
         };
@@ -124,10 +124,6 @@ final class OnceMemoizer
         }
 
         $oldest = array_shift($this->order);
-        if ($oldest === null) {
-            return;
-        }
-
         unset($this->cache[$oldest]);
     }
 }

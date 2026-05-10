@@ -4,7 +4,8 @@ use Infocyph\CacheLayer\Cache\Adapter\DynamoDbCacheAdapter;
 use Infocyph\CacheLayer\Cache\Cache;
 
 beforeEach(function () {
-    $this->client = new class {
+    $this->client = new class
+    {
         /** @var array<string, array<string, mixed>> */
         private array $items = [];
 
@@ -24,12 +25,14 @@ beforeEach(function () {
         {
             $key = $params['Key']['ckey']['S'];
             unset($this->items[$key]);
+
             return [];
         }
 
         public function getItem(array $params): array
         {
             $key = $params['Key']['ckey']['S'];
+
             return isset($this->items[$key]) ? ['Item' => $this->items[$key]] : [];
         }
 
@@ -37,6 +40,7 @@ beforeEach(function () {
         {
             $key = $params['Item']['ckey']['S'];
             $this->items[$key] = $params['Item'];
+
             return [];
         }
 

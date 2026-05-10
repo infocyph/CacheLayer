@@ -13,9 +13,15 @@ use RuntimeException;
 class MemCacheAdapter extends AbstractCacheAdapter
 {
     private readonly Memcached $mc;
+
     private readonly string $ns;
+
+    /** @var array<string, bool> */
     private array $knownKeys = [];
 
+    /**
+     * @param array<int, array{0:string,1:int,2:int}> $servers
+     */
     public function __construct(
         string $namespace = 'default',
         array $servers = [['127.0.0.1', 11211, 0]],
@@ -37,6 +43,7 @@ class MemCacheAdapter extends AbstractCacheAdapter
         $this->mc->flush();
         $this->deferred = [];
         $this->knownKeys = [];
+
         return true;
     }
 
@@ -49,14 +56,19 @@ class MemCacheAdapter extends AbstractCacheAdapter
     {
         $this->mc->delete($this->map($key));
         unset($this->knownKeys[$key]);
+
         return true;
     }
 
+    /**
+     * @param list<string> $keys
+     */
     public function deleteItems(array $keys): bool
     {
         foreach ($keys as $k) {
             $this->deleteItem($k);
         }
+
         return true;
     }
 
@@ -67,30 +79,32 @@ class MemCacheAdapter extends AbstractCacheAdapter
 
     public function getItem(string $key): MemCacheItem
     {
-        $raw = $this->mc->get($this->map($key));
+        $mappedKey = $this->map($key);
+        $raw = $this->mc->get($mappedKey);
         if ($this->mc->getResultCode() === Memcached::RES_SUCCESS && is_string($raw)) {
-            $record = CachePayloadCodec::decode($raw);
-            if ($record !== null && !CachePayloadCodec::isExpired($record['expires'])) {
-                return new MemCacheItem(
-                    $this,
-                    $key,
-                    $record['value'],
-                    true,
-                    CachePayloadCodec::toDateTime($record['expires']),
-                );
+            $item = $this->hitItemFromBlob($key, $raw);
+            if ($item instanceof MemCacheItem) {
+                return $item;
             }
-            $this->mc->delete($this->map($key));
+
+            $this->mc->delete($mappedKey);
             unset($this->knownKeys[$key]);
         }
-        return new MemCacheItem($this, $key);
+
+        return $this->missItem($key);
     }
 
     public function hasItem(string $key): bool
     {
         $this->mc->get($this->map($key));
-        return $this->mc->getResultCode() === \Memcached::RES_SUCCESS;
+
+        return $this->mc->getResultCode() === Memcached::RES_SUCCESS;
     }
 
+    /**
+     * @param list<string> $keys
+     * @return array<string, MemCacheItem>
+     */
     public function multiFetch(array $keys): array
     {
         if ($keys === []) {
@@ -98,29 +112,21 @@ class MemCacheAdapter extends AbstractCacheAdapter
         }
 
         $prefixed = array_map($this->map(...), $keys);
-        $raw = $this->mc->getMulti($prefixed, Memcached::GET_PRESERVE_ORDER) ?: [];
+        $raw = $this->mc->getMulti($prefixed, Memcached::GET_PRESERVE_ORDER);
+        if (!is_array($raw)) {
+            $raw = [];
+        }
 
         $items = [];
         $stale = [];
         $staleLogicalKeys = [];
         foreach ($keys as $k) {
             $p = $this->map($k);
-            if (isset($raw[$p])) {
-                $record = CachePayloadCodec::decode((string) $raw[$p]);
-                if ($record !== null && !CachePayloadCodec::isExpired($record['expires'])) {
-                    $items[$k] = new MemCacheItem(
-                        $this,
-                        $k,
-                        $record['value'],
-                        true,
-                        CachePayloadCodec::toDateTime($record['expires']),
-                    );
-                    continue;
-                }
-                $stale[] = $p;
-                $staleLogicalKeys[] = $k;
+            if (isset($raw[$p]) && $this->appendFetchedHit($items, $stale, $staleLogicalKeys, $k, $p, $raw[$p])) {
+                continue;
             }
-            $items[$k] = new MemCacheItem($this, $k);
+
+            $items[$k] = $this->missItem($k);
         }
 
         if ($stale !== []) {
@@ -144,6 +150,7 @@ class MemCacheAdapter extends AbstractCacheAdapter
         if ($ttl === 0) {
             $this->mc->delete($this->map($item->getKey()));
             unset($this->knownKeys[$item->getKey()]);
+
             return true;
         }
 
@@ -152,12 +159,43 @@ class MemCacheAdapter extends AbstractCacheAdapter
         if ($ok) {
             $this->knownKeys[$item->getKey()] = true;
         }
+
         return $ok;
     }
 
     protected function supportsItem(CacheItemInterface $item): bool
     {
         return $item instanceof MemCacheItem;
+    }
+
+    /**
+     * @param array<string, MemCacheItem> $items
+     * @param list<string> $stale
+     * @param list<string> $staleLogicalKeys
+     */
+    private function appendFetchedHit(
+        array &$items,
+        array &$stale,
+        array &$staleLogicalKeys,
+        string $logicalKey,
+        string $mappedKey,
+        mixed $rawEntry,
+    ): bool {
+        if (!is_string($rawEntry)) {
+            return false;
+        }
+
+        $item = $this->hitItemFromBlob($logicalKey, $rawEntry);
+        if ($item instanceof MemCacheItem) {
+            $items[$logicalKey] = $item;
+
+            return true;
+        }
+
+        $stale[] = $mappedKey;
+        $staleLogicalKeys[] = $logicalKey;
+
+        return false;
     }
 
     /**
@@ -177,7 +215,10 @@ class MemCacheAdapter extends AbstractCacheAdapter
             return;
         }
 
-        $keys = $this->stripNamespace(array_keys($dump[$server]), $pref);
+        $keys = $this->stripNamespace(array_values(array_filter(
+            array_map(strval(...), array_keys($dump[$server])),
+            static fn(string $value): bool => $value !== '',
+        )), $pref);
 
         foreach ($keys as $key) {
             if (isset($seen[$key])) {
@@ -191,7 +232,6 @@ class MemCacheAdapter extends AbstractCacheAdapter
 
     /**
      * @param array<mixed> $items
-     *
      * @return list<int>
      */
     private function extractSlabIds(array $items): array
@@ -209,11 +249,17 @@ class MemCacheAdapter extends AbstractCacheAdapter
         return array_values(array_unique($ids));
     }
 
+    /**
+     * @return list<string>
+     */
     private function fastKnownKeys(): array
     {
         return $this->knownKeys ? array_keys($this->knownKeys) : [];
     }
 
+    /**
+     * @return list<string>
+     */
     private function fetchKeys(): array
     {
         if ($quick = $this->fastKnownKeys()) {
@@ -224,21 +270,54 @@ class MemCacheAdapter extends AbstractCacheAdapter
         if ($keys = $this->keysFromGetAll($pref)) {
             return $keys;
         }
+
         return $this->keysFromSlabDump($pref);
     }
 
+    private function hitItemFromBlob(string $key, string $blob): ?MemCacheItem
+    {
+        $record = $this->decodeRecordFromBlob($blob);
+        if ($record === null) {
+            return null;
+        }
+
+        return new MemCacheItem(
+            $this,
+            $key,
+            $record['value'],
+            true,
+            CachePayloadCodec::toDateTime($record['expires']),
+        );
+    }
+
+    /**
+     * @return list<string>
+     */
     private function keysFromGetAll(string $pref): array
     {
         $all = $this->mc->getAllKeys();
         if (!is_array($all)) {
             return [];
         }
-        return $this->stripNamespace($all, $pref);
+
+        $keys = [];
+        foreach ($all as $key) {
+            if (is_string($key)) {
+                $keys[] = $key;
+            }
+        }
+
+        return $this->stripNamespace($keys, $pref);
     }
 
+    /**
+     * @return list<string>
+     */
     private function keysFromSlabDump(string $pref): array
     {
+        /** @var list<string> $out */
         $out = [];
+        /** @var array<string, bool> $seen */
         $seen = [];
 
         foreach ($this->slabIdsByServer() as $server => $slabIds) {
@@ -255,6 +334,11 @@ class MemCacheAdapter extends AbstractCacheAdapter
         return $this->ns . ':' . $key;
     }
 
+    private function missItem(string $key): MemCacheItem
+    {
+        return new MemCacheItem($this, $key);
+    }
+
     /**
      * @return array<string, list<int>>
      */
@@ -262,9 +346,22 @@ class MemCacheAdapter extends AbstractCacheAdapter
     {
         $stats = $this->mc->getStats('items');
 
-        return array_map($this->extractSlabIds(...), $stats);
+        $mapped = [];
+        foreach ($stats as $server => $items) {
+            if (!is_string($server) || !is_array($items)) {
+                continue;
+            }
+
+            $mapped[$server] = $this->extractSlabIds($items);
+        }
+
+        return $mapped;
     }
 
+    /**
+     * @param array<int|string, string> $fullKeys
+     * @return list<string>
+     */
     private function stripNamespace(array $fullKeys, string $pref): array
     {
         return array_values(array_map(

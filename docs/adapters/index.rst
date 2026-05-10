@@ -12,7 +12,7 @@ Choosing quickly:
 * Start with ``file`` or ``pdo`` for most applications.
 * Use ``memory``/``apcu`` for fastest local access.
 * Use ``redis``/``memcache`` for distributed deployments.
-* Use cloud adapters (``mongodb``, ``dynamoDb``, ``s3``) when cache must live outside app hosts.
+* Use cloud adapters (``mongodb``, ``dynamoDb``) when cache must live outside app hosts.
 
 .. toctree::
    :maxdepth: 1
@@ -32,5 +32,4 @@ Choosing quickly:
    shared-memory
    mongodb
    dynamodb
-   s3
    serialization

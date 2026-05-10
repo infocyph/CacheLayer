@@ -62,7 +62,6 @@ The facade exposes factory methods for all bundled adapters:
 * ``Cache::chain(array $pools)``
 * ``Cache::mongodb(string $namespace = 'default', ?object $collection = null, ?object $client = null, string $database = 'cachelayer', string $collectionName = 'entries', string $uri = 'mongodb://127.0.0.1:27017')``
 * ``Cache::dynamoDb(string $namespace = 'default', string $table = 'cachelayer_entries', ?object $client = null, array $config = [])``
-* ``Cache::s3(string $namespace = 'default', string $bucket = 'cachelayer', ?object $client = null, array $config = [], string $prefix = 'cachelayer')``
 
 ``local()`` chooses APCu when available (``extension_loaded('apcu')`` and ``apcu_enabled()``), otherwise File cache.
 

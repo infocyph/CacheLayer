@@ -6,13 +6,12 @@ use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Cache\Item\FileCacheItem;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 use Infocyph\CacheLayer\Serializer\ValueSerializer;
-use Psr\Cache\InvalidArgumentException as Psr6InvalidArgumentException;
 
 beforeEach(function () {
     ValueSerializer::clearResourceHandlers();
 
     /* fresh temp directory for each run */
-    $this->cacheDir = sys_get_temp_dir() . '/pest_cache_' . uniqid();
+    $this->cacheDir = sys_get_temp_dir().'/pest_cache_'.uniqid();
 
     /* build a file-backed cachepool via static factory */
     $this->cache = Cache::file('tests', $this->cacheDir);
@@ -21,13 +20,14 @@ beforeEach(function () {
         'stream',
         // ----- wrap ----------------------------------------------------
         function (mixed $res): array {
-            if (!is_resource($res)) {
+            if (! is_resource($res)) {
                 throw new InvalidArgumentException('Expected resource');
             }
             $meta = stream_get_meta_data($res);
             rewind($res);
+
             return [
-                'mode'    => $meta['mode'],
+                'mode' => $meta['mode'],
                 'content' => stream_get_contents($res),
             ];
         },
@@ -36,6 +36,7 @@ beforeEach(function () {
             $s = fopen('php://memory', $data['mode']);
             fwrite($s, $data['content']);
             rewind($s);
+
             return $s;                                 // <- real resource
         }
     );
@@ -43,11 +44,11 @@ beforeEach(function () {
 
 afterEach(function () {
     /* recursive dir cleanup */
-    if (!is_dir($this->cacheDir)) {
+    if (! is_dir($this->cacheDir)) {
         return;
     }
 
-    $it  = new RecursiveDirectoryIterator($this->cacheDir, FilesystemIterator::SKIP_DOTS);
+    $it = new RecursiveDirectoryIterator($this->cacheDir, FilesystemIterator::SKIP_DOTS);
     $rim = new RecursiveIteratorIterator($it, RecursiveIteratorIterator::CHILD_FIRST);
 
     foreach ($rim as $file) {
@@ -73,6 +74,7 @@ test('get returns default when key missing (file)', function () {
     // Callable default
     $computed = $this->cache->get('x', function (FileCacheItem $item) {
         $item->expiresAfter(1);
+
         return 'xyz';
     });
     expect($computed)->toBe('xyz');
@@ -136,20 +138,20 @@ test('magic __get/__set/__isset/__unset', function () {
     expect(isset($this->cache->alpha))->toBeFalse();
 });
 test('runtime re-namespace and directory swap', function () {
-    $newDir = sys_get_temp_dir() . '/pest_cache_new_' . uniqid();
+    $newDir = sys_get_temp_dir().'/pest_cache_new_'.uniqid();
 
     $this->cache->setNamespaceAndDirectory('newns', $newDir);
 
     expect($this->cache->set('foo', 'bar'))->toBeTrue()
         ->and($this->cache->get('foo'))->toBe('bar');
 
-    $namespaceDir = $newDir . '/cache_newns';
+    $namespaceDir = $newDir.'/cache_newns';
     expect(is_dir($namespaceDir))
         ->toBeTrue()
-        ->and(glob($namespaceDir . '/*.cache'))->not->toBeEmpty();
+        ->and(glob($namespaceDir.'/*.cache'))->not->toBeEmpty();
 
     /* manual clean-up of this secondary dir (afterEach cleans only first dir) */
-    foreach (glob($namespaceDir . '/*') as $f) {
+    foreach (glob($namespaceDir.'/*') as $f) {
         @unlink($f);
     }
     @rmdir($namespaceDir);
@@ -180,16 +182,16 @@ test('stream resource round-trip', function () {
 });
 
 test('custom resource handler works', function () {
-    $dirPath  = __DIR__;                // path we will open/restore
-    $dirRes   = opendir($dirPath);
-    $resType  = get_resource_type($dirRes);   // "stream"
+    $dirPath = __DIR__;                // path we will open/restore
+    $dirRes = opendir($dirPath);
+    $resType = get_resource_type($dirRes);   // "stream"
     ValueSerializer::clearResourceHandlers();
 
     // register handler *capturing* $dirPath
     ValueSerializer::registerResourceHandler(
         $resType,
-        fn ($r)           => ['path' => $dirPath],          // wrap
-        fn (array $data)  => opendir($data['path'])         // restore
+        fn ($r) => ['path' => $dirPath],          // wrap
+        fn (array $data) => opendir($data['path'])         // restore
     );
 
     $this->cache->getItem('dirRes')->set($dirRes)->save();
@@ -232,5 +234,3 @@ test('file adapter bulk getItems()', function () {
         ->and($items['b']->get())->toBe(2)
         ->and($items['c']->isHit())->toBeFalse();
 });
-
-

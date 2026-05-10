@@ -7,13 +7,17 @@ namespace Infocyph\CacheLayer\Serializer;
 use Closure;
 use InvalidArgumentException;
 
-use function Opis\Closure\{serialize as oc_serialize, unserialize as oc_unserialize};
+use function Opis\Closure\serialize as oc_serialize;
+use function Opis\Closure\unserialize as oc_unserialize;
 
 final class ValueSerializer
 {
     private const array NATIVE_SERIALIZED_PREFIXES = ['N', 'b', 'i', 'd', 's', 'a'];
+
     private const int SERIALIZED_CLOSURE_MEMO_LIMIT = 2048;
+
     private static bool $allowClosurePayloads = true;
+
     private static bool $allowObjectPayloads = true;
 
     /** @var array<string,array{wrap:callable,restore:callable}> */
@@ -47,7 +51,8 @@ final class ValueSerializer
      *
      * @param string $payload The encoded string
      * @param bool $base64 True ⇒ expect base64; false ⇒ raw
-     * @return mixed                   Original value
+     * @return mixed Original value
+     *
      * @throws InvalidArgumentException Forwarded from ::unserialize()
      */
     public static function decode(string $payload, bool $base64 = true): mixed
@@ -71,12 +76,14 @@ final class ValueSerializer
      *
      * @param mixed $value Any PHP value
      * @param bool $base64 True ⇒ wrap with base64; false ⇒ raw
-     * @return string                  Encoded payload
+     * @return string Encoded payload
+     *
      * @throws InvalidArgumentException Forwarded from ::serialize()
      */
     public static function encode(mixed $value, bool $base64 = true): string
     {
         $blob = self::serialize($value);
+
         return $base64 ? base64_encode($blob) : $blob;
     }
 
@@ -88,7 +95,6 @@ final class ValueSerializer
      * Opis closures.
      *
      * @param string $str The string to check.
-     *
      * @return bool True if the string is a serialized Opis closure, false otherwise.
      */
     public static function isSerializedClosure(string $str): bool
@@ -145,7 +151,6 @@ final class ValueSerializer
      * serialize function.
      *
      * @param mixed $value The value to be serialized, which may contain resources.
-     *
      * @return string The serialized string representation of the value.
      *
      * @throws InvalidArgumentException If a resource type has no registered handler.
@@ -162,7 +167,6 @@ final class ValueSerializer
         return oc_serialize($wrapped);
     }
 
-
     /**
      * Unserializes a given string into its original value.
      *
@@ -172,7 +176,6 @@ final class ValueSerializer
      * within the resulting value using registered resource handlers.
      *
      * @param string $blob The serialized string to be converted back to its original form.
-     *
      * @return mixed The original value, with any resources restored.
      */
     public static function unserialize(string $blob): mixed
@@ -196,14 +199,12 @@ final class ValueSerializer
         return self::unwrapRecursive(oc_unserialize($blob));
     }
 
-
     /**
      * Reverse {@see wrap} by recursively unwrapping values that were wrapped by
      * {@see wrap}. This method is similar to {@see unserialize}, but it does not
      * involve serialisation.
      *
      * @param mixed $resource A value that may contain wrapped resources.
-     *
      * @return mixed The same value with any wrapped resources restored.
      */
     public static function unwrap(mixed $resource): mixed
@@ -227,7 +228,6 @@ final class ValueSerializer
         );
     }
 
-
     /**
      * Wraps resources within a given value.
      *
@@ -236,7 +236,6 @@ final class ValueSerializer
      * resource handlers.
      *
      * @param mixed $value The value to be wrapped, which may contain resources.
-     *
      * @return mixed The value with any resources wrapped, or the original value if no resources are found.
      */
     public static function wrap(mixed $value): mixed
@@ -248,6 +247,7 @@ final class ValueSerializer
     {
         if (!is_array($value)) {
             self::assertAllowedScalarOrNode($value);
+
             return;
         }
 
@@ -279,6 +279,7 @@ final class ValueSerializer
     private static function isNativeSerializedPayload(string $blob): bool
     {
         $first = $blob[0] ?? '';
+
         return in_array($first, self::NATIVE_SERIALIZED_PREFIXES, true);
     }
 
@@ -287,12 +288,11 @@ final class ValueSerializer
         if (!array_key_exists($key, self::$serializedClosureMemo)
             && count(self::$serializedClosureMemo) >= self::SERIALIZED_CLOSURE_MEMO_LIMIT) {
             $oldest = array_key_first(self::$serializedClosureMemo);
-            if ($oldest !== null) {
-                unset(self::$serializedClosureMemo[$oldest]);
-            }
+            unset(self::$serializedClosureMemo[$oldest]);
         }
 
         self::$serializedClosureMemo[$key] = $value;
+
         return $value;
     }
 
@@ -320,7 +320,6 @@ final class ValueSerializer
      * that were wrapped by {@see wrapRecursive}.
      *
      * @param mixed $resource A value that may contain wrapped resources.
-     *
      * @return mixed The same value with any wrapped resources restored.
      */
     private static function unwrapRecursive(mixed $resource): mixed
@@ -328,6 +327,8 @@ final class ValueSerializer
         if (
             is_array($resource)
             && ($resource['__wrapped_resource'] ?? false)
+            && is_string($resource['type'] ?? null)
+            && array_key_exists('data', $resource)
             && isset(self::$resourceHandlers[$resource['type']])
         ) {
             return (self::$resourceHandlers[$resource['type']]['restore'])($resource['data']);
@@ -338,6 +339,7 @@ final class ValueSerializer
                 $resource[$key] = self::unwrapRecursive($item);
             }
         }
+
         return $resource;
     }
 
@@ -354,7 +356,6 @@ final class ValueSerializer
      * element in the array.
      *
      * @param mixed $resource The value to be wrapped, which may contain resources.
-     *
      * @return mixed The value with any resources wrapped, or the original value if no resources are found.
      *
      * @throws InvalidArgumentException If no handler is registered for a resource type.
@@ -367,6 +368,7 @@ final class ValueSerializer
             if (!$arr) {
                 throw new InvalidArgumentException("No handler for resource type '$type'");
             }
+
             return [
                 '__wrapped_resource' => true,
                 'type' => $type,
@@ -379,6 +381,7 @@ final class ValueSerializer
                 $resource[$key] = self::wrapRecursive($value);
             }
         }
+
         return $resource;
     }
 }

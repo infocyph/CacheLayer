@@ -39,6 +39,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter
 
         /** @var object $selected */
         $selected = $client->selectCollection($database, $collection);
+
         return new self($selected, $namespace);
     }
 
@@ -46,26 +47,33 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter
     {
         $this->collection->deleteMany(['ns' => $this->ns]);
         $this->deferred = [];
+
         return true;
     }
 
     public function count(): int
     {
-        return (int) $this->collection->countDocuments([
+        $count = $this->collection->countDocuments([
             'ns' => $this->ns,
             '$or' => [
                 ['expires' => null],
                 ['expires' => ['$gt' => time()]],
             ],
         ]);
+
+        return is_numeric($count) ? max(0, (int) $count) : 0;
     }
 
     public function deleteItem(string $key): bool
     {
         $this->collection->deleteOne(['_id' => $this->map($key)]);
+
         return true;
     }
 
+    /**
+     * @param list<string> $keys
+     */
     public function deleteItems(array $keys): bool
     {
         foreach ($keys as $key) {
@@ -78,78 +86,56 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter
     public function getItem(string $key): GenericCacheItem
     {
         $doc = $this->collection->findOne(['_id' => $this->map($key)]);
-        $row = $this->toArray($doc);
+        $row = AdapterValueNormalizer::fromJsonOrArrayLike($doc);
 
-        if ($row === null || !is_string($row['payload'] ?? null)) {
-            return new GenericCacheItem($this, $key);
+        if ($row === null) {
+            return $this->genericMiss($key);
         }
 
-        $expiresAt = is_numeric($row['expires'] ?? null) ? (int) $row['expires'] : null;
-        if (CachePayloadCodec::isExpired($expiresAt)) {
-            $this->deleteItem($key);
-            return new GenericCacheItem($this, $key);
-        }
+        $payload = $row['payload'] ?? null;
 
-        $blob = base64_decode($row['payload'], true);
-        if (!is_string($blob)) {
-            $this->deleteItem($key);
-            return new GenericCacheItem($this, $key);
-        }
-
-        $record = CachePayloadCodec::decode($blob);
-        if ($record === null || CachePayloadCodec::isExpired($record['expires'])) {
-            $this->deleteItem($key);
-            return new GenericCacheItem($this, $key);
-        }
-
-        $item = new GenericCacheItem($this, $key);
-        $item->set($record['value']);
-        if ($record['expires'] !== null) {
-            $item->expiresAt(CachePayloadCodec::toDateTime($record['expires']));
-        }
-
-        return $item;
+        return $this->genericFromBase64($key, is_string($payload) ? $payload : null);
     }
 
     public function hasItem(string $key): bool
     {
-        return $this->getItem($key)->isHit();
+        $count = $this->collection->countDocuments([
+            '_id' => $this->map($key),
+            '$or' => [
+                ['expires' => null],
+                ['expires' => ['$gt' => time()]],
+            ],
+        ]);
+
+        return is_numeric($count) && (int) $count > 0;
     }
 
+    /**
+     * @param list<string> $keys
+     * @return array<string, GenericCacheItem>
+     */
     public function multiFetch(array $keys): array
     {
-        $items = [];
-        foreach ($keys as $key) {
-            $items[(string) $key] = $this->getItem((string) $key);
-        }
-
-        return $items;
+        return $this->multiFetchItems($keys, $this->getItem(...));
     }
 
     public function save(CacheItemInterface $item): bool
     {
-        if (!$this->supportsItem($item)) {
-            return false;
-        }
-
-        $expires = CachePayloadCodec::expirationFromItem($item);
-        if ($expires['ttl'] === 0) {
-            return $this->deleteItem($item->getKey());
-        }
-
-        $this->collection->updateOne(
-            ['_id' => $this->map($item->getKey())],
-            [
-                '$set' => [
-                    'ns' => $this->ns,
-                    'payload' => base64_encode(CachePayloadCodec::encode($item->get(), $expires['expiresAt'])),
-                    'expires' => $expires['expiresAt'],
+        return $this->saveEncoded($item, function (CacheItemInterface $saveItem, array $expires): bool {
+            $this->collection->updateOne(
+                ['_id' => $this->map($saveItem->getKey())],
+                [
+                    '$set' => [
+                        'ns' => $this->ns,
+                        'payload' => base64_encode(CachePayloadCodec::encode($saveItem->get(), $expires['expiresAt'])),
+                        'expires' => $expires['expiresAt'],
+                    ],
                 ],
-            ],
-            ['upsert' => true],
-        );
+                ['upsert' => true],
+            );
 
-        return true;
+            return true;
+        });
     }
 
     protected function supportsItem(CacheItemInterface $item): bool
@@ -160,35 +146,5 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter
     private function map(string $key): string
     {
         return $this->ns . ':' . $key;
-    }
-
-    /**
-     * @return array<string, mixed>|null
-     */
-    private function toArray(mixed $value): ?array
-    {
-        if ($value === null) {
-            return null;
-        }
-
-        if (is_array($value)) {
-            return $value;
-        }
-
-        if ($value instanceof \JsonSerializable) {
-            $json = $value->jsonSerialize();
-            return is_array($json) ? $json : null;
-        }
-
-        if ($value instanceof \ArrayAccess && $value instanceof \Traversable) {
-            $out = [];
-            foreach ($value as $k => $v) {
-                $out[(string) $k] = $v;
-            }
-
-            return $out;
-        }
-
-        return null;
     }
 }

@@ -2,8 +2,9 @@
 
 use Infocyph\CacheLayer\Cache\Cache;
 
-if (!in_array('mysql', PDO::getAvailableDrivers(), true)) {
+if (! in_array('mysql', PDO::getAvailableDrivers(), true)) {
     test('MySQL PDO driver not present')->skip();
+
     return;
 }
 
@@ -20,6 +21,7 @@ try {
     $probe->query('SELECT 1');
 } catch (Throwable) {
     test('MySQL server unreachable')->skip();
+
     return;
 }
 

@@ -5,13 +5,16 @@ declare(strict_types=1);
 namespace Infocyph\CacheLayer\Cache\Lock;
 
 use PDO;
-use RuntimeException;
 use Throwable;
 
 final readonly class PdoLockProvider implements LockProviderInterface
 {
+    use GeneratesLockTokens;
+
     private string $driver;
+
     private FileLockProvider $fallback;
+
     private int $retrySleepMicros;
 
     public function __construct(
@@ -21,7 +24,8 @@ final readonly class PdoLockProvider implements LockProviderInterface
         ?FileLockProvider $fallback = null,
     ) {
         $this->retrySleepMicros = max(1_000, $retrySleepMicros);
-        $this->driver = (string) $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+        $driver = $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+        $this->driver = is_string($driver) ? $driver : '';
         $this->fallback = $fallback ?? new FileLockProvider();
     }
 
@@ -47,23 +51,11 @@ final readonly class PdoLockProvider implements LockProviderInterface
         };
     }
 
-    private static function generateToken(): ?string
-    {
-        try {
-            return bin2hex(random_bytes(16));
-        } catch (Throwable) {
-            return null;
-        }
-    }
-
     private static function signedCrc32(string $value): int
     {
         $u = crc32($value);
-        if ($u === false) {
-            throw new RuntimeException('Unable to hash advisory lock key.');
-        }
 
-        return $u > 0x7fffffff ? $u - 0x100000000 : $u;
+        return $u > 0x7FFFFFFF ? $u - 0x100000000 : $u;
     }
 
     private function acquireMysql(string $key, float $waitSeconds): ?LockHandle
@@ -110,7 +102,7 @@ final readonly class PdoLockProvider implements LockProviderInterface
                 $stmt = $this->pdo->prepare('SELECT pg_try_advisory_lock(:k)');
                 $stmt->execute([':k' => $advisoryKey]);
                 $result = $stmt->fetchColumn();
-                if ($result === true || $result === 1 || $result === 't' || $result === '1') {
+                if ($result === 1 || $result === 't' || $result === '1') {
                     return new LockHandle($lockKey, $token, $advisoryKey);
                 }
             } catch (Throwable) {

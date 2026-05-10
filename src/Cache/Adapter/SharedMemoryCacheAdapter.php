@@ -11,8 +11,11 @@ use RuntimeException;
 final class SharedMemoryCacheAdapter extends AbstractCacheAdapter
 {
     private const int VAR_ID = 1;
+
     private readonly string $ns;
+
     private readonly mixed $segment;
+
     private readonly string $tokenFile;
 
     public function __construct(
@@ -48,6 +51,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter
     public function clear(): bool
     {
         $this->deferred = [];
+
         return shm_put_var($this->segment, self::VAR_ID, []);
     }
 
@@ -62,6 +66,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter
             if ($record === null || CachePayloadCodec::isExpired($record['expires'])) {
                 unset($store[$key]);
                 $changed = true;
+
                 continue;
             }
 
@@ -79,9 +84,13 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter
     {
         $store = $this->loadStore();
         unset($store[$this->map($key)]);
+
         return $this->store($store);
     }
 
+    /**
+     * @param list<string> $keys
+     */
     public function deleteItems(array $keys): bool
     {
         $store = $this->loadStore();
@@ -97,24 +106,16 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter
         $mapped = $this->map($key);
         $store = $this->loadStore();
         $blob = $store[$mapped] ?? null;
-        if (!is_string($blob)) {
-            return new GenericCacheItem($this, $key);
-        }
 
-        $record = CachePayloadCodec::decode($blob);
-        if ($record === null || CachePayloadCodec::isExpired($record['expires'])) {
-            unset($store[$mapped]);
-            $this->store($store);
-            return new GenericCacheItem($this, $key);
-        }
+        return $this->genericFromBlobWithInvalidator(
+            $key,
+            is_string($blob) ? $blob : null,
+            function () use (&$store, $mapped): bool {
+                unset($store[$mapped]);
 
-        $item = new GenericCacheItem($this, $key);
-        $item->set($record['value']);
-        if ($record['expires'] !== null) {
-            $item->expiresAt(CachePayloadCodec::toDateTime($record['expires']));
-        }
-
-        return $item;
+                return $this->store($store);
+            },
+        );
     }
 
     public function hasItem(string $key): bool
@@ -122,30 +123,23 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter
         return $this->getItem($key)->isHit();
     }
 
+    /**
+     * @param list<string> $keys
+     * @return array<string, GenericCacheItem>
+     */
     public function multiFetch(array $keys): array
     {
-        $items = [];
-        foreach ($keys as $key) {
-            $items[(string) $key] = $this->getItem((string) $key);
-        }
-
-        return $items;
+        return $this->multiFetchItems($keys, $this->getItem(...));
     }
 
     public function save(CacheItemInterface $item): bool
     {
-        if (!$this->supportsItem($item)) {
-            return false;
-        }
+        return $this->saveEncoded($item, function (CacheItemInterface $saveItem, array $expires): bool {
+            $store = $this->loadStore();
+            $store[$this->map($saveItem->getKey())] = CachePayloadCodec::encode($saveItem->get(), $expires['expiresAt']);
 
-        $expires = CachePayloadCodec::expirationFromItem($item);
-        if ($expires['ttl'] === 0) {
-            return $this->deleteItem($item->getKey());
-        }
-
-        $store = $this->loadStore();
-        $store[$this->map($item->getKey())] = CachePayloadCodec::encode($item->get(), $expires['expiresAt']);
-        return $this->store($store);
+            return $this->store($store);
+        });
     }
 
     protected function supportsItem(CacheItemInterface $item): bool
@@ -153,6 +147,9 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter
         return $item instanceof GenericCacheItem;
     }
 
+    /**
+     * @return array<string, string>
+     */
     private function loadStore(): array
     {
         if (!shm_has_var($this->segment, self::VAR_ID)) {
@@ -160,7 +157,19 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter
         }
 
         $store = shm_get_var($this->segment, self::VAR_ID);
-        return is_array($store) ? $store : [];
+
+        if (!is_array($store)) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($store as $key => $value) {
+            if (is_string($key) && is_string($value)) {
+                $out[$key] = $value;
+            }
+        }
+
+        return $out;
     }
 
     private function map(string $key): string
@@ -168,6 +177,9 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter
         return $this->ns . ':' . $key;
     }
 
+    /**
+     * @param array<string, string> $store
+     */
     private function store(array $store): bool
     {
         return shm_put_var($this->segment, self::VAR_ID, $store);

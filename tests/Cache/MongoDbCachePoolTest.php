@@ -4,7 +4,8 @@ use Infocyph\CacheLayer\Cache\Adapter\MongoDbCacheAdapter;
 use Infocyph\CacheLayer\Cache\Cache;
 
 beforeEach(function () {
-    $this->collection = new class {
+    $this->collection = new class
+    {
         /** @var array<string, array<string, mixed>> */
         public array $docs = [];
 

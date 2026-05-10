@@ -3,9 +3,11 @@
 use Infocyph\CacheLayer\Cache\Cache;
 
 beforeEach(function () {
-    $this->cluster = new class {
+    $this->cluster = new class
+    {
         /** @var array<string, array{value:string,expires:int|null}> */
         private array $kv = [];
+
         /** @var array<string, array<string, bool>> */
         private array $sets = [];
 
@@ -30,12 +32,14 @@ beforeEach(function () {
         public function exists(string $key): int
         {
             $this->pruneKey($key);
+
             return isset($this->kv[$key]) ? 1 : 0;
         }
 
         public function get(string $key): string|false
         {
             $this->pruneKey($key);
+
             return $this->kv[$key]['value'] ?? false;
         }
 
@@ -43,6 +47,7 @@ beforeEach(function () {
         {
             $exists = isset($this->sets[$key][$member]);
             $this->sets[$key][$member] = true;
+
             return $exists ? 0 : 1;
         }
 
@@ -58,29 +63,32 @@ beforeEach(function () {
 
         public function sRem(string $key, string $member): int
         {
-            if (!isset($this->sets[$key][$member])) {
+            if (! isset($this->sets[$key][$member])) {
                 return 0;
             }
 
             unset($this->sets[$key][$member]);
+
             return 1;
         }
 
         public function set(string $key, string $value): bool
         {
             $this->kv[$key] = ['value' => $value, 'expires' => null];
+
             return true;
         }
 
         public function setex(string $key, int $ttl, string $value): bool
         {
             $this->kv[$key] = ['value' => $value, 'expires' => time() + max(1, $ttl)];
+
             return true;
         }
 
         private function pruneKey(string $key): void
         {
-            if (!isset($this->kv[$key])) {
+            if (! isset($this->kv[$key])) {
                 return;
             }
 
