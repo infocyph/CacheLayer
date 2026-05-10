@@ -55,7 +55,9 @@ afterEach(function () {
     // Release SQLite handles before unlink on Windows.
     $this->cache = null;
     gc_collect_cycles();
-    @unlink($this->dbFile);
+    if (is_file($this->dbFile)) {
+        unlink($this->dbFile);
+    }
 });
 
 /* ── 1. convenience set / get ───────────────────────────────────── */

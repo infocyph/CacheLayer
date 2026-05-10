@@ -25,7 +25,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
     {
         $ok = true;
         foreach (glob($this->dir . '*.php') ?: [] as $file) {
-            $ok = (@unlink($file) || !is_file($file)) && $ok;
+            $ok = (!is_file($file) || unlink($file)) && $ok;
             $this->invalidateOpcache($file);
         }
 
@@ -38,7 +38,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
     {
         $count = 0;
         foreach (glob($this->dir . '*.php') ?: [] as $file) {
-            $row = @require $file;
+            $row = require $file;
             if (!is_array($row) || !isset($row['p']) || !is_string($row['p'])) {
                 continue;
             }
@@ -60,7 +60,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
     public function deleteItem(string $key): bool
     {
         $file = $this->fileFor($key);
-        $ok = !is_file($file) || @unlink($file);
+        $ok = !is_file($file) || unlink($file);
         $this->invalidateOpcache($file);
 
         return $ok;
@@ -86,7 +86,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
             return $this->genericMiss($key);
         }
 
-        $row = @require $file;
+        $row = require $file;
         $payload = is_array($row) && is_string($row['p'] ?? null)
             ? $row['p']
             : null;
@@ -142,13 +142,17 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
         }
 
         if (file_put_contents($tmp, $code) === false) {
-            @unlink($tmp);
+            if (is_file($tmp)) {
+                unlink($tmp);
+            }
 
             return false;
         }
 
-        if (!@rename($tmp, $file)) {
-            @unlink($tmp);
+        if (!rename($tmp, $file)) {
+            if (is_file($tmp)) {
+                unlink($tmp);
+            }
 
             return false;
         }
@@ -178,11 +182,11 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
         $this->assertPathNotSymlink($baseDir, 'PHP cache base directory');
         $this->assertPathNotSymlink($this->dir, 'PHP cache directory');
 
-        if (!is_dir($baseDir) && !@mkdir($baseDir, 0700, true) && !is_dir($baseDir)) {
+        if (!is_dir($baseDir) && !mkdir($baseDir, 0700, true) && !is_dir($baseDir)) {
             throw new RuntimeException("Unable to create PHP cache base directory: {$baseDir}");
         }
 
-        if (!is_dir($this->dir) && !@mkdir($this->dir, 0700, true) && !is_dir($this->dir)) {
+        if (!is_dir($this->dir) && !mkdir($this->dir, 0700, true) && !is_dir($this->dir)) {
             throw new RuntimeException("Unable to create PHP cache directory: {$this->dir}");
         }
 
@@ -209,7 +213,9 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
     private function invalidateOpcache(string $file): void
     {
         if (function_exists('opcache_invalidate')) {
-            @opcache_invalidate($file, true);
+            if (is_file($file)) {
+                opcache_invalidate($file, true);
+            }
         }
     }
 }

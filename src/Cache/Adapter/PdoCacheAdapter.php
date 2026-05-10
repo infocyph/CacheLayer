@@ -257,7 +257,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
             throw new RuntimeException("Refusing symlinked SQLite cache directory: {$path}");
         }
 
-        if (!is_dir($path) && !@mkdir($path, $mode, true) && !is_dir($path)) {
+        if (!is_dir($path) && !mkdir($path, $mode, true) && !is_dir($path)) {
             throw new RuntimeException("Unable to create SQLite cache directory: {$path}");
         }
 

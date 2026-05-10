@@ -83,6 +83,9 @@ final class OnceMemoizer
         if (!is_string($file) || $file === '') {
             return $lineFingerprint;
         }
+        if (!is_readable($file)) {
+            return $lineFingerprint;
+        }
 
         $sourceKey = $file . ':' . $start . '-' . $end;
         $cached = $this->closureSourceMemo[$sourceKey] ?? null;
@@ -90,7 +93,7 @@ final class OnceMemoizer
             return $cached;
         }
 
-        $lines = @file($file, FILE_IGNORE_NEW_LINES);
+        $lines = file($file, FILE_IGNORE_NEW_LINES);
         if (!is_array($lines)) {
             return $lineFingerprint;
         }

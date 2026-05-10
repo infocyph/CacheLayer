@@ -19,10 +19,10 @@ jobs:
       php_versions: '["8.4","8.5"]'
       dependency_versions: '["prefer-lowest","prefer-stable"]'
       php_extensions: "apcu, mbstring, memcached, pdo, pdo_mysql, pdo_pgsql, pdo_sqlite, redis, sysvshm"
-      coverage: "xdebug"
       composer_flags: ""
       phpstan_memory_limit: "1G"
       psalm_threads: "1"
       run_analysis: true
       run_svg_report: true
       artifact_retention_days: 61
+

@@ -48,7 +48,9 @@ test('pdo defaults to sqlite driver when no dsn is provided', function () {
 
     $dbFile = PdoCacheAdapter::defaultSqliteFileForNamespace($namespace);
     $cache->clear();
-    @unlink($dbFile);
+    if (is_file($dbFile)) {
+        unlink($dbFile);
+    }
 });
 
 test('pdo factory configures pdo lock provider', function () {

@@ -23,6 +23,8 @@ final class NullCacheAdapter extends AbstractCacheAdapter
 
     public function deleteItem(string $key): bool
     {
+        unset($key);
+
         return true;
     }
 
@@ -31,6 +33,8 @@ final class NullCacheAdapter extends AbstractCacheAdapter
      */
     public function deleteItems(array $keys): bool
     {
+        unset($keys);
+
         return true;
     }
 
@@ -41,6 +45,8 @@ final class NullCacheAdapter extends AbstractCacheAdapter
 
     public function hasItem(string $key): bool
     {
+        unset($key);
+
         return false;
     }
 

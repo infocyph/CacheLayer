@@ -14,7 +14,7 @@ trait PollingLockProviderHelpers
     }
 
     /**
-     * @param callable(string,string,float):bool $attemptAcquire
+     * @param callable(string,string):bool $attemptAcquire
      */
     protected function acquireWithRetry(
         string $prefix,
@@ -30,7 +30,7 @@ trait PollingLockProviderHelpers
         }
 
         do {
-            if ($attemptAcquire($lockKey, $token, $waitSeconds)) {
+            if ($attemptAcquire($lockKey, $token)) {
                 return new LockHandle($lockKey, $token);
             }
 

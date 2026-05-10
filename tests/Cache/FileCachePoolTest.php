@@ -152,10 +152,16 @@ test('runtime re-namespace and directory swap', function () {
 
     /* manual clean-up of this secondary dir (afterEach cleans only first dir) */
     foreach (glob($namespaceDir.'/*') as $f) {
-        @unlink($f);
+        if (is_file($f)) {
+            unlink($f);
+        }
     }
-    @rmdir($namespaceDir);
-    @rmdir($newDir);
+    if (is_dir($namespaceDir)) {
+        rmdir($namespaceDir);
+    }
+    if (is_dir($newDir)) {
+        rmdir($newDir);
+    }
 });
 
 test('expiration honours TTL', function () {
@@ -190,7 +196,7 @@ test('custom resource handler works', function () {
     // register handler *capturing* $dirPath
     ValueSerializer::registerResourceHandler(
         $resType,
-        fn ($r) => ['path' => $dirPath],          // wrap
+        fn ($r) => ['path' => is_resource($r) ? $dirPath : $dirPath],          // wrap
         fn (array $data) => opendir($data['path'])         // restore
     );
 

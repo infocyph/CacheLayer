@@ -30,51 +30,8 @@ final class DynamoDbCacheAdapter extends AbstractCacheAdapter
 
     public function clear(): bool
     {
-        $keys = [];
-        $lastKey = null;
-
-        do {
-            $params = [
-                'TableName' => $this->table,
-                'FilterExpression' => '#ns = :ns',
-                'ProjectionExpression' => '#k',
-                'ExpressionAttributeNames' => [
-                    '#ns' => 'ns',
-                    '#k' => 'ckey',
-                ],
-                'ExpressionAttributeValues' => [
-                    ':ns' => ['S' => $this->ns],
-                ],
-            ];
-
-            if (is_array($lastKey)) {
-                $params['ExclusiveStartKey'] = $lastKey;
-            }
-
-            $result = AdapterValueNormalizer::fromArrayLikeOrToArray($this->client->scan($params)) ?? [];
-            $items = is_array($result['Items'] ?? null) ? $result['Items'] : [];
-            foreach ($items as $item) {
-                if (!is_array($item)) {
-                    continue;
-                }
-
-                if (is_array($item['ckey'] ?? null) && is_string($item['ckey']['S'] ?? null)) {
-                    $keys[] = $item['ckey']['S'];
-                }
-            }
-
-            $lastKey = isset($result['LastEvaluatedKey']) && is_array($result['LastEvaluatedKey'])
-                ? $result['LastEvaluatedKey']
-                : null;
-        } while ($lastKey !== null);
-
-        foreach (array_chunk($keys, 25) as $batch) {
-            $requests = array_map(
-                fn(string $key): array => ['DeleteRequest' => ['Key' => ['ckey' => ['S' => $key]]]],
-                $batch,
-            );
-            $this->client->batchWriteItem(['RequestItems' => [$this->table => $requests]]);
-        }
+        $keys = $this->scanAllKeysByNamespace();
+        $this->deleteBatches($keys);
 
         $this->deferred = [];
 
@@ -183,8 +140,99 @@ final class DynamoDbCacheAdapter extends AbstractCacheAdapter
         return $item instanceof GenericCacheItem;
     }
 
+    /**
+     * @param list<string> $keys
+     * @param array<string, mixed> $result
+     */
+    private function appendScanResultKeys(array &$keys, array $result): void
+    {
+        $items = is_array($result['Items'] ?? null) ? $result['Items'] : [];
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            if (is_array($item['ckey'] ?? null) && is_string($item['ckey']['S'] ?? null)) {
+                $keys[] = $item['ckey']['S'];
+            }
+        }
+    }
+
+    /**
+     * @param list<string> $keys
+     */
+    private function deleteBatches(array $keys): void
+    {
+        foreach (array_chunk($keys, 25) as $batch) {
+            $requests = array_map(
+                fn(string $key): array => ['DeleteRequest' => ['Key' => ['ckey' => ['S' => $key]]]],
+                $batch,
+            );
+            $this->client->batchWriteItem(['RequestItems' => [$this->table => $requests]]);
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $result
+     * @return array<string, mixed>|null
+     */
+    private function extractLastEvaluatedKey(array $result): ?array
+    {
+        $lastEvaluatedKey = $result['LastEvaluatedKey'] ?? null;
+        if (!is_array($lastEvaluatedKey)) {
+            return null;
+        }
+
+        return AdapterValueNormalizer::normalizeAssoc($lastEvaluatedKey);
+    }
+
     private function map(string $key): string
     {
         return $this->ns . ':' . $key;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function scanAllKeysByNamespace(): array
+    {
+        $keys = [];
+        $lastKey = null;
+
+        do {
+            $result = AdapterValueNormalizer::fromArrayLikeOrToArray(
+                $this->client->scan($this->scanParams($lastKey)),
+            ) ?? [];
+            $this->appendScanResultKeys($keys, $result);
+            $lastKey = $this->extractLastEvaluatedKey($result);
+        } while ($lastKey !== null);
+
+        return $keys;
+    }
+
+    /**
+     * @param array<string, mixed>|null $lastKey
+     * @return array<string, mixed>
+     */
+    private function scanParams(?array $lastKey): array
+    {
+        $params = [
+            'TableName' => $this->table,
+            'FilterExpression' => '#ns = :ns',
+            'ProjectionExpression' => '#k',
+            'ExpressionAttributeNames' => [
+                '#ns' => 'ns',
+                '#k' => 'ckey',
+            ],
+            'ExpressionAttributeValues' => [
+                ':ns' => ['S' => $this->ns],
+            ],
+        ];
+
+        if (is_array($lastKey)) {
+            $params['ExclusiveStartKey'] = $lastKey;
+        }
+
+        return $params;
     }
 }

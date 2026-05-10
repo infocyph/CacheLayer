@@ -11,32 +11,13 @@ final class AdapterValueNormalizer
      */
     public static function fromArrayLikeOrToArray(mixed $value): ?array
     {
-        if ($value === null) {
-            return null;
-        }
-
-        if (is_array($value)) {
-            return self::normalizeAssoc($value);
-        }
-
-        if ($value instanceof \ArrayAccess && $value instanceof \Traversable) {
-            $out = [];
-            foreach ($value as $k => $v) {
-                if (is_string($k)) {
-                    $out[$k] = $v;
-                }
-            }
-
-            return $out;
-        }
-
-        if (is_object($value) && method_exists($value, 'toArray')) {
-            $arr = $value->toArray();
-
-            return is_array($arr) ? self::normalizeAssoc($arr) : null;
-        }
-
-        return null;
+        return match (true) {
+            $value === null => null,
+            is_array($value) => self::normalizeAssoc($value),
+            $value instanceof \ArrayAccess && $value instanceof \Traversable => self::normalizeAssoc(iterator_to_array($value)),
+            is_object($value) => self::normalizeFromToArray($value),
+            default => null,
+        };
     }
 
     /**
@@ -67,5 +48,20 @@ final class AdapterValueNormalizer
         }
 
         return $out;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private static function normalizeFromToArray(object $value): ?array
+    {
+        $toArray = [$value, 'toArray'];
+        if (!is_callable($toArray)) {
+            return null;
+        }
+
+        $arrayValue = $toArray();
+
+        return is_array($arrayValue) ? self::normalizeAssoc($arrayValue) : null;
     }
 }

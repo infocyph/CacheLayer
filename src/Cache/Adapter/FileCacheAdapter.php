@@ -46,7 +46,7 @@ class FileCacheAdapter extends AbstractCacheAdapter
             $files = [];
         }
         foreach ($files as $f) {
-            $ok = $ok && @unlink($f);
+            $ok = $ok && (!is_file($f) || unlink($f));
         }
         $this->deferred = [];
 
@@ -62,7 +62,7 @@ class FileCacheAdapter extends AbstractCacheAdapter
     {
         $file = $this->fileFor($key);
 
-        return !is_file($file) || @unlink($file);
+        return !is_file($file) || unlink($file);
     }
 
     /**
@@ -96,7 +96,7 @@ class FileCacheAdapter extends AbstractCacheAdapter
                     );
                 }
             }
-            @unlink($file);
+            unlink($file);
         }
 
         return new FileCacheItem($this, $key);
@@ -126,13 +126,17 @@ class FileCacheAdapter extends AbstractCacheAdapter
         }
 
         if (file_put_contents($tmp, $blob) === false) {
-            @unlink($tmp);
+            if (is_file($tmp)) {
+                unlink($tmp);
+            }
 
             return false;
         }
 
-        if (!@rename($tmp, $this->fileFor($item->getKey()))) {
-            @unlink($tmp);
+        if (!rename($tmp, $this->fileFor($item->getKey()))) {
+            if (is_file($tmp)) {
+                unlink($tmp);
+            }
 
             return false;
         }
@@ -194,7 +198,7 @@ class FileCacheAdapter extends AbstractCacheAdapter
             );
         }
 
-        if (!is_dir($baseDir) && !@mkdir($baseDir, 0700, true) && !is_dir($baseDir)) {
+        if (!is_dir($baseDir) && !mkdir($baseDir, 0700, true) && !is_dir($baseDir)) {
             $this->throwCreationError('Failed to create base directory ' . $baseDir);
         }
 
@@ -211,7 +215,7 @@ class FileCacheAdapter extends AbstractCacheAdapter
             );
         }
 
-        if (!@mkdir($cacheDir, 0700, true) && !is_dir($cacheDir)) {
+        if (!mkdir($cacheDir, 0700, true) && !is_dir($cacheDir)) {
             $this->throwCreationError('Failed to create cache directory ' . $cacheDir);
         }
 

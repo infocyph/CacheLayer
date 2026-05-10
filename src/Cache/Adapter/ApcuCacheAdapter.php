@@ -107,6 +107,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter
         if ($keys === []) {
             return [];
         }
+
         $prefixed = array_map($this->map(...), $keys);
         $raw = apcu_fetch($prefixed);
         if (!is_array($raw)) {
@@ -116,19 +117,10 @@ class ApcuCacheAdapter extends AbstractCacheAdapter
         $items = [];
         $stale = [];
         foreach ($keys as $k) {
-            $p = $this->map($k);
-            if (array_key_exists($p, $raw)) {
-                if (is_string($raw[$p])) {
-                    $item = $this->hitItemFromBlob($k, $raw[$p]);
-                    if ($item instanceof ApcuCacheItem) {
-                        $items[$k] = $item;
-
-                        continue;
-                    }
-
-                    $stale[] = $p;
-                }
+            if ($this->appendFetchedHit($items, $stale, $k, $raw)) {
+                continue;
             }
+
             $items[$k] = new ApcuCacheItem($this, $k);
         }
 
@@ -160,6 +152,30 @@ class ApcuCacheAdapter extends AbstractCacheAdapter
     protected function supportsItem(CacheItemInterface $item): bool
     {
         return $item instanceof ApcuCacheItem;
+    }
+
+    /**
+     * @param array<string, ApcuCacheItem> $items
+     * @param list<string> $stale
+     * @param array<mixed> $raw
+     */
+    private function appendFetchedHit(array &$items, array &$stale, string $key, array $raw): bool
+    {
+        $mapped = $this->map($key);
+        if (!array_key_exists($mapped, $raw) || !is_string($raw[$mapped])) {
+            return false;
+        }
+
+        $item = $this->hitItemFromBlob($key, $raw[$mapped]);
+        if ($item instanceof ApcuCacheItem) {
+            $items[$key] = $item;
+
+            return true;
+        }
+
+        $stale[] = $mapped;
+
+        return false;
     }
 
     private function hitItemFromBlob(string $key, string $blob): ?ApcuCacheItem

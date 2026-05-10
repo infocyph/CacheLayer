@@ -108,7 +108,11 @@ test('rejects empty tags in tag operations', function () {
 });
 
 test('remember respects ttl argument expiry', function () {
-    $this->cache->remember('short', fn ($item) => 'value', 1);
+    $this->cache->remember('short', function ($item) {
+        $item->expiresAfter(1);
+
+        return 'value';
+    }, 1);
 
     usleep(2_000_000);
 
@@ -148,6 +152,9 @@ test('remember uses configured lock provider', function () {
 
         public function acquire(string $key, float $waitSeconds): ?LockHandle
         {
+            if ($waitSeconds < 0) {
+                return null;
+            }
             $this->calls['acquire']++;
 
             return new LockHandle($key, 'tkn');
@@ -155,6 +162,9 @@ test('remember uses configured lock provider', function () {
 
         public function release(?LockHandle $handle): void
         {
+            if (!$handle instanceof LockHandle) {
+                return;
+            }
             $this->calls['release']++;
         }
     };

@@ -33,7 +33,7 @@ final readonly class MemcachedLockProvider implements LockProviderInterface
             $this->prefix,
             $key,
             $waitSeconds,
-            fn(string $lockKey, string $token, float $unusedWait): bool => $this->memcached->add($lockKey, $token, $ttlSeconds),
+            fn(string $lockKey, string $token): bool => $this->memcached->add($lockKey, $token, $ttlSeconds),
         );
     }
 

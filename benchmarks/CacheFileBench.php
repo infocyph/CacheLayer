@@ -36,10 +36,16 @@ final class CacheFileBench
                 continue;
             }
 
-            $file->isDir() ? @rmdir($path) : @unlink($path);
+            if ($file->isDir() && is_dir($path)) {
+                rmdir($path);
+            } elseif (is_file($path)) {
+                unlink($path);
+            }
         }
 
-        @rmdir($this->dir);
+        if (is_dir($this->dir)) {
+            rmdir($this->dir);
+        }
     }
 
     #[Bench\BeforeMethods(['setUp'])]

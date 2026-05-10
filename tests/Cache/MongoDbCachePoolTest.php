@@ -51,6 +51,7 @@ beforeEach(function () {
 
         public function updateOne(array $filter, array $update, array $options = []): void
         {
+            unset($options);
             $this->docs[$filter['_id']] = $update['$set'];
         }
     };

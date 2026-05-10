@@ -29,7 +29,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter
         $this->ns = sanitize_cache_ns($namespace);
         $this->tokenFile = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'cachelayer_shm_' . $this->ns . '.tok';
         if (!is_file($this->tokenFile)) {
-            @touch($this->tokenFile);
+            touch($this->tokenFile);
         }
 
         $projectId = function_exists('ftok') ? ftok($this->tokenFile, 'C') : false;
@@ -37,7 +37,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter
             ? $projectId
             : abs(crc32('cachelayer:' . $this->ns));
 
-        $segment = @shm_attach($shmKey, max(1_048_576, $segmentSize), 0666);
+        $segment = shm_attach($shmKey, max(1_048_576, $segmentSize), 0666);
         if ($segment === false) {
             throw new RuntimeException('Unable to attach shared-memory segment');
         }

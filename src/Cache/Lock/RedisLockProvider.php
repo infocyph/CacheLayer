@@ -31,7 +31,7 @@ final readonly class RedisLockProvider implements LockProviderInterface
             $this->prefix,
             $key,
             $waitSeconds,
-            fn(string $lockKey, string $token, float $unusedWait): bool => (bool) $this->redis->set($lockKey, $token, ['nx', 'px' => $ttlMs]),
+            fn(string $lockKey, string $token): bool => (bool) $this->redis->set($lockKey, $token, ['nx', 'px' => $ttlMs]),
         );
     }
 
