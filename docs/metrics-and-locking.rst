@@ -15,7 +15,7 @@ Cache facade metrics API:
 
 Default collector is ``InMemoryCacheMetricsCollector``.
 Exported snapshots use readable adapter keys such as ``file``, ``pdo``,
-``redis``, ``memory``, and ``redis_cluster``.
+``redis``, ``valkey``, ``memory``, ``scylladb``, and ``redis_cluster``.
 
 Metric counters are tracked per adapter name, for example:
 
@@ -58,6 +58,7 @@ Facade helpers:
 
 * ``setLockProvider(LockProviderInterface $provider): self``
 * ``useRedisLock(?Redis $client = null, string $prefix = 'cachelayer:lock:'): self``
+* ``useValkeyLock(?Redis $client = null, string $prefix = 'cachelayer:lock:'): self``
 * ``useMemcachedLock(?Memcached $client = null, string $prefix = 'cachelayer:lock:'): self``
 
 Custom lock providers can implement ``LockProviderInterface``:
@@ -75,6 +76,7 @@ Custom lock providers can implement ``LockProviderInterface``:
 Adapter defaults:
 
 * Redis adapter factory sets ``RedisLockProvider``
+* Valkey adapter factory sets ``RedisLockProvider``
 * Memcached adapter factory sets ``MemcachedLockProvider``
 * PDO/SQLite adapter factories set ``PdoLockProvider``
 * all other adapters use ``FileLockProvider`` by default

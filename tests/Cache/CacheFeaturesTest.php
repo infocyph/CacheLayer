@@ -7,12 +7,12 @@ use Infocyph\CacheLayer\Cache\Metrics\InMemoryCacheMetricsCollector;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 
 beforeEach(function () {
-    $this->cacheDir = sys_get_temp_dir() . '/pest_cache_features_' . uniqid();
+    $this->cacheDir = sys_get_temp_dir().'/pest_cache_features_'.uniqid();
     $this->cache = Cache::file('features', $this->cacheDir);
 });
 
 afterEach(function () {
-    if (!is_dir($this->cacheDir)) {
+    if (! is_dir($this->cacheDir)) {
         return;
     }
 
@@ -20,7 +20,7 @@ afterEach(function () {
     $rim = new RecursiveIteratorIterator($it, RecursiveIteratorIterator::CHILD_FIRST);
     foreach ($rim as $file) {
         $path = $file->getRealPath();
-        if ($path === false || !file_exists($path)) {
+        if ($path === false || ! file_exists($path)) {
             continue;
         }
         $file->isDir() ? rmdir($path) : unlink($path);
@@ -49,6 +49,7 @@ test('remember caches once and supports tag invalidation', function () {
         function ($item) use (&$count) {
             $count++;
             $item->expiresAfter(30);
+
             return 'payload';
         },
         null,
@@ -59,6 +60,7 @@ test('remember caches once and supports tag invalidation', function () {
         'hot',
         function () use (&$count) {
             $count++;
+
             return 'should-not-run';
         },
     );
@@ -76,10 +78,12 @@ test('get callable path still computes once on miss', function () {
     $a = $this->cache->get('compute', function ($item) use (&$count) {
         $count++;
         $item->expiresAfter(30);
+
         return 99;
     });
     $b = $this->cache->get('compute', function () use (&$count) {
         $count++;
+
         return 11;
     });
 
@@ -104,7 +108,11 @@ test('rejects empty tags in tag operations', function () {
 });
 
 test('remember respects ttl argument expiry', function () {
-    $this->cache->remember('short', fn ($item) => 'value', 1);
+    $this->cache->remember('short', function ($item) {
+        $item->expiresAfter(1);
+
+        return 'value';
+    }, 1);
 
     usleep(2_000_000);
 
@@ -138,17 +146,25 @@ test('tag version invalidation marks prior entries stale', function () {
 test('remember uses configured lock provider', function () {
     $calls = ['acquire' => 0, 'release' => 0];
 
-    $provider = new class ($calls) implements LockProviderInterface {
+    $provider = new class($calls) implements LockProviderInterface
+    {
         public function __construct(private array &$calls) {}
 
         public function acquire(string $key, float $waitSeconds): ?LockHandle
         {
+            if ($waitSeconds < 0) {
+                return null;
+            }
             $this->calls['acquire']++;
+
             return new LockHandle($key, 'tkn');
         }
 
         public function release(?LockHandle $handle): void
         {
+            if (! $handle instanceof LockHandle) {
+                return;
+            }
             $this->calls['release']++;
         }
     };
@@ -161,7 +177,7 @@ test('remember uses configured lock provider', function () {
 });
 
 test('metrics collector exports hit and miss counters', function () {
-    $collector = new InMemoryCacheMetricsCollector();
+    $collector = new InMemoryCacheMetricsCollector;
     $this->cache->setMetricsCollector($collector);
 
     $this->cache->get('x');
@@ -201,4 +217,3 @@ test('payload compression can be enabled without changing values', function () {
 
     $this->cache->configurePayloadCompression(null);
 });
-

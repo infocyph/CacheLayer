@@ -15,6 +15,7 @@ final class MemoizeBench
     {
         Memoizer::instance()->flush();
     }
+
     #[Bench\BeforeMethods(['setUp'])]
     public function benchGlobalMemoizeHit(): int
     {

@@ -6,6 +6,7 @@ namespace Infocyph\CacheLayer\Cache\Adapter;
 
 use DateTimeImmutable;
 use DateTimeInterface;
+use Infocyph\CacheLayer\Cache\Item\AbstractCacheItem;
 use Infocyph\CacheLayer\Serializer\ValueSerializer;
 use Psr\Cache\CacheItemInterface;
 use Throwable;
@@ -13,12 +14,19 @@ use Throwable;
 final class CachePayloadCodec
 {
     private const string COMPRESSED_PREFIX = 'imx-gz:';
+
     private const string FORMAT = 'imx-record-v1';
+
     private const string SIGNED_PREFIX = 'imx-sig-v1:';
+
     private static int $compressionLevel = 6;
+
     private static ?int $compressionThresholdBytes = null;
+
     private static ?string $integrityKey = null;
+
     private static ?int $maxPayloadBytes = 8_388_608;
+
     private static bool $securityBootstrapped = false;
 
     public static function configureCompression(?int $thresholdBytes = null, int $level = 6): void
@@ -99,7 +107,7 @@ final class CachePayloadCodec
      */
     public static function expirationFromItem(CacheItemInterface $item): array
     {
-        $ttl = method_exists($item, 'ttlSeconds') ? $item->ttlSeconds() : null;
+        $ttl = $item instanceof AbstractCacheItem ? $item->ttlSeconds() : null;
         $expiresAt = $ttl === null ? null : time() + $ttl;
 
         return ['ttl' => $ttl, 'expiresAt' => $expiresAt];
@@ -122,6 +130,7 @@ final class CachePayloadCodec
         }
 
         $signature = hash_hmac('sha256', $payload, self::$integrityKey);
+
         return self::SIGNED_PREFIX . $signature . ':' . $payload;
     }
 
@@ -152,7 +161,14 @@ final class CachePayloadCodec
             return null;
         }
 
-        $fromFormatted = self::decodeFormattedPayload($decoded);
+        $normalized = [];
+        foreach ($decoded as $key => $value) {
+            if (is_string($key)) {
+                $normalized[$key] = $value;
+            }
+        }
+
+        $fromFormatted = self::decodeFormattedPayload($normalized);
         if ($fromFormatted !== null) {
             return $fromFormatted;
         }
@@ -208,6 +224,7 @@ final class CachePayloadCodec
         }
 
         $decoded = gzdecode($raw);
+
         return is_string($decoded) ? $decoded : $blob;
     }
 

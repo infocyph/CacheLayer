@@ -4,7 +4,8 @@ use Infocyph\CacheLayer\Cache\Adapter\MongoDbCacheAdapter;
 use Infocyph\CacheLayer\Cache\Cache;
 
 beforeEach(function () {
-    $this->collection = new class {
+    $this->collection = new class
+    {
         /** @var array<string, array<string, mixed>> */
         public array $docs = [];
 
@@ -50,6 +51,7 @@ beforeEach(function () {
 
         public function updateOne(array $filter, array $update, array $options = []): void
         {
+            unset($options);
             $this->docs[$filter['_id']] = $update['$set'];
         }
     };

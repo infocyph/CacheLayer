@@ -19,7 +19,10 @@ use RuntimeException;
  */
 class FileCacheAdapter extends AbstractCacheAdapter
 {
+    use SecuresFilesystemDirectories;
+
     private const string DEFAULT_BASE_DIR = 'cachelayer/files';
+
     private string $dir;
 
     /**
@@ -27,6 +30,7 @@ class FileCacheAdapter extends AbstractCacheAdapter
      *
      * @param string $namespace A namespace prefix for cache files to avoid collisions.
      * @param string|null $baseDir The base directory for cache files. If null, uses system temp directory.
+     *
      * @throws RuntimeException If the cache directory cannot be created or is not writable.
      */
     public function __construct(string $namespace = 'default', ?string $baseDir = null)
@@ -37,10 +41,15 @@ class FileCacheAdapter extends AbstractCacheAdapter
     public function clear(): bool
     {
         $ok = true;
-        foreach (glob("$this->dir*.cache") as $f) {
-            $ok = $ok && @unlink($f);
+        $files = glob("$this->dir*.cache");
+        if ($files === false) {
+            $files = [];
+        }
+        foreach ($files as $f) {
+            $ok = $ok && (!is_file($f) || unlink($f));
         }
         $this->deferred = [];
+
         return $ok;
     }
 
@@ -53,15 +62,19 @@ class FileCacheAdapter extends AbstractCacheAdapter
     {
         $file = $this->fileFor($key);
 
-        return !is_file($file) || @unlink($file);
+        return !is_file($file) || unlink($file);
     }
 
+    /**
+     * @param list<string> $keys
+     */
     public function deleteItems(array $keys): bool
     {
         $ok = true;
         foreach ($keys as $k) {
             $ok = $ok && $this->deleteItem($k);
         }
+
         return $ok;
     }
 
@@ -83,7 +96,7 @@ class FileCacheAdapter extends AbstractCacheAdapter
                     );
                 }
             }
-            @unlink($file);
+            unlink($file);
         }
 
         return new FileCacheItem($this, $key);
@@ -113,12 +126,18 @@ class FileCacheAdapter extends AbstractCacheAdapter
         }
 
         if (file_put_contents($tmp, $blob) === false) {
-            @unlink($tmp);
+            if (is_file($tmp)) {
+                unlink($tmp);
+            }
+
             return false;
         }
 
-        if (!@rename($tmp, $this->fileFor($item->getKey()))) {
-            @unlink($tmp);
+        if (!rename($tmp, $this->fileFor($item->getKey()))) {
+            if (is_file($tmp)) {
+                unlink($tmp);
+            }
+
             return false;
         }
 
@@ -134,23 +153,6 @@ class FileCacheAdapter extends AbstractCacheAdapter
     protected function supportsItem(CacheItemInterface $item): bool
     {
         return $item instanceof FileCacheItem;
-    }
-
-    private function assertPathNotSymlink(string $path, string $label): void
-    {
-        if (is_link($path)) {
-            throw new RuntimeException($label . " must not be a symlink: {$path}");
-        }
-    }
-
-    private function assertSecureDirectory(string $path, string $label): void
-    {
-        $this->assertPathNotSymlink($path, $label);
-
-        $perms = fileperms($path);
-        if ($perms !== false && (($perms & 0x0002) === 0x0002)) {
-            throw new RuntimeException($label . " must not be world-writable: {$path}");
-        }
     }
 
     private function assertWritableDirectory(string $path, string $message): void
@@ -169,6 +171,7 @@ class FileCacheAdapter extends AbstractCacheAdapter
         if (is_dir($this->dir)) {
             $this->assertWritableDirectory($this->dir, "Cache directory '$this->dir' exists but is not writable");
             $this->assertSecureDirectory($this->dir, 'Cache directory');
+
             return;
         }
 
@@ -195,7 +198,7 @@ class FileCacheAdapter extends AbstractCacheAdapter
             );
         }
 
-        if (!is_dir($baseDir) && !@mkdir($baseDir, 0700, true) && !is_dir($baseDir)) {
+        if (!is_dir($baseDir) && !mkdir($baseDir, 0700, true) && !is_dir($baseDir)) {
             $this->throwCreationError('Failed to create base directory ' . $baseDir);
         }
 
@@ -212,7 +215,7 @@ class FileCacheAdapter extends AbstractCacheAdapter
             );
         }
 
-        if (!@mkdir($cacheDir, 0700, true) && !is_dir($cacheDir)) {
+        if (!mkdir($cacheDir, 0700, true) && !is_dir($cacheDir)) {
             $this->throwCreationError('Failed to create cache directory ' . $cacheDir);
         }
 
@@ -227,6 +230,7 @@ class FileCacheAdapter extends AbstractCacheAdapter
     private function throwCreationError(string $prefix): void
     {
         $err = error_get_last()['message'] ?? 'unknown error';
+
         throw new RuntimeException($prefix . ": $err");
     }
 }

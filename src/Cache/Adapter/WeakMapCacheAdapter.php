@@ -12,12 +12,17 @@ use WeakReference;
 final class WeakMapCacheAdapter extends AbstractCacheAdapter
 {
     private readonly string $ns;
+
     /** @var array<string, string> */
     private array $scalarStore = [];
+
     /** @var array<string, int|null> */
     private array $weakExpires = [];
+
+    /** @var WeakMap<object, array{key:string,expires:int|null}> */
     private WeakMap $weakObjects;
-    /** @var array<string, WeakReference> */
+
+    /** @var array<string, WeakReference<object>> */
     private array $weakRefs = [];
 
     public function __construct(string $namespace = 'default')
@@ -33,6 +38,7 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter
         $this->weakExpires = [];
         $this->weakObjects = new WeakMap();
         $this->deferred = [];
+
         return true;
     }
 
@@ -72,9 +78,13 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter
         }
 
         unset($this->weakRefs[$mapped]);
+
         return true;
     }
 
+    /**
+     * @param list<string> $keys
+     */
     public function deleteItems(array $keys): bool
     {
         foreach ($keys as $key) {
@@ -111,19 +121,15 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter
             return new GenericCacheItem($this, $key);
         }
 
-        $record = CachePayloadCodec::decode($this->scalarStore[$mapped]);
-        if ($record === null || CachePayloadCodec::isExpired($record['expires'])) {
-            unset($this->scalarStore[$mapped]);
-            return new GenericCacheItem($this, $key);
-        }
+        return $this->genericFromBlobWithInvalidator(
+            $key,
+            $this->scalarStore[$mapped],
+            function () use ($mapped): bool {
+                unset($this->scalarStore[$mapped]);
 
-        $item = new GenericCacheItem($this, $key);
-        $item->set($record['value']);
-        if ($record['expires'] !== null) {
-            $item->expiresAt(CachePayloadCodec::toDateTime($record['expires']));
-        }
-
-        return $item;
+                return true;
+            },
+        );
     }
 
     public function hasItem(string $key): bool
@@ -131,42 +137,36 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter
         return $this->getItem($key)->isHit();
     }
 
+    /**
+     * @param list<string> $keys
+     * @return array<string, GenericCacheItem>
+     */
     public function multiFetch(array $keys): array
     {
-        $items = [];
-        foreach ($keys as $key) {
-            $items[(string) $key] = $this->getItem((string) $key);
-        }
-
-        return $items;
+        return $this->multiFetchItems($keys, $this->getItem(...));
     }
 
     public function save(CacheItemInterface $item): bool
     {
-        if (!$this->supportsItem($item)) {
-            return false;
-        }
+        return $this->saveEncoded($item, function (CacheItemInterface $saveItem, array $expires): bool {
+            $mapped = $this->map($saveItem->getKey());
+            $value = $saveItem->get();
 
-        $expires = CachePayloadCodec::expirationFromItem($item);
-        if ($expires['ttl'] === 0) {
-            return $this->deleteItem($item->getKey());
-        }
+            if (is_object($value)) {
+                $ref = WeakReference::create($value);
+                $this->weakRefs[$mapped] = $ref;
+                $this->weakExpires[$mapped] = $expires['expiresAt'];
+                $this->weakObjects[$value] = ['key' => $mapped, 'expires' => $expires['expiresAt']];
+                unset($this->scalarStore[$mapped]);
 
-        $mapped = $this->map($item->getKey());
-        $value = $item->get();
+                return true;
+            }
 
-        if (is_object($value)) {
-            $ref = WeakReference::create($value);
-            $this->weakRefs[$mapped] = $ref;
-            $this->weakExpires[$mapped] = $expires['expiresAt'];
-            $this->weakObjects[$value] = ['key' => $mapped, 'expires' => $expires['expiresAt']];
-            unset($this->scalarStore[$mapped]);
+            unset($this->weakRefs[$mapped], $this->weakExpires[$mapped]);
+            $this->scalarStore[$mapped] = CachePayloadCodec::encode($value, $expires['expiresAt']);
+
             return true;
-        }
-
-        unset($this->weakRefs[$mapped], $this->weakExpires[$mapped]);
-        $this->scalarStore[$mapped] = CachePayloadCodec::encode($value, $expires['expiresAt']);
-        return true;
+        });
     }
 
     protected function supportsItem(CacheItemInterface $item): bool

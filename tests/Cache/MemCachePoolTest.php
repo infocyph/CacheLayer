@@ -7,38 +7,43 @@
  * a Memcached daemon is reachable at 127.0.0.1:11211.
  */
 
+use Infocyph\CacheLayer\Cache\Adapter\MemCacheAdapter;
 use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Cache\Item\MemCacheItem;
-use Infocyph\CacheLayer\Serializer\ValueSerializer;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
-use Psr\Cache\InvalidArgumentException as Psr6InvalidArgumentException;
+use Infocyph\CacheLayer\Serializer\ValueSerializer;
 
 /* ── Skip suite if Memcached unavailable ─────────────────────────── */
 
-if (!class_exists(\Memcached::class)) {
+if (! class_exists(Memcached::class)) {
     test('Memcached ext not loaded – skipping')->skip();
+
     return;
 }
 
-$probe = new Memcached();
-$probe->addServer('127.0.0.1', 11211);
+$memcachedHost = getenv('IC_MEMCACHED_HOST') ?: getenv('CACHELAYER_MEMCACHED_HOST') ?: '127.0.0.1';
+$memcachedPort = (int) (getenv('IC_MEMCACHED_PORT') ?: getenv('CACHELAYER_MEMCACHED_PORT') ?: '11211');
+
+$probe = new Memcached;
+$probe->addServer($memcachedHost, $memcachedPort);
 $probe->set('ping', 'pong');
 if ($probe->getResultCode() !== Memcached::RES_SUCCESS) {
-    test('No Memcached server at 127.0.0.1:11211 – skipping')->skip();
+    test('No Memcached server available – skipping')->skip();
+
     return;
 }
 
 /* ── Test bootstrap / teardown ───────────────────────────────────── */
 
-beforeEach(function () {
-    $client = new Memcached();
-    $client->addServer('127.0.0.1', 11211);
+beforeEach(function () use ($memcachedHost, $memcachedPort) {
+    $client = new Memcached;
+    $client->addServer($memcachedHost, $memcachedPort);
     $client->flush();                          // fresh slate
     ValueSerializer::clearResourceHandlers();
 
     $this->cache = Cache::memcache(
         'tests',
-        [['127.0.0.1', 11211, 0]],
+        [[$memcachedHost, $memcachedPort, 0]],
         $client
     );
 
@@ -47,13 +52,14 @@ beforeEach(function () {
         'stream',
         // ----- wrap ----------------------------------------------------
         function (mixed $res): array {
-            if (!is_resource($res)) {
+            if (! is_resource($res)) {
                 throw new InvalidArgumentException('Expected resource');
             }
             $meta = stream_get_meta_data($res);
             rewind($res);
+
             return [
-                'mode'    => $meta['mode'],
+                'mode' => $meta['mode'],
                 'content' => stream_get_contents($res),
             ];
         },
@@ -62,13 +68,14 @@ beforeEach(function () {
             $s = fopen('php://memory', $data['mode']);
             fwrite($s, $data['content']);
             rewind($s);
+
             return $s;                                 // <- real resource
         }
     );
 });
 
 afterEach(function () {
-    /** @var \Infocyph\CacheLayer\Cache\Adapter\MemCacheAdapter $adapt */
+    /** @var MemCacheAdapter $adapt */
     $adapt = (new ReflectionObject($this->cache))
         ->getProperty('adapter')->getValue($this->cache);
     (new ReflectionProperty($adapt, 'mc'))
@@ -93,6 +100,7 @@ test('get returns default when key missing (memcached)', function () {
     // Callable
     $val = $this->cache->get('call', function (MemCacheItem $item) {
         $item->expiresAfter(1);
+
         return 'hello';
     });
     expect($val)->toBe('hello');
@@ -176,5 +184,3 @@ test('Memcached adapter multiFetch()', function () {
         ->and($items['m2']->get())->toBe('bar')
         ->and($items['missing']->isHit())->toBeFalse();
 });
-
-

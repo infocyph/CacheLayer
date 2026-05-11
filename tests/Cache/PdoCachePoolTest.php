@@ -1,11 +1,12 @@
 <?php
 
-use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Cache\Adapter\PdoCacheAdapter;
+use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Cache\Lock\FileLockProvider;
 
-if (!in_array('sqlite', PDO::getAvailableDrivers(), true)) {
+if (! in_array('sqlite', PDO::getAvailableDrivers(), true)) {
     test('PDO SQLite driver not present')->skip();
+
     return;
 }
 
@@ -38,7 +39,7 @@ test('pdo adapter delete and count with sqlite', function () {
 });
 
 test('pdo defaults to sqlite driver when no dsn is provided', function () {
-    $namespace = 'pdo-default-' . uniqid();
+    $namespace = 'pdo-default-'.uniqid();
     $cache = Cache::pdo($namespace);
     $cache->set('x', 'X');
 
@@ -47,7 +48,9 @@ test('pdo defaults to sqlite driver when no dsn is provided', function () {
 
     $dbFile = PdoCacheAdapter::defaultSqliteFileForNamespace($namespace);
     $cache->clear();
-    @unlink($dbFile);
+    if (is_file($dbFile)) {
+        unlink($dbFile);
+    }
 });
 
 test('pdo factory configures pdo lock provider', function () {
@@ -58,6 +61,7 @@ test('pdo factory configures pdo lock provider', function () {
 
     if (class_exists($pdoLockProviderClass)) {
         expect($provider)->toBeInstanceOf($pdoLockProviderClass);
+
         return;
     }
 

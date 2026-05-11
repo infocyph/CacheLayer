@@ -3,12 +3,12 @@
 use Infocyph\CacheLayer\Cache\Cache;
 
 beforeEach(function () {
-    $this->cacheDir = sys_get_temp_dir() . '/pest_phpfiles_cache_' . uniqid();
+    $this->cacheDir = sys_get_temp_dir().'/pest_phpfiles_cache_'.uniqid();
     $this->cache = Cache::phpFiles('php-files-tests', $this->cacheDir);
 });
 
 afterEach(function () {
-    if (!is_dir($this->cacheDir)) {
+    if (! is_dir($this->cacheDir)) {
         return;
     }
 
@@ -16,7 +16,7 @@ afterEach(function () {
     $rim = new RecursiveIteratorIterator($it, RecursiveIteratorIterator::CHILD_FIRST);
     foreach ($rim as $file) {
         $path = $file->getRealPath();
-        if ($path === false || !file_exists($path)) {
+        if ($path === false || ! file_exists($path)) {
             continue;
         }
         $file->isDir() ? rmdir($path) : unlink($path);

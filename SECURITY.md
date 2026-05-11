@@ -72,6 +72,29 @@ These paths are created with restrictive permissions and world-writable checks.
 3. Use explicit, private cache directories outside shared temp space.
 4. Prefer non-executable file storage adapters over `phpFiles` where possible.
 
+## Backend-Specific Notes
+
+### Redis / Valkey
+
+- Require authentication and network-level access controls.
+- Prefer TLS-enabled connections when crossing host boundaries.
+- Avoid exposing Redis/Valkey ports directly to public networks.
+
+### MongoDB / ScyllaDB / SQL Backends
+
+- Use least-privilege database credentials scoped to cache tables/collections.
+- Enforce transport security (TLS) where supported.
+- Keep cache schema/table permissions separate from application primary data.
+
+### Tiered Cache Deployments (L1/L2/DB)
+
+For `Cache::tiered()` production setups:
+
+- keep L1 (APCu) local-process only
+- protect L2 (Redis/Valkey) as a private service
+- treat DB fallback resolvers as trusted code paths only
+- configure bounded TTLs to reduce stale or poisoned cache lifetime
+
 ## Disclosure
 
 If you discover a security issue, please open a private report to project

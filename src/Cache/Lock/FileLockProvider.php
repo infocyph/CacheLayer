@@ -7,6 +7,7 @@ namespace Infocyph\CacheLayer\Cache\Lock;
 final readonly class FileLockProvider implements LockProviderInterface
 {
     private string $directory;
+
     private int $retrySleepMicros;
 
     public function __construct(
@@ -27,20 +28,21 @@ final readonly class FileLockProvider implements LockProviderInterface
             return null;
         }
 
-        if (!is_dir($this->directory)) {
-            @mkdir($this->directory, 0770, true);
+        if (!is_dir($this->directory) && !mkdir($this->directory, 0770, true) && !is_dir($this->directory)) {
+            return null;
         }
 
         $path = $this->directory . DIRECTORY_SEPARATOR . hash('xxh128', $key) . '.lock';
-        $handle = @fopen($path, 'c+');
+        $handle = $this->openLockFile($path);
         if (!is_resource($handle)) {
             return null;
         }
 
         $deadline = microtime(true) + max(0.0, $waitSeconds);
-        while (!@flock($handle, LOCK_EX | LOCK_NB)) {
+        while (!flock($handle, LOCK_EX | LOCK_NB)) {
             if (microtime(true) >= $deadline) {
-                @fclose($handle);
+                fclose($handle);
+
                 return null;
             }
 
@@ -49,8 +51,9 @@ final readonly class FileLockProvider implements LockProviderInterface
 
         $token = self::generateToken();
         if ($token === null) {
-            @flock($handle, LOCK_UN);
-            @fclose($handle);
+            flock($handle, LOCK_UN);
+            fclose($handle);
+
             return null;
         }
         $activeLocks[$key] = true;
@@ -67,8 +70,8 @@ final readonly class FileLockProvider implements LockProviderInterface
         $activeLocks = &self::activeRegistry();
 
         if (is_resource($handle->resource)) {
-            @flock($handle->resource, LOCK_UN);
-            @fclose($handle->resource);
+            flock($handle->resource, LOCK_UN);
+            fclose($handle->resource);
         }
 
         unset($activeLocks[$handle->key]);
@@ -79,7 +82,9 @@ final readonly class FileLockProvider implements LockProviderInterface
      */
     private static function &activeRegistry(): array
     {
+        /** @var array<string, bool> $registry */
         static $registry = [];
+
         return $registry;
     }
 
@@ -89,6 +94,20 @@ final readonly class FileLockProvider implements LockProviderInterface
             return bin2hex(random_bytes(16));
         } catch (\Throwable) {
             return null;
+        }
+    }
+
+    /**
+     * @return resource|false
+     */
+    private function openLockFile(string $path): mixed
+    {
+        set_error_handler(static fn(): bool => true);
+
+        try {
+            return fopen($path, 'c+');
+        } finally {
+            restore_error_handler();
         }
     }
 }

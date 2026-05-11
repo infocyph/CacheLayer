@@ -9,14 +9,18 @@ use Closure;
 use Countable;
 use DateInterval;
 use DateTime;
+use Infocyph\CacheLayer\Cache\Item\AbstractCacheItem;
 use Infocyph\CacheLayer\Cache\Lock\FileLockProvider;
 use Infocyph\CacheLayer\Cache\Lock\LockProviderInterface;
 use Infocyph\CacheLayer\Cache\Lock\MemcachedLockProvider;
+use Infocyph\CacheLayer\Cache\Lock\PdoLockProvider;
 use Infocyph\CacheLayer\Cache\Lock\RedisLockProvider;
 use Infocyph\CacheLayer\Cache\Metrics\CacheMetricsCollectorInterface;
 use Infocyph\CacheLayer\Cache\Metrics\InMemoryCacheMetricsCollector;
+use Infocyph\CacheLayer\Cache\Tiering\TieredPoolFactory;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 use Infocyph\CacheLayer\Serializer\ValueSerializer;
+use MongoDB\Client;
 use Psr\Cache\CacheItemInterface;
 use Psr\Cache\CacheItemPoolInterface;
 use Psr\Cache\InvalidArgumentException as Psr6InvalidArgumentException;
@@ -24,12 +28,22 @@ use Psr\SimpleCache\InvalidArgumentException as SimpleCacheInvalidArgument;
 
 final class Cache implements CacheInterface
 {
+    use CacheReadRememberTrait {
+        get as private traitGet;
+        getItem as private traitGetItem;
+        getItems as private traitGetItems;
+        hasItem as private traitHasItem;
+        remember as private traitRemember;
+    }
+
     private const int STAMPEDE_JITTER_PERCENT = 8;
+
     private const float STAMPEDE_LOCK_WAIT_SECONDS = 5.0;
+
     private const string TAG_META_PREFIX = '__im_tagm_';
+
     private const string TAG_VERSION_PREFIX = '__im_tagv_';
-    private LockProviderInterface $lockProvider;
-    private CacheMetricsCollectorInterface $metrics;
+
     private ?Closure $metricsExportHook = null;
 
     /**
@@ -39,12 +53,9 @@ final class Cache implements CacheInterface
      */
     public function __construct(
         private readonly CacheItemPoolInterface $adapter,
-        ?LockProviderInterface $lockProvider = null,
-        ?CacheMetricsCollectorInterface $metrics = null,
-    ) {
-        $this->lockProvider = $lockProvider ?? new FileLockProvider();
-        $this->metrics = $metrics ?? new InMemoryCacheMetricsCollector();
-    }
+        private LockProviderInterface $lockProvider = new FileLockProvider(),
+        private CacheMetricsCollectorInterface $metrics = new InMemoryCacheMetricsCollector(),
+    ) {}
 
     /**
      * Retrieves a value from the cache using magic property access.
@@ -54,6 +65,7 @@ final class Cache implements CacheInterface
      *
      * @param string $name The key for which to retrieve the value.
      * @return mixed The value associated with the given key.
+     *
      * @throws SimpleCacheInvalidArgument|Psr6InvalidArgumentException if the key is invalid.
      */
     public function __get(string $name): mixed
@@ -116,28 +128,6 @@ final class Cache implements CacheInterface
         return new self(new Adapter\ChainCacheAdapter($pools));
     }
 
-    public static function dynamoDb(
-        string $namespace = 'default',
-        string $table = 'cachelayer_entries',
-        ?object $client = null,
-        array $config = [],
-    ): self {
-        if ($client === null) {
-            if (!class_exists(\Aws\DynamoDb\DynamoDbClient::class)) {
-                throw new CacheInvalidArgumentException(
-                    'aws/aws-sdk-php is required unless a DynamoDB client is provided.',
-                );
-            }
-
-            $client = new \Aws\DynamoDb\DynamoDbClient($config + [
-                'version' => 'latest',
-                'region' => 'us-east-1',
-            ]);
-        }
-
-        return new self(new Adapter\DynamoDbCacheAdapter($client, $table, $namespace));
-    }
-
     /**
      * Static factory for file-based cache.
      *
@@ -148,7 +138,6 @@ final class Cache implements CacheInterface
     {
         return new self(new Adapter\FileCacheAdapter($namespace, $dir));
     }
-
 
     /**
      * Static factory for local cache selection.
@@ -175,8 +164,8 @@ final class Cache implements CacheInterface
      * Static factory for Memcached-based cache.
      *
      * @param string $namespace Cache prefix. Will be suffixed to each key.
-     * @param array $servers Memcached servers as an array of `[host, port, weight]`.
-     *                       The `weight` is a float between 0 and 1, and defaults to 0.
+     * @param array<int, array{0:string,1:int,2:int}> $servers Memcached servers as an array of `[host, port, weight]`.
+     *                                                         The `weight` is a float between 0 and 1, and defaults to 0.
      * @param \Memcached|null $client Optional preconfigured Memcached instance.
      */
     public static function memcache(
@@ -206,13 +195,13 @@ final class Cache implements CacheInterface
     ): self {
         if ($collection === null) {
             if ($client === null) {
-                if (!class_exists(\MongoDB\Client::class)) {
+                if (!class_exists(Client::class)) {
                     throw new CacheInvalidArgumentException(
                         'mongodb/mongodb is required unless a collection/client is provided.',
                     );
                 }
 
-                $client = new \MongoDB\Client($uri);
+                $client = new Client($uri);
             }
 
             $adapter = Adapter\MongoDbCacheAdapter::fromClient(
@@ -243,9 +232,8 @@ final class Cache implements CacheInterface
     ): self {
         $adapter = new Adapter\PdoCacheAdapter($namespace, $dsn, $username, $password, $pdo, $table);
         $lockProvider = new FileLockProvider();
-        $pdoLockProviderClass = \Infocyph\CacheLayer\Cache\Lock\PdoLockProvider::class;
+        $pdoLockProviderClass = PdoLockProvider::class;
         if (class_exists($pdoLockProviderClass)) {
-            /** @var LockProviderInterface $lockProvider */
             $lockProvider = new $pdoLockProviderClass($adapter->getClient());
         }
 
@@ -264,7 +252,7 @@ final class Cache implements CacheInterface
      *
      * @param string $namespace Cache prefix.
      * @param string $dsn DSN for Redis connection (e.g. 'redis://127.0.0.1:6379'),
-     *                                or null to use the default ('redis://127.0.0.1:6379').
+     *                    or null to use the default ('redis://127.0.0.1:6379').
      * @param \Redis|null $client Optional preconfigured Redis instance.
      */
     public static function redis(
@@ -279,6 +267,9 @@ final class Cache implements CacheInterface
         );
     }
 
+    /**
+     * @param array<int, string> $seeds
+     */
     public static function redisCluster(
         string $namespace = 'default',
         array $seeds = ['127.0.0.1:6379'],
@@ -299,27 +290,24 @@ final class Cache implements CacheInterface
         );
     }
 
-    public static function s3(
+    public static function scyllaDb(
         string $namespace = 'default',
-        string $bucket = 'cachelayer',
-        ?object $client = null,
-        array $config = [],
-        string $prefix = 'cachelayer',
+        ?object $session = null,
+        string $keyspace = 'cachelayer',
+        string $table = 'cachelayer_entries',
     ): self {
-        if ($client === null) {
-            if (!class_exists(\Aws\S3\S3Client::class)) {
+        if ($session === null) {
+            if (!class_exists(\Cassandra::class)) {
                 throw new CacheInvalidArgumentException(
-                    'aws/aws-sdk-php is required unless an S3 client is provided.',
+                    'ext-cassandra is required unless a ScyllaDB/Cassandra session is provided.',
                 );
             }
 
-            $client = new \Aws\S3\S3Client($config + [
-                'version' => 'latest',
-                'region' => 'us-east-1',
-            ]);
+            /** @var object $session */
+            $session = \Cassandra::cluster()->build()->connect($keyspace);
         }
 
-        return new self(new Adapter\S3CacheAdapter($client, $bucket, $prefix, $namespace));
+        return new self(new Adapter\ScyllaDbCacheAdapter($session, $keyspace, $table, $namespace));
     }
 
     public static function sharedMemory(string $namespace = 'default', int $segmentSize = 16_777_216): self
@@ -343,6 +331,37 @@ final class Cache implements CacheInterface
         );
     }
 
+    /**
+     * Builds a tiered cache from pool instances and/or descriptor arrays.
+     *
+     * @param array<int, CacheItemPoolInterface|array<string, mixed>> $tiers
+     */
+    public static function tiered(array $tiers, bool $writeToL1 = true): self
+    {
+        $pools = TieredPoolFactory::fromArray($tiers);
+
+        return new self(new Adapter\ChainCacheAdapter($pools, $writeToL1));
+    }
+
+    /**
+     * Static factory for Valkey cache.
+     *
+     * @param string $namespace Cache prefix.
+     * @param string $dsn DSN for Valkey connection (e.g. 'valkey://127.0.0.1:6379').
+     * @param \Redis|null $client Optional preconfigured Redis-compatible instance.
+     */
+    public static function valkey(
+        string $namespace = 'default',
+        string $dsn = 'valkey://127.0.0.1:6379',
+        ?\Redis $client = null,
+    ): self {
+        $adapter = new Adapter\ValkeyCacheAdapter($namespace, $dsn, $client);
+
+        return (new self($adapter))->setLockProvider(
+            new RedisLockProvider($adapter->getClient()),
+        );
+    }
+
     public static function weakMap(string $namespace = 'default'): self
     {
         return new self(new Adapter\WeakMapCacheAdapter($namespace));
@@ -352,7 +371,7 @@ final class Cache implements CacheInterface
      * Removes all items from the cache.
      *
      * @return bool
-     *     True if the operation was successful, false otherwise.
+     *              True if the operation was successful, false otherwise.
      */
     public function clear(): bool
     {
@@ -385,12 +404,14 @@ final class Cache implements CacheInterface
     public function configurePayloadCompression(?int $thresholdBytes = null, int $level = 6): self
     {
         Adapter\CachePayloadCodec::configureCompression($thresholdBytes, $level);
+
         return $this;
     }
 
     public function configurePayloadSecurity(?string $integrityKey = null, ?int $maxPayloadBytes = 8_388_608): self
     {
         Adapter\CachePayloadCodec::configureSecurity($integrityKey, $maxPayloadBytes);
+
         return $this;
     }
 
@@ -450,10 +471,10 @@ final class Cache implements CacheInterface
      * not exist, it is silently ignored.
      *
      * @param string $key
-     *     The key of the item to delete.
-     *
+     *                    The key of the item to delete.
      * @return bool
-     *     True if the item was successfully deleted, false otherwise.
+     *              True if the item was successfully deleted, false otherwise.
+     *
      * @throws Psr6InvalidArgumentException
      */
     public function deleteItem(string $key): bool
@@ -462,6 +483,7 @@ final class Cache implements CacheInterface
         $deleted = $this->adapter->deleteItem($key);
         $this->clearTagMeta($key);
         $this->metric('delete');
+
         return $deleted;
     }
 
@@ -469,8 +491,8 @@ final class Cache implements CacheInterface
      * Deletes multiple items from the cache.
      *
      * @param string[] $keys The array of keys to delete.
-     *
      * @return bool True if all items were successfully deleted, false otherwise.
+     *
      * @throws Psr6InvalidArgumentException
      */
     public function deleteItems(array $keys): bool
@@ -483,6 +505,7 @@ final class Cache implements CacheInterface
             $this->clearTagMeta((string) $key);
         }
         $this->metric('delete_batch');
+
         return $deleted;
     }
 
@@ -490,6 +513,7 @@ final class Cache implements CacheInterface
      * Deletes multiple keys from the cache.
      *
      * @param iterable<int|string, string> $keys
+     *
      * @throws SimpleCacheInvalidArgument if any key is invalid
      */
     public function deleteMultiple(iterable $keys): bool
@@ -502,6 +526,7 @@ final class Cache implements CacheInterface
                 $allSucceeded = false;
             }
         }
+
         return $allSucceeded;
     }
 
@@ -527,32 +552,7 @@ final class Cache implements CacheInterface
      */
     public function get(string $key, mixed $default = null): mixed
     {
-        $this->validateKey($key);
-
-        // If $default is a callable, do a PSR-6 “compute & save” on cache miss.
-        if (is_callable($default)) {
-            return $this->remember($key, $default);
-        }
-
-        try {
-            $item = $this->adapter->getItem($key);
-        } catch (Psr6InvalidArgumentException $e) {
-            throw new CacheInvalidArgumentException($e->getMessage(), 0, $e);
-        }
-
-        if (!$item->isHit()) {
-            $this->metric('miss');
-            return $default;
-        }
-
-        if (!$this->isTagMetaValid($key)) {
-            $this->purgeKeyAndTagMeta($key);
-            $this->metric('miss');
-            return $default;
-        }
-
-        $this->metric('hit');
-        return $item->get();
+        return $this->traitGet($key, $default);
     }
 
     /**
@@ -561,29 +561,17 @@ final class Cache implements CacheInterface
      * This method returns a CacheItemInterface object containing the cached value.
      *
      * @param string $key
-     *     The key of the item to retrieve.
-     *
+     *                    The key of the item to retrieve.
      * @return CacheItemInterface
-     *     The retrieved Cache Item.
-     * @throws CacheInvalidArgumentException
-     *     If the $key is invalid or if a CacheLoader is not available when
-     *     the value is not found.
+     *                            The retrieved Cache Item.
      *
+     * @throws CacheInvalidArgumentException
+     *                                       If the $key is invalid or if a CacheLoader is not available when
+     *                                       the value is not found.
      */
     public function getItem(string $key): CacheItemInterface
     {
-        $this->validateKey($key);
-        $item = $this->adapter->getItem($key);
-        if (!$item->isHit()) {
-            return $item;
-        }
-
-        if (!$this->isTagMetaValid($key)) {
-            $this->purgeKeyAndTagMeta($key);
-            return $this->adapter->getItem($key);
-        }
-
-        return $item;
+        return $this->traitGetItem($key);
     }
 
     /**
@@ -597,51 +585,14 @@ final class Cache implements CacheInterface
      * `getItem` on each key.
      *
      * @param string[] $keys
-     *     An array of keys to fetch from the cache.
-     *
+     *                       An array of keys to fetch from the cache.
      * @return iterable<CacheItemInterface>
-     *     An iterable of CacheItemInterface objects.
+     *                                      An iterable of CacheItemInterface objects.
      */
     public function getItems(array $keys = []): iterable
     {
-        // If empty, return empty iterator
-        if ($keys === []) {
-            return new \EmptyIterator();
-        }
-
-        foreach ($keys as $key) {
-            $this->validateKey((string) $key);
-        }
-
-        $fetched = method_exists($this->adapter, 'multiFetch')
-            ? $this->adapter->multiFetch($keys)
-            : iterator_to_array($this->adapter->getItems($keys), true);
-
-        $out = [];
-        foreach ($keys as $key) {
-            $k = (string) $key;
-            $item = $fetched[$k] ?? $this->adapter->getItem($k);
-
-            if (!$item->isHit()) {
-                $this->metric('miss');
-                $out[$k] = $item;
-                continue;
-            }
-
-            if (!$this->isTagMetaValid($k)) {
-                $this->purgeKeyAndTagMeta($k);
-                $this->metric('miss');
-                $out[$k] = $this->adapter->getItem($k);
-                continue;
-            }
-
-            $this->metric('hit');
-            $out[$k] = $item;
-        }
-
-        return $out;
+        return $this->traitGetItems($keys);
     }
-
 
     /**
      * Returns an iterable of {@see CacheItemInterface} objects for the given
@@ -653,10 +604,9 @@ final class Cache implements CacheInterface
      * iterators.
      *
      * @param string[] $keys
-     *     An array of keys to fetch from the cache.
-     *
+     *                       An array of keys to fetch from the cache.
      * @return iterable<CacheItemInterface>
-     *     An iterable of CacheItemInterface objects.
+     *                                      An iterable of CacheItemInterface objects.
      */
     public function getItemsIterator(array $keys = []): iterable
     {
@@ -668,6 +618,7 @@ final class Cache implements CacheInterface
      *
      * @param iterable<int|string, string> $keys
      * @return iterable<string, mixed>
+     *
      * @throws SimpleCacheInvalidArgument|Psr6InvalidArgumentException if any key is invalid
      */
     public function getMultiple(iterable $keys, mixed $default = null): iterable
@@ -678,6 +629,7 @@ final class Cache implements CacheInterface
             $this->validateKey($k);
             $result[$k] = $this->get($k, $default);
         }
+
         return $result;
     }
 
@@ -695,29 +647,15 @@ final class Cache implements CacheInterface
      * Checks if an item is present in the cache.
      *
      * @param string $key
-     *     The key to check.
-     *
+     *                    The key to check.
      * @return bool
-     *     True if the item exists in the cache, false otherwise.
+     *              True if the item exists in the cache, false otherwise.
+     *
      * @throws Psr6InvalidArgumentException
      */
     public function hasItem(string $key): bool
     {
-        $this->validateKey($key);
-        $item = $this->adapter->getItem($key);
-        if (!$item->isHit()) {
-            $this->metric('miss');
-            return false;
-        }
-
-        if (!$this->isTagMetaValid($key)) {
-            $this->purgeKeyAndTagMeta($key);
-            $this->metric('miss');
-            return false;
-        }
-
-        $this->metric('hit');
-        return true;
+        return $this->traitHasItem($key);
     }
 
     /**
@@ -728,6 +666,7 @@ final class Cache implements CacheInterface
      *
      * @param string $tag The tag to invalidate. All cache entries with this tag will be removed.
      * @return bool True if the operation was successful, false otherwise.
+     *
      * @throws CacheInvalidArgumentException If the tag is invalid.
      * @throws Psr6InvalidArgumentException If there's an issue with cache operations.
      */
@@ -748,6 +687,7 @@ final class Cache implements CacheInterface
      *
      * @param array<int, string> $tags An array of tags to invalidate.
      * @return bool True if all tags were successfully invalidated, false if any failed.
+     *
      * @throws CacheInvalidArgumentException If any tag is invalid.
      * @throws Psr6InvalidArgumentException If there's an issue with cache operations.
      */
@@ -775,12 +715,15 @@ final class Cache implements CacheInterface
      *
      * {@inheritdoc}
      *
+     * @param string $offset
+     *
      * @throws Psr6InvalidArgumentException
+     *
      * @see has()
      */
     public function offsetExists(mixed $offset): bool
     {
-        return $this->has((string) $offset);
+        return $this->has($offset);
     }
 
     /**
@@ -789,14 +732,14 @@ final class Cache implements CacheInterface
      * This method allows the use of array-like syntax to retrieve a value
      * from the cache. The offset is converted to a string before retrieval.
      *
-     * @param mixed $offset The key at which to retrieve the value.
-     *
+     * @param string $offset The key at which to retrieve the value.
      * @return mixed The value at the specified offset.
+     *
      * @throws SimpleCacheInvalidArgument|Psr6InvalidArgumentException if the key is invalid
      */
     public function offsetGet(mixed $offset): mixed
     {
-        return $this->get((string) $offset);
+        return $this->get($offset);
     }
 
     /**
@@ -806,25 +749,26 @@ final class Cache implements CacheInterface
      * in the cache. The offset is converted to a string before storing.
      * The time-to-live (TTL) for the cache entry is set to null by default.
      *
-     * @param mixed $offset The key at which to set the value.
+     * @param string $offset The key at which to set the value.
      * @param mixed $value The value to be stored at the specified offset.
      *
      * @throws SimpleCacheInvalidArgument if the key is invalid
      */
     public function offsetSet(mixed $offset, mixed $value): void
     {
-        $this->set((string) $offset, $value);
+        $this->set($offset, $value);
     }
 
     /**
      * Unsets a key from the cache.
      *
      * @param string $offset
+     *
      * @throws Psr6InvalidArgumentException|SimpleCacheInvalidArgument if the key is invalid
      */
     public function offsetUnset(mixed $offset): void
     {
-        $this->delete((string) $offset);
+        $this->delete($offset);
     }
 
     /**
@@ -839,48 +783,7 @@ final class Cache implements CacheInterface
         mixed $ttl = null,
         array $tags = [],
     ): mixed {
-        $this->validateKey($key);
-        $normalizedTtl = $this->normalizeTtl($ttl);
-        $normalizedTags = $this->normalizeTagList($tags);
-
-        try {
-            $item = $this->getItem($key);
-        } catch (Psr6InvalidArgumentException $e) {
-            throw new CacheInvalidArgumentException($e->getMessage(), 0, $e);
-        }
-
-        if ($item->isHit()) {
-            $this->metric('remember_hit');
-            return $item->get();
-        }
-
-        $lockHandle = $this->lockProvider->acquire($this->stampedeLockKey($key), self::STAMPEDE_LOCK_WAIT_SECONDS);
-        try {
-            // Re-check under lock to avoid duplicate recompute.
-            $lockedItem = $this->getItem($key);
-            if ($lockedItem->isHit()) {
-                $this->metric('remember_hit');
-                return $lockedItem->get();
-            }
-
-            if ($normalizedTtl !== null) {
-                $lockedItem->expiresAfter($normalizedTtl);
-            }
-
-            $computed = $resolver($lockedItem);
-            $lockedItem->set($computed);
-            $this->applyJitteredTtl($lockedItem);
-            $this->save($lockedItem);
-
-            if ($normalizedTags !== [] && !$this->writeTagMeta($key, $normalizedTags, $normalizedTtl)) {
-                throw new CacheInvalidArgumentException("Unable to store tag metadata for key '$key'");
-            }
-
-            $this->metric('remember_miss');
-            return $computed;
-        } finally {
-            $this->lockProvider->release($lockHandle);
-        }
+        return $this->traitRemember($key, $resolver, $ttl, $tags);
     }
 
     /**
@@ -890,12 +793,12 @@ final class Cache implements CacheInterface
      * implement CacheItemInterface.
      *
      * @param CacheItemInterface $item
-     *     The cache item to persist.
-     *
+     *                                 The cache item to persist.
      * @return bool
-     *     True if the cache item was successfully persisted, false otherwise.
+     *              True if the cache item was successfully persisted, false otherwise.
+     *
      * @throws Psr6InvalidArgumentException
-     *     If the item does not implement CacheItemInterface.
+     *                                      If the item does not implement CacheItemInterface.
      */
     public function save(CacheItemInterface $item): bool
     {
@@ -920,6 +823,7 @@ final class Cache implements CacheInterface
      * Persists a value in the cache, optionally with a TTL.
      *
      * @param int|DateInterval|null $ttl Time-to-live in seconds or a DateInterval
+     *
      * @throws SimpleCacheInvalidArgument if the key or TTL is invalid
      */
     public function set(string $key, mixed $value, mixed $ttl = null): bool
@@ -949,24 +853,27 @@ final class Cache implements CacheInterface
             $this->metric('set');
         }
 
-        return $result;
+        return (bool) $result;
     }
 
     public function setLockProvider(LockProviderInterface $lockProvider): self
     {
         $this->lockProvider = $lockProvider;
+
         return $this;
     }
 
     public function setMetricsCollector(CacheMetricsCollectorInterface $metrics): self
     {
         $this->metrics = $metrics;
+
         return $this;
     }
 
     public function setMetricsExportHook(?callable $hook): self
     {
         $this->metricsExportHook = $hook !== null ? Closure::fromCallable($hook) : null;
+
         return $this;
     }
 
@@ -975,6 +882,7 @@ final class Cache implements CacheInterface
      *
      * @param iterable<int|string, mixed> $values key ⇒ value mapping
      * @param int|DateInterval|null $ttl TTL for all items
+     *
      * @throws SimpleCacheInvalidArgument if any key is invalid
      */
     public function setMultiple(iterable $values, mixed $ttl = null): bool
@@ -998,7 +906,7 @@ final class Cache implements CacheInterface
      * Changes the namespace and directory for the pool.
      *
      * If the adapter implements {@see CacheItemPoolInterface::setNamespaceAndDirectory},
-     * this call is forwarded to the adapter. Otherwise, a {@see \BadMethodCallException} is thrown.
+     * this call is forwarded to the adapter. Otherwise, a {@see BadMethodCallException} is thrown.
      *
      * @param string $namespace The new namespace.
      * @param string|null $dir The new directory, or null to use the default.
@@ -1009,8 +917,10 @@ final class Cache implements CacheInterface
     {
         if (method_exists($this->adapter, 'setNamespaceAndDirectory')) {
             $this->adapter->setNamespaceAndDirectory($namespace, $dir);
+
             return;
         }
+
         throw new BadMethodCallException(
             sprintf('%s does not support setNamespaceAndDirectory()', $this->adapter::class),
         );
@@ -1028,6 +938,7 @@ final class Cache implements CacheInterface
      * @param array<int, string> $tags An array of tags to associate with this cache entry.
      * @param int|DateInterval|null $ttl Optional time-to-live for the cache entry.
      * @return bool True if the operation was successful, false otherwise.
+     *
      * @throws CacheInvalidArgumentException If the key or tags are invalid.
      * @throws SimpleCacheInvalidArgument If the key or TTL is invalid.
      */
@@ -1040,6 +951,7 @@ final class Cache implements CacheInterface
         }
 
         $ttlSeconds = $this->normalizeTtl($ttl);
+
         return $this->writeTagMeta($key, $normalizedTags, $ttlSeconds);
     }
 
@@ -1075,18 +987,23 @@ final class Cache implements CacheInterface
         return $this->setLockProvider(new RedisLockProvider($client, $prefix));
     }
 
+    public function useValkeyLock(?\Redis $client = null, string $prefix = 'cachelayer:lock:'): self
+    {
+        return $this->useRedisLock($client, $prefix);
+    }
+
     private function applyJitteredTtl(CacheItemInterface $item): void
     {
-        if (!method_exists($item, 'ttlSeconds')) {
+        if (!$item instanceof AbstractCacheItem) {
             return;
         }
 
         $ttl = $item->ttlSeconds();
-        if ($ttl === null || $ttl <= 1 || self::STAMPEDE_JITTER_PERCENT <= 0) {
+        if ($ttl === null || $ttl <= 1) {
             return;
         }
 
-        $maxJitter = max(1, (int) floor($ttl * (self::STAMPEDE_JITTER_PERCENT / 100)));
+        $maxJitter = max(1, intdiv($ttl * self::STAMPEDE_JITTER_PERCENT, 100));
         $jitter = random_int(0, $maxJitter);
         $item->expiresAfter(max(1, $ttl - $jitter));
     }
@@ -1106,6 +1023,7 @@ final class Cache implements CacheInterface
 
         $item->set(1)->expiresAfter(null);
         $this->adapter->save($item);
+
         return 1;
     }
 
@@ -1178,6 +1096,7 @@ final class Cache implements CacheInterface
 
         if ($ttl instanceof DateInterval) {
             $now = new DateTime();
+
             return max(0, $now->add($ttl)->getTimestamp() - (new DateTime())->getTimestamp());
         }
 
@@ -1215,7 +1134,8 @@ final class Cache implements CacheInterface
             'SharedMemory' => 'shared_memory',
             'WeakMap' => 'weak_map',
             'RedisCluster' => 'redis_cluster',
-            'DynamoDb' => 'dynamodb',
+            'Valkey' => 'valkey',
+            'ScyllaDb' => 'scylladb',
             'MongoDb' => 'mongodb',
             default => strtolower((string) preg_replace('/(?<!^)[A-Z]/', '_$0', $short)),
         };
@@ -1275,6 +1195,7 @@ final class Cache implements CacheInterface
     {
         if ($tags === []) {
             $this->clearTagMeta($key);
+
             return true;
         }
 
@@ -1287,6 +1208,7 @@ final class Cache implements CacheInterface
         $metaItem = $this->adapter->getItem($this->tagMetaKey($key));
         $metaItem->set($versions);
         $metaItem->expiresAfter($ttl);
+
         return $this->adapter->save($metaItem);
     }
 
@@ -1294,6 +1216,7 @@ final class Cache implements CacheInterface
     {
         $item = $this->adapter->getItem($this->tagVersionKey($normalizedTag));
         $item->set(max(1, $version))->expiresAfter(null);
+
         return $this->adapter->save($item);
     }
 }

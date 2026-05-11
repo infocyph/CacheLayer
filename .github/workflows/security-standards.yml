@@ -1,0 +1,38 @@
+name: "Security & Standards"
+
+on:
+  schedule:
+    - cron: "0 0 * * 0"
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master", "develop", "development" ]
+
+jobs:
+  phpforge:
+    uses: infocyph/phpforge/.github/workflows/security-standards.yml@main
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    with:
+      php_versions: '["8.4","8.5"]'
+      dependency_versions: '["prefer-lowest","prefer-stable"]'
+      php_extensions: "apcu, mbstring, memcached, mongodb, pdo, pdo_mysql, pdo_pgsql, pdo_sqlite, redis, sysvshm"
+      composer_flags: ""
+      phpstan_memory_limit: "1G"
+      psalm_threads: "1"
+      run_analysis: true
+      run_svg_report: true
+      fail_on_skipped_tests: true
+      enable_redis_service: true
+      enable_valkey_service: true
+      enable_memcached_service: true
+      enable_postgres_service: true
+      enable_mysql_service: true
+      enable_scylladb_service: true
+      enable_mongodb_service: true
+      service_db_name: "cachelayer"
+      service_db_user: "cachelayer"
+      service_db_password: "123456pass"
+      artifact_retention_days: 61

@@ -52,6 +52,8 @@ abstract class AbstractCacheItem implements CacheItemInterface
     }
 
     /**
+     * @param array{key:string,value:mixed,hit:bool,exp?:string|null} $data
+     *
      * @throws Exception
      */
     public function __unserialize(array $data): void
@@ -70,12 +72,14 @@ abstract class AbstractCacheItem implements CacheItemInterface
             $time instanceof DateInterval => (new DateTime())->add($time),
             default => null,
         };
+
         return $this;
     }
 
     public function expiresAt(?DateTimeInterface $expiration): static
     {
         $this->exp = $expiration;
+
         return $this;
     }
 
@@ -94,18 +98,21 @@ abstract class AbstractCacheItem implements CacheItemInterface
         if (!$this->hit) {
             return false;
         }
+
         return $this->exp === null || (new DateTime()) < $this->exp;
     }
 
     public function save(): static
     {
         $this->pool?->internalPersist($this);
+
         return $this;
     }
 
     public function saveDeferred(): static
     {
         $this->pool?->internalQueue($this);
+
         return $this;
     }
 
@@ -113,6 +120,7 @@ abstract class AbstractCacheItem implements CacheItemInterface
     {
         $this->value = ValueSerializer::wrap($value);
         $this->hit = true;
+
         return $this;
     }
 

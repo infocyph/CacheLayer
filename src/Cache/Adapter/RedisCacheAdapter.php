@@ -7,7 +7,6 @@ namespace Infocyph\CacheLayer\Cache\Adapter;
 use Infocyph\CacheLayer\Cache\Item\RedisCacheItem;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 use Psr\Cache\CacheItemInterface;
-use Redis;
 use RuntimeException;
 
 /**
@@ -22,22 +21,24 @@ use RuntimeException;
 class RedisCacheAdapter extends AbstractCacheAdapter
 {
     private readonly string $ns;
-    private readonly Redis $redis;
+
+    private readonly \Redis $redis;
 
     /**
      * Creates a new Redis cache adapter.
      *
      * @param string $namespace A namespace prefix to avoid key collisions.
      * @param string $dsn The Redis connection DSN (e.g., 'redis://127.0.0.1:6379').
-     * @param Redis|null $client Optional pre-configured Redis client instance.
+     * @param \Redis|null $client Optional pre-configured Redis client instance.
+     *
      * @throws RuntimeException If the phpredis extension is not loaded.
      */
     public function __construct(
         string $namespace = 'default',
         string $dsn = 'redis://127.0.0.1:6379',
-        ?Redis $client = null,
+        ?\Redis $client = null,
     ) {
-        if (!class_exists(Redis::class)) {
+        if (!class_exists(\Redis::class)) {
             throw new RuntimeException('phpredis extension not loaded');
         }
 
@@ -55,6 +56,7 @@ class RedisCacheAdapter extends AbstractCacheAdapter
             }
         } while ($cursor);
         $this->deferred = [];
+
         return true;
     }
 
@@ -65,6 +67,7 @@ class RedisCacheAdapter extends AbstractCacheAdapter
         while ($keys = $this->redis->scan($iter, $this->ns . ':*', 1000)) {
             $count += count($keys);
         }
+
         return $count;
     }
 
@@ -73,6 +76,9 @@ class RedisCacheAdapter extends AbstractCacheAdapter
         return $this->redis->del($this->map($key)) !== false;
     }
 
+    /**
+     * @param list<string> $keys
+     */
     public function deleteItems(array $keys): bool
     {
         if ($keys === []) {
@@ -80,10 +86,11 @@ class RedisCacheAdapter extends AbstractCacheAdapter
         }
 
         $full = array_map($this->map(...), $keys);
+
         return $this->redis->del($full) !== false;
     }
 
-    public function getClient(): Redis
+    public function getClient(): \Redis
     {
         return $this->redis;
     }
@@ -104,6 +111,7 @@ class RedisCacheAdapter extends AbstractCacheAdapter
             }
             $this->redis->del($this->map($key));
         }
+
         return new RedisCacheItem($this, $key);
     }
 
@@ -112,6 +120,10 @@ class RedisCacheAdapter extends AbstractCacheAdapter
         return $this->redis->exists($this->map($key)) === 1;
     }
 
+    /**
+     * @param list<string> $keys
+     * @return array<string, RedisCacheItem>
+     */
     public function multiFetch(array $keys): array
     {
         if ($keys === []) {
@@ -120,13 +132,23 @@ class RedisCacheAdapter extends AbstractCacheAdapter
 
         $prefixed = array_map($this->map(...), $keys);
         $rawVals = $this->redis->mget($prefixed);
+        if (!is_array($rawVals)) {
+            $rawVals = [];
+        }
+        $rawVals = array_values($rawVals);
 
         $items = [];
         $stale = [];
         foreach ($keys as $idx => $k) {
-            $v = $rawVals[$idx];
+            $v = $rawVals[$idx] ?? null;
             if ($v !== null && $v !== false) {
-                $record = CachePayloadCodec::decode((string) $v);
+                if (!is_string($v)) {
+                    $items[$k] = new RedisCacheItem($this, $k);
+
+                    continue;
+                }
+
+                $record = CachePayloadCodec::decode($v);
                 if ($record !== null && !CachePayloadCodec::isExpired($record['expires'])) {
                     $items[$k] = new RedisCacheItem(
                         $this,
@@ -135,6 +157,7 @@ class RedisCacheAdapter extends AbstractCacheAdapter
                         true,
                         CachePayloadCodec::toDateTime($record['expires']),
                     );
+
                     continue;
                 }
                 $stale[] = $this->map($k);
@@ -159,10 +182,12 @@ class RedisCacheAdapter extends AbstractCacheAdapter
         $ttl = $expires['ttl'];
         if ($ttl === 0) {
             $this->redis->del($this->map($item->getKey()));
+
             return true;
         }
 
         $blob = CachePayloadCodec::encode($item->get(), $expires['expiresAt']);
+
         return $ttl === null
             ? $this->redis->set($this->map($item->getKey()), $blob)
             : $this->redis->setex($this->map($item->getKey()), max(1, $ttl), $blob);
@@ -173,23 +198,24 @@ class RedisCacheAdapter extends AbstractCacheAdapter
         return $item instanceof RedisCacheItem;
     }
 
-    private function connect(string $dsn): Redis
+    private function connect(string $dsn): \Redis
     {
-        $r = new Redis();
+        $r = new \Redis();
         $parts = parse_url($dsn);
         if (!$parts) {
             throw new RuntimeException("Invalid Redis DSN: $dsn");
         }
-        $host = $parts['host'] ?? '127.0.0.1';
-        $port = $parts['port'] ?? 6379;
-        $r->connect($host, (int) $port);
-        if (isset($parts['pass'])) {
+        $host = is_string($parts['host'] ?? null) ? $parts['host'] : '127.0.0.1';
+        $port = is_int($parts['port'] ?? null) ? $parts['port'] : 6379;
+        $r->connect($host, $port);
+        if (is_string($parts['pass'] ?? null) && $parts['pass'] !== '') {
             $r->auth($parts['pass']);
         }
-        if (isset($parts['path']) && $parts['path'] !== '/') {
+        if (is_string($parts['path'] ?? null) && $parts['path'] !== '/') {
             $db = (int) ltrim($parts['path'], '/');
             $r->select($db);
         }
+
         return $r;
     }
 

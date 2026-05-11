@@ -8,20 +8,20 @@
 
 use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Cache\Item\GenericCacheItem;
-use Infocyph\CacheLayer\Serializer\ValueSerializer;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
-use Psr\Cache\InvalidArgumentException as Psr6InvalidArgumentException;
+use Infocyph\CacheLayer\Serializer\ValueSerializer;
 
 /* ── Skip entire suite if SQLite missing ─────────────────────────── */
-if (!in_array('sqlite', PDO::getAvailableDrivers(), true)) {
+if (! in_array('sqlite', PDO::getAvailableDrivers(), true)) {
     test('SQLite PDO driver not present – skipping')->skip();
+
     return;
 }
 
 /* ── bootstrap / teardown ────────────────────────────────────────── */
 beforeEach(function () {
-    $this->dbFile = sys_get_temp_dir() . '/pest_sqlite_' . uniqid() . '.sqlite';
-    $this->cache  = Cache::sqlite('tests', $this->dbFile);
+    $this->dbFile = sys_get_temp_dir().'/pest_sqlite_'.uniqid().'.sqlite';
+    $this->cache = Cache::sqlite('tests', $this->dbFile);
     ValueSerializer::clearResourceHandlers();
 
     /* stream handler for resource test */
@@ -29,13 +29,14 @@ beforeEach(function () {
         'stream',
         // ----- wrap ----------------------------------------------------
         function (mixed $res): array {
-            if (!is_resource($res)) {
+            if (! is_resource($res)) {
                 throw new InvalidArgumentException('Expected resource');
             }
             $meta = stream_get_meta_data($res);
             rewind($res);
+
             return [
-                'mode'    => $meta['mode'],
+                'mode' => $meta['mode'],
                 'content' => stream_get_contents($res),
             ];
         },
@@ -44,6 +45,7 @@ beforeEach(function () {
             $s = fopen('php://memory', $data['mode']);
             fwrite($s, $data['content']);
             rewind($s);
+
             return $s;                                 // <- real resource
         }
     );
@@ -53,7 +55,9 @@ afterEach(function () {
     // Release SQLite handles before unlink on Windows.
     $this->cache = null;
     gc_collect_cycles();
-    @unlink($this->dbFile);
+    if (is_file($this->dbFile)) {
+        unlink($this->dbFile);
+    }
 });
 
 /* ── 1. convenience set / get ───────────────────────────────────── */
@@ -69,6 +73,7 @@ test('get returns default when key missing (sqlite)', function () {
 
     $val = $this->cache->get('compute', function (GenericCacheItem $item) {
         $item->expiresAfter(1);
+
         return 'val';
     });
     expect($val)
@@ -159,4 +164,3 @@ test('SQLite adapter multiFetch()', function () {
         ->and($items['s2']->get())->toBe('B')
         ->and($items['void']->isHit())->toBeFalse();
 });
-

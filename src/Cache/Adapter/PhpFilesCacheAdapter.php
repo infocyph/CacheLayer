@@ -10,7 +10,10 @@ use RuntimeException;
 
 final class PhpFilesCacheAdapter extends AbstractCacheAdapter
 {
+    use SecuresFilesystemDirectories;
+
     private const string DEFAULT_BASE_DIR = 'cachelayer/phpfiles';
+
     private string $dir;
 
     public function __construct(string $namespace = 'default', ?string $baseDir = null)
@@ -22,11 +25,12 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
     {
         $ok = true;
         foreach (glob($this->dir . '*.php') ?: [] as $file) {
-            $ok = (@unlink($file) || !is_file($file)) && $ok;
+            $ok = (!is_file($file) || unlink($file)) && $ok;
             $this->invalidateOpcache($file);
         }
 
         $this->deferred = [];
+
         return $ok;
     }
 
@@ -34,7 +38,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
     {
         $count = 0;
         foreach (glob($this->dir . '*.php') ?: [] as $file) {
-            $row = @require $file;
+            $row = require $file;
             if (!is_array($row) || !isset($row['p']) || !is_string($row['p'])) {
                 continue;
             }
@@ -56,11 +60,15 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
     public function deleteItem(string $key): bool
     {
         $file = $this->fileFor($key);
-        $ok = !is_file($file) || @unlink($file);
+        $ok = !is_file($file) || unlink($file);
         $this->invalidateOpcache($file);
+
         return $ok;
     }
 
+    /**
+     * @param list<string> $keys
+     */
     public function deleteItems(array $keys): bool
     {
         $ok = true;
@@ -75,34 +83,22 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
     {
         $file = $this->fileFor($key);
         if (!is_file($file)) {
-            return new GenericCacheItem($this, $key);
+            return $this->genericMiss($key);
         }
 
-        $row = @require $file;
-        if (!is_array($row) || !isset($row['p']) || !is_string($row['p'])) {
-            $this->deleteItem($key);
-            return new GenericCacheItem($this, $key);
+        $row = require $file;
+        $payload = is_array($row) && is_string($row['p'] ?? null)
+            ? $row['p']
+            : null;
+        if (!is_string($payload)) {
+            return $this->genericDeleteAndMiss($key);
         }
 
-        $blob = base64_decode($row['p'], true);
-        if (!is_string($blob)) {
-            $this->deleteItem($key);
-            return new GenericCacheItem($this, $key);
-        }
-
-        $record = CachePayloadCodec::decode($blob);
-        if ($record === null || CachePayloadCodec::isExpired($record['expires'])) {
-            $this->deleteItem($key);
-            return new GenericCacheItem($this, $key);
-        }
-
-        $item = new GenericCacheItem($this, $key);
-        $item->set($record['value']);
-        if ($record['expires'] !== null) {
-            $item->expiresAt(CachePayloadCodec::toDateTime($record['expires']));
-        }
-
-        return $item;
+        return $this->genericFromBase64WithInvalidator(
+            $key,
+            $payload,
+            fn(): bool => $this->deleteItem($key),
+        );
     }
 
     public function hasItem(string $key): bool
@@ -110,11 +106,15 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
         return $this->getItem($key)->isHit();
     }
 
+    /**
+     * @param list<string> $keys
+     * @return array<string, GenericCacheItem>
+     */
     public function multiFetch(array $keys): array
     {
         $items = [];
         foreach ($keys as $key) {
-            $items[(string) $key] = $this->getItem((string) $key);
+            $items[$key] = $this->getItem($key);
         }
 
         return $items;
@@ -142,16 +142,23 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
         }
 
         if (file_put_contents($tmp, $code) === false) {
-            @unlink($tmp);
+            if (is_file($tmp)) {
+                unlink($tmp);
+            }
+
             return false;
         }
 
-        if (!@rename($tmp, $file)) {
-            @unlink($tmp);
+        if (!rename($tmp, $file)) {
+            if (is_file($tmp)) {
+                unlink($tmp);
+            }
+
             return false;
         }
 
         $this->invalidateOpcache($file);
+
         return true;
     }
 
@@ -166,23 +173,6 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
         return $item instanceof GenericCacheItem;
     }
 
-    private function assertPathNotSymlink(string $path, string $label): void
-    {
-        if (is_link($path)) {
-            throw new RuntimeException($label . " must not be a symlink: {$path}");
-        }
-    }
-
-    private function assertSecureDirectory(string $path, string $label): void
-    {
-        $this->assertPathNotSymlink($path, $label);
-
-        $perms = fileperms($path);
-        if ($perms !== false && (($perms & 0x0002) === 0x0002)) {
-            throw new RuntimeException($label . " must not be world-writable: {$path}");
-        }
-    }
-
     private function createDirectory(string $ns, ?string $baseDir): void
     {
         $baseDir = rtrim($baseDir ?? $this->defaultBaseDirectory(), DIRECTORY_SEPARATOR);
@@ -192,11 +182,11 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
         $this->assertPathNotSymlink($baseDir, 'PHP cache base directory');
         $this->assertPathNotSymlink($this->dir, 'PHP cache directory');
 
-        if (!is_dir($baseDir) && !@mkdir($baseDir, 0700, true) && !is_dir($baseDir)) {
+        if (!is_dir($baseDir) && !mkdir($baseDir, 0700, true) && !is_dir($baseDir)) {
             throw new RuntimeException("Unable to create PHP cache base directory: {$baseDir}");
         }
 
-        if (!is_dir($this->dir) && !@mkdir($this->dir, 0700, true) && !is_dir($this->dir)) {
+        if (!is_dir($this->dir) && !mkdir($this->dir, 0700, true) && !is_dir($this->dir)) {
             throw new RuntimeException("Unable to create PHP cache directory: {$this->dir}");
         }
 
@@ -223,7 +213,9 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
     private function invalidateOpcache(string $file): void
     {
         if (function_exists('opcache_invalidate')) {
-            @opcache_invalidate($file, true);
+            if (is_file($file)) {
+                opcache_invalidate($file, true);
+            }
         }
     }
 }

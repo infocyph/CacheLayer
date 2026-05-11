@@ -10,6 +10,7 @@ use Psr\Cache\CacheItemInterface;
 final class ArrayCacheAdapter extends AbstractCacheAdapter
 {
     private readonly string $ns;
+
     /** @var array<string, string> */
     private array $store = [];
 
@@ -22,25 +23,31 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter
     {
         $this->store = [];
         $this->deferred = [];
+
         return true;
     }
 
     public function count(): int
     {
         $this->pruneExpired();
+
         return count($this->store);
     }
 
     public function deleteItem(string $key): bool
     {
         unset($this->store[$this->map($key)]);
+
         return true;
     }
 
+    /**
+     * @param list<string> $keys
+     */
     public function deleteItems(array $keys): bool
     {
         foreach ($keys as $key) {
-            unset($this->store[$this->map((string) $key)]);
+            unset($this->store[$this->map($key)]);
         }
 
         return true;
@@ -50,35 +57,37 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter
     {
         $mapped = $this->map($key);
         $blob = $this->store[$mapped] ?? null;
-        if (!is_string($blob)) {
-            return new GenericCacheItem($this, $key);
-        }
 
-        $record = CachePayloadCodec::decode($blob);
-        if ($record === null || CachePayloadCodec::isExpired($record['expires'])) {
-            unset($this->store[$mapped]);
-            return new GenericCacheItem($this, $key);
-        }
-
-        $item = new GenericCacheItem($this, $key);
-        $item->set($record['value']);
-        if ($record['expires'] !== null) {
-            $item->expiresAt(CachePayloadCodec::toDateTime($record['expires']));
-        }
-
-        return $item;
+        return $this->genericFromBlob($key, is_string($blob) ? $blob : null);
     }
 
     public function hasItem(string $key): bool
     {
-        return $this->getItem($key)->isHit();
+        $mapped = $this->map($key);
+        $blob = $this->store[$mapped] ?? null;
+        if (!is_string($blob)) {
+            return false;
+        }
+
+        $record = $this->decodeRecordFromBlob($blob);
+        if ($record === null) {
+            unset($this->store[$mapped]);
+
+            return false;
+        }
+
+        return true;
     }
 
+    /**
+     * @param list<string> $keys
+     * @return array<string, GenericCacheItem>
+     */
     public function multiFetch(array $keys): array
     {
         $items = [];
         foreach ($keys as $key) {
-            $items[(string) $key] = $this->getItem((string) $key);
+            $items[$key] = $this->getItem($key);
         }
 
         return $items;
@@ -86,17 +95,11 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter
 
     public function save(CacheItemInterface $item): bool
     {
-        if (!$this->supportsItem($item)) {
-            return false;
-        }
+        return $this->saveEncoded($item, function (CacheItemInterface $saveItem, array $expires): bool {
+            $this->store[$this->map($saveItem->getKey())] = CachePayloadCodec::encode($saveItem->get(), $expires['expiresAt']);
 
-        $expires = CachePayloadCodec::expirationFromItem($item);
-        if ($expires['ttl'] === 0) {
-            return $this->deleteItem($item->getKey());
-        }
-
-        $this->store[$this->map($item->getKey())] = CachePayloadCodec::encode($item->get(), $expires['expiresAt']);
-        return true;
+            return true;
+        });
     }
 
     protected function supportsItem(CacheItemInterface $item): bool

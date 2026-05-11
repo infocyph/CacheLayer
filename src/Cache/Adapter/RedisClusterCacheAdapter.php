@@ -11,6 +11,7 @@ use RuntimeException;
 final class RedisClusterCacheAdapter extends AbstractCacheAdapter
 {
     private readonly object $cluster;
+
     private readonly string $ns;
 
     /**
@@ -45,33 +46,42 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter
 
     public function clear(): bool
     {
-        $keys = $this->cluster->sMembers($this->indexKey());
+        $keys = $this->call('sMembers', $this->indexKey());
         if (is_array($keys) && $keys !== []) {
             foreach ($keys as $key) {
-                $this->cluster->del((string) $key);
+                if (is_string($key)) {
+                    $this->call('del', $key);
+                }
             }
         }
-        $this->cluster->del($this->indexKey());
+        $this->call('del', $this->indexKey());
         $this->deferred = [];
+
         return true;
     }
 
     public function count(): int
     {
-        return (int) $this->cluster->sCard($this->indexKey());
+        $count = $this->call('sCard', $this->indexKey());
+
+        return is_int($count) ? max(0, $count) : 0;
     }
 
     public function deleteItem(string $key): bool
     {
         $mapped = $this->map($key);
-        $this->cluster->sRem($this->indexKey(), $mapped);
-        return $this->cluster->del($mapped) !== false;
+        $this->call('sRem', $this->indexKey(), $mapped);
+
+        return $this->call('del', $mapped) !== false;
     }
 
+    /**
+     * @param list<string> $keys
+     */
     public function deleteItems(array $keys): bool
     {
         foreach ($keys as $key) {
-            $this->deleteItem((string) $key);
+            $this->deleteItem($key);
         }
 
         return true;
@@ -85,64 +95,43 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter
     public function getItem(string $key): GenericCacheItem
     {
         $mapped = $this->map($key);
-        $raw = $this->cluster->get($mapped);
-        if (!is_string($raw)) {
-            return new GenericCacheItem($this, $key);
-        }
+        $raw = $this->call('get', $mapped);
 
-        $record = CachePayloadCodec::decode($raw);
-        if ($record === null || CachePayloadCodec::isExpired($record['expires'])) {
-            $this->deleteItem($key);
-            return new GenericCacheItem($this, $key);
-        }
-
-        $item = new GenericCacheItem($this, $key);
-        $item->set($record['value']);
-        if ($record['expires'] !== null) {
-            $item->expiresAt(CachePayloadCodec::toDateTime($record['expires']));
-        }
-
-        return $item;
+        return $this->genericFromBlob($key, is_string($raw) ? $raw : null);
     }
 
     public function hasItem(string $key): bool
     {
-        return $this->cluster->exists($this->map($key)) > 0;
+        $exists = $this->call('exists', $this->map($key));
+
+        return is_int($exists) && $exists > 0;
     }
 
+    /**
+     * @param list<string> $keys
+     * @return array<string, GenericCacheItem>
+     */
     public function multiFetch(array $keys): array
     {
-        $items = [];
-        foreach ($keys as $key) {
-            $items[(string) $key] = $this->getItem((string) $key);
-        }
-
-        return $items;
+        return $this->multiFetchItems($keys, $this->getItem(...));
     }
 
     public function save(CacheItemInterface $item): bool
     {
-        if (!$this->supportsItem($item)) {
-            return false;
-        }
+        return $this->saveEncoded($item, function (CacheItemInterface $saveItem, array $expires): bool {
+            $mapped = $this->map($saveItem->getKey());
+            $blob = CachePayloadCodec::encode($saveItem->get(), $expires['expiresAt']);
 
-        $expires = CachePayloadCodec::expirationFromItem($item);
-        if ($expires['ttl'] === 0) {
-            return $this->deleteItem($item->getKey());
-        }
+            $ok = $expires['ttl'] === null
+                ? $this->call('set', $mapped, $blob)
+                : $this->call('setex', $mapped, max(1, $expires['ttl']), $blob);
 
-        $mapped = $this->map($item->getKey());
-        $blob = CachePayloadCodec::encode($item->get(), $expires['expiresAt']);
+            if ($ok) {
+                $this->call('sAdd', $this->indexKey(), $mapped);
+            }
 
-        $ok = $expires['ttl'] === null
-            ? $this->cluster->set($mapped, $blob)
-            : $this->cluster->setex($mapped, max(1, $expires['ttl']), $blob);
-
-        if ($ok) {
-            $this->cluster->sAdd($this->indexKey(), $mapped);
-        }
-
-        return (bool) $ok;
+            return (bool) $ok;
+        });
     }
 
     protected function supportsItem(CacheItemInterface $item): bool
@@ -159,6 +148,11 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter
                 );
             }
         }
+    }
+
+    private function call(string $method, mixed ...$arguments): mixed
+    {
+        return $this->cluster->{$method}(...$arguments);
     }
 
     private function indexKey(): string

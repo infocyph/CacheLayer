@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Infocyph\CacheLayer\Cache\Adapter;
 
+use Infocyph\CacheLayer\Cache\Item\AbstractCacheItem;
 use Infocyph\CacheLayer\Cache\Item\GenericCacheItem;
 use InvalidArgumentException;
 use Psr\Cache\CacheItemInterface;
@@ -14,8 +15,10 @@ final class ChainCacheAdapter extends AbstractCacheAdapter
     /**
      * @param array<int, CacheItemPoolInterface> $pools
      */
-    public function __construct(private readonly array $pools)
-    {
+    public function __construct(
+        private readonly array $pools,
+        private readonly bool $writeToL1 = true,
+    ) {
         if ($pools === []) {
             throw new InvalidArgumentException('ChainCacheAdapter requires at least one pool.');
         }
@@ -29,12 +32,14 @@ final class ChainCacheAdapter extends AbstractCacheAdapter
         }
 
         $this->deferred = [];
+
         return $ok;
     }
 
     public function count(): int
     {
         $first = $this->pools[0];
+
         return $first instanceof \Countable ? count($first) : 0;
     }
 
@@ -48,6 +53,9 @@ final class ChainCacheAdapter extends AbstractCacheAdapter
         return $ok;
     }
 
+    /**
+     * @param list<string> $keys
+     */
     public function deleteItems(array $keys): bool
     {
         $ok = true;
@@ -67,7 +75,7 @@ final class ChainCacheAdapter extends AbstractCacheAdapter
             }
 
             $value = $item->get();
-            $ttl = method_exists($item, 'ttlSeconds') ? $item->ttlSeconds() : null;
+            $ttl = $item instanceof AbstractCacheItem ? $item->ttlSeconds() : null;
 
             for ($i = 0; $i < $idx; $i++) {
                 $promote = $this->pools[$i]->getItem($key);
@@ -79,6 +87,7 @@ final class ChainCacheAdapter extends AbstractCacheAdapter
             $out = new GenericCacheItem($this, $key);
             $out->set($value);
             $out->expiresAfter($ttl);
+
             return $out;
         }
 
@@ -90,36 +99,31 @@ final class ChainCacheAdapter extends AbstractCacheAdapter
         return $this->getItem($key)->isHit();
     }
 
+    /**
+     * @param list<string> $keys
+     * @return array<string, GenericCacheItem>
+     */
     public function multiFetch(array $keys): array
     {
-        $items = [];
-        foreach ($keys as $key) {
-            $items[(string) $key] = $this->getItem((string) $key);
-        }
-
-        return $items;
+        return $this->multiFetchItems($keys, $this->getItem(...));
     }
 
     public function save(CacheItemInterface $item): bool
     {
-        if (!$this->supportsItem($item)) {
-            return false;
-        }
+        return $this->saveEncoded($item, function (CacheItemInterface $saveItem, array $expires): bool {
+            $ok = true;
+            $poolCount = count($this->pools);
+            $start = $this->writeToL1 || $poolCount === 1 ? 0 : 1;
+            for ($idx = $start; $idx < $poolCount; $idx++) {
+                $pool = $this->pools[$idx];
+                $target = $pool->getItem($saveItem->getKey());
+                $target->set($saveItem->get());
+                $target->expiresAfter($expires['ttl']);
+                $ok = $pool->save($target) && $ok;
+            }
 
-        $expires = CachePayloadCodec::expirationFromItem($item);
-        if ($expires['ttl'] === 0) {
-            return $this->deleteItem($item->getKey());
-        }
-
-        $ok = true;
-        foreach ($this->pools as $pool) {
-            $target = $pool->getItem($item->getKey());
-            $target->set($item->get());
-            $target->expiresAfter($expires['ttl']);
-            $ok = $pool->save($target) && $ok;
-        }
-
-        return $ok;
+            return $ok;
+        });
     }
 
     protected function supportsItem(CacheItemInterface $item): bool

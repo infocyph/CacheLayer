@@ -52,6 +52,7 @@ The facade exposes factory methods for all bundled adapters:
 * ``Cache::apcu(string $namespace = 'default')``
 * ``Cache::memcache(string $namespace = 'default', array $servers = [['127.0.0.1', 11211, 0]], ?Memcached $client = null)``
 * ``Cache::redis(string $namespace = 'default', string $dsn = 'redis://127.0.0.1:6379', ?Redis $client = null)``
+* ``Cache::valkey(string $namespace = 'default', string $dsn = 'valkey://127.0.0.1:6379', ?Redis $client = null)``
 * ``Cache::redisCluster(string $namespace = 'default', array $seeds = ['127.0.0.1:6379'], float $timeout = 1.0, float $readTimeout = 1.0, bool $persistent = false, ?object $client = null)``
 * ``Cache::sqlite(string $namespace = 'default', ?string $file = null)``
 * ``Cache::pdo(string $namespace = 'default', ?string $dsn = null, ?string $username = null, ?string $password = null, ?PDO $pdo = null, string $table = 'cachelayer_entries')``
@@ -60,14 +61,47 @@ The facade exposes factory methods for all bundled adapters:
 * ``Cache::sharedMemory(string $namespace = 'default', int $segmentSize = 16777216)``
 * ``Cache::nullStore()``
 * ``Cache::chain(array $pools)``
+* ``Cache::tiered(array $tiers, bool $writeToL1 = true)``
 * ``Cache::mongodb(string $namespace = 'default', ?object $collection = null, ?object $client = null, string $database = 'cachelayer', string $collectionName = 'entries', string $uri = 'mongodb://127.0.0.1:27017')``
-* ``Cache::dynamoDb(string $namespace = 'default', string $table = 'cachelayer_entries', ?object $client = null, array $config = [])``
-* ``Cache::s3(string $namespace = 'default', string $bucket = 'cachelayer', ?object $client = null, array $config = [], string $prefix = 'cachelayer')``
+* ``Cache::scyllaDb(string $namespace = 'default', ?object $session = null, string $keyspace = 'cachelayer', string $table = 'cachelayer_entries')``
 
 ``local()`` chooses APCu when available (``extension_loaded('apcu')`` and ``apcu_enabled()``), otherwise File cache.
 
 ``pdo()`` defaults to SQLite (temp-file database per namespace) when DSN/PDO is not provided.
 ``sqlite()`` is a convenience wrapper over ``pdo()`` for explicit SQLite file selection.
+
+``tiered()`` accepts either concrete pool instances or descriptor arrays with a
+``driver`` key (for example ``apcu``, ``valkey``, ``redis``, ``pdo``, ``sqlite``).
+Use ``writeToL1 = false`` to skip write-through to the first tier while still
+allowing promotion from lower tiers on read.
+
+Tiered L1/L2/DB flow example:
+
+.. code-block:: php
+
+   use Infocyph\CacheLayer\Cache\Cache;
+
+   $cache = Cache::tiered([
+       ['driver' => 'apcu', 'namespace' => 'app'], // L1
+       ['driver' => 'valkey', 'namespace' => 'app', 'dsn' => 'valkey://127.0.0.1:6379'], // L2
+   ], writeToL1: false); // optional L1 write-through
+
+   $value = $cache->remember('user:42', function ($item) use ($pdo) {
+       $item->expiresAfter(300);
+
+       $stmt = $pdo->prepare('SELECT payload FROM users_cache_source WHERE id = ?');
+       $stmt->execute([42]);
+
+       return $stmt->fetchColumn();
+   });
+
+Request path:
+
+* check APCu (L1)
+* check Redis/Valkey (L2)
+* query DB on miss
+* write L2
+* optionally write L1 (``writeToL1``)
 
 Key and TTL Rules
 -----------------
@@ -173,11 +207,13 @@ Lock provider selection:
 
 * ``setLockProvider(LockProviderInterface $provider): self``
 * ``useRedisLock(?Redis $client = null, string $prefix = 'cachelayer:lock:'): self``
+* ``useValkeyLock(?Redis $client = null, string $prefix = 'cachelayer:lock:'): self``
 * ``useMemcachedLock(?Memcached $client = null, string $prefix = 'cachelayer:lock:'): self``
 
 Factory defaults:
 
 * ``Cache::redis(...)`` auto-configures ``RedisLockProvider``
+* ``Cache::valkey(...)`` auto-configures ``RedisLockProvider``
 * ``Cache::memcache(...)`` auto-configures ``MemcachedLockProvider``
 * ``Cache::pdo(...)`` / ``Cache::sqlite(...)`` auto-configure ``PdoLockProvider``
 * other adapters default to ``FileLockProvider``

@@ -2,8 +2,9 @@
 
 use Infocyph\CacheLayer\Cache\Cache;
 
-if (!function_exists('shm_attach')) {
+if (! function_exists('shm_attach')) {
     test('shared memory extension not loaded')->skip();
+
     return;
 }
 

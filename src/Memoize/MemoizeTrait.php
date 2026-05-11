@@ -22,6 +22,7 @@ trait MemoizeTrait
     {
         if ($key === null) {
             $this->__memo = [];
+
             return;
         }
 

@@ -12,6 +12,7 @@ use PhpBench\Attributes as Bench;
 final class CacheFileBench
 {
     private Cache $cache;
+
     private string $dir;
 
     public function setUp(): void
@@ -35,10 +36,16 @@ final class CacheFileBench
                 continue;
             }
 
-            $file->isDir() ? @rmdir($path) : @unlink($path);
+            if ($file->isDir() && is_dir($path)) {
+                rmdir($path);
+            } elseif (is_file($path)) {
+                unlink($path);
+            }
         }
 
-        @rmdir($this->dir);
+        if (is_dir($this->dir)) {
+            rmdir($this->dir);
+        }
     }
 
     #[Bench\BeforeMethods(['setUp'])]

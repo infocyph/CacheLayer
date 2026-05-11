@@ -2,14 +2,15 @@
 
 use Infocyph\CacheLayer\Cache\Cache;
 
-if (!in_array('pgsql', PDO::getAvailableDrivers(), true)) {
+if (! in_array('pgsql', PDO::getAvailableDrivers(), true)) {
     test('PostgreSQL PDO driver not present')->skip();
+
     return;
 }
 
-$dsn = getenv('CACHELAYER_PG_DSN') ?: 'pgsql:host=127.0.0.1;port=5432;dbname=cachelayer';
-$user = getenv('CACHELAYER_PG_USER') ?: 'postgres';
-$pass = getenv('CACHELAYER_PG_PASS') ?: 'postgres';
+$dsn = getenv('IC_POSTGRES_DSN') ?: getenv('CACHELAYER_PG_DSN') ?: 'pgsql:host=127.0.0.1;port=5432;dbname=cachelayer';
+$user = getenv('IC_SERVICE_USERNAME') ?: getenv('IC_POSTGRES_USER') ?: getenv('CACHELAYER_PG_USER') ?: 'postgres';
+$pass = getenv('IC_SERVICE_PASSWORD') ?: getenv('IC_POSTGRES_PASSWORD') ?: getenv('CACHELAYER_PG_PASS') ?: 'postgres';
 
 try {
     $probe = new PDO($dsn, $user, $pass);
@@ -17,6 +18,7 @@ try {
     $probe->query('SELECT 1');
 } catch (Throwable) {
     test('PostgreSQL server unreachable')->skip();
+
     return;
 }
 

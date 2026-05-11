@@ -5,20 +5,25 @@ declare(strict_types=1);
 use Infocyph\CacheLayer\Memoize\Memoizer;
 use Infocyph\CacheLayer\Memoize\OnceMemoizer;
 
-if (! function_exists('sanitize_cache_ns')) {
+if (!function_exists('sanitize_cache_ns')) {
     /**
      * Normalize cache namespaces into safe key prefixes.
      */
     function sanitize_cache_ns(string $ns): string
     {
+        /** @var array<string, string> $cache */
         static $cache = [];
 
-        return $cache[$ns] ??= (preg_replace('/[^A-Za-z0-9_\-]/', '_', $ns) ?? '');
+        $sanitized = preg_replace('/[^A-Za-z0-9_\-]/', '_', $ns);
+
+        return $cache[$ns] ??= is_string($sanitized) ? $sanitized : '';
     }
 }
 
-if (! function_exists('memoize')) {
+if (!function_exists('memoize')) {
     /**
+     * @param array<int, mixed> $params
+     *
      * @throws ReflectionException
      */
     function memoize(?callable $callable = null, array $params = []): mixed
@@ -32,8 +37,10 @@ if (! function_exists('memoize')) {
     }
 }
 
-if (! function_exists('remember')) {
+if (!function_exists('remember')) {
     /**
+     * @param array<int, mixed> $params
+     *
      * @throws ReflectionException
      */
     function remember(?object $object = null, ?callable $callable = null, array $params = []): mixed
@@ -52,7 +59,7 @@ if (! function_exists('remember')) {
     }
 }
 
-if (! function_exists('once')) {
+if (!function_exists('once')) {
     function once(callable $callback): mixed
     {
         return OnceMemoizer::instance()->once($callback);

@@ -12,6 +12,7 @@ final class NullCacheAdapter extends AbstractCacheAdapter
     public function clear(): bool
     {
         $this->deferred = [];
+
         return true;
     }
 
@@ -22,11 +23,18 @@ final class NullCacheAdapter extends AbstractCacheAdapter
 
     public function deleteItem(string $key): bool
     {
+        unset($key);
+
         return true;
     }
 
+    /**
+     * @param list<string> $keys
+     */
     public function deleteItems(array $keys): bool
     {
+        unset($keys);
+
         return true;
     }
 
@@ -37,14 +45,20 @@ final class NullCacheAdapter extends AbstractCacheAdapter
 
     public function hasItem(string $key): bool
     {
+        unset($key);
+
         return false;
     }
 
+    /**
+     * @param list<string> $keys
+     * @return array<string, GenericCacheItem>
+     */
     public function multiFetch(array $keys): array
     {
         $items = [];
         foreach ($keys as $key) {
-            $items[(string) $key] = new GenericCacheItem($this, (string) $key);
+            $items[$key] = new GenericCacheItem($this, $key);
         }
 
         return $items;

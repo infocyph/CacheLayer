@@ -14,7 +14,7 @@ test('weak map adapter stores scalar values', function () {
 });
 
 test('weak map adapter returns same object while strongly referenced', function () {
-    $obj = new stdClass();
+    $obj = new stdClass;
     $obj->name = 'cache-object';
 
     $this->cache->set('obj', $obj);

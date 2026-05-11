@@ -25,7 +25,7 @@ test('payload codec rejects tampered signed payload', function () {
     CachePayloadCodec::configureSecurity('secret-key-123', 8_388_608);
 
     $blob = CachePayloadCodec::encode('value', null);
-    $tampered = $blob . 'x';
+    $tampered = $blob.'x';
 
     expect(CachePayloadCodec::decode($tampered))->toBeNull();
 });

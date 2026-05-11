@@ -36,7 +36,7 @@ it('remember() returns Memoizer when called with no object', function () {
 });
 
 it('remember() caches per-instance callables', function () {
-    $obj = new stdClass();
+    $obj = new stdClass;
     $counter = 0;
     $fn = function () use (&$counter) {
         return ++$counter;
@@ -71,8 +71,10 @@ it('once() caches by call site', function () {
 });
 
 it('memoize trait caches values within object', function () {
-    $inst = new class () {
+    $inst = new class
+    {
         use MemoizeTrait;
+
         public int $count = 0;
 
         public function next(): int

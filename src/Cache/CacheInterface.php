@@ -24,8 +24,10 @@ use Psr\SimpleCache\CacheInterface as SimpleCacheInterface;
  * Implementations of this interface provide a unified API for both simple
  * and advanced caching use cases, supporting features like tagged cache
  * invalidation, cache stampede protection, and multiple storage adapters.
+ *
+ * @extends ArrayAccess<string, mixed>
  */
-interface CacheInterface extends CacheItemPoolInterface, SimpleCacheInterface, ArrayAccess, Countable
+interface CacheInterface extends ArrayAccess, CacheItemPoolInterface, Countable, SimpleCacheInterface
 {
     public function clearCache(): bool;
 
@@ -72,4 +74,6 @@ interface CacheInterface extends CacheItemPoolInterface, SimpleCacheInterface, A
     public function useMemcachedLock(?\Memcached $client = null, string $prefix = 'cachelayer:lock:'): self;
 
     public function useRedisLock(?\Redis $client = null, string $prefix = 'cachelayer:lock:'): self;
+
+    public function useValkeyLock(?\Redis $client = null, string $prefix = 'cachelayer:lock:'): self;
 }
