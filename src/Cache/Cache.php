@@ -17,6 +17,7 @@ use Infocyph\CacheLayer\Cache\Lock\PdoLockProvider;
 use Infocyph\CacheLayer\Cache\Lock\RedisLockProvider;
 use Infocyph\CacheLayer\Cache\Metrics\CacheMetricsCollectorInterface;
 use Infocyph\CacheLayer\Cache\Metrics\InMemoryCacheMetricsCollector;
+use Infocyph\CacheLayer\Cache\Tiering\TieredPoolFactory;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 use Infocyph\CacheLayer\Serializer\ValueSerializer;
 use MongoDB\Client;
@@ -328,6 +329,18 @@ final class Cache implements CacheInterface
             namespace: $namespace,
             dsn: 'sqlite:' . $dbPath,
         );
+    }
+
+    /**
+     * Builds a tiered cache from pool instances and/or descriptor arrays.
+     *
+     * @param array<int, CacheItemPoolInterface|array<string, mixed>> $tiers
+     */
+    public static function tiered(array $tiers, bool $writeToL1 = true): self
+    {
+        $pools = TieredPoolFactory::fromArray($tiers);
+
+        return new self(new Adapter\ChainCacheAdapter($pools, $writeToL1));
     }
 
     /**

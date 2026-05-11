@@ -1,6 +1,6 @@
 # CacheLayer
 
-[![Security & Standards](https://github.com/infocyph/CacheLayer/actions/workflows/build.yml/badge.svg)](https://github.com/infocyph/CacheLayer/actions/workflows/build.yml)
+[![Security & Standards](https://github.com/infocyph/CacheLayer/actions/workflows/security-standards.yml/badge.svg)](https://github.com/infocyph/CacheLayer/actions/workflows/security-standards.yml)
 ![Packagist Downloads](https://img.shields.io/packagist/dt/infocyph/CacheLayer?color=green\&link=https%3A%2F%2Fpackagist.org%2Fpackages%2Finfocyph%2FCacheLayer)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 ![Packagist Version](https://img.shields.io/packagist/v/infocyph/CacheLayer)
@@ -21,6 +21,7 @@ visibility, maintenance focus, and faster feature enrichment for caching.
 
 - Unified `Cache` facade implementing PSR-6, PSR-16, `ArrayAccess`, and `Countable`
 - Adapter support for APCu, File, PHP Files, Memcached, Redis, Valkey, Redis Cluster, PDO (SQLite default), Shared Memory, MongoDB, and ScyllaDB
+- Tiered cache composition via `Cache::tiered()` (L1/L2/... descriptors or pool instances)
 - Tagged invalidation with versioned tags: `setTagged()`, `invalidateTag()`, `invalidateTags()`
 - Stampede-safe `remember()` with pluggable lock providers
 - Per-adapter metrics counters and export hooks
@@ -67,6 +68,33 @@ $cache->invalidateTag('users');
 
 $metrics = $cache->exportMetrics();
 ```
+
+## Tiered Flow (L1 -> L2 -> DB)
+
+```php
+use Infocyph\CacheLayer\Cache\Cache;
+
+$cache = Cache::tiered([
+    ['driver' => 'apcu', 'namespace' => 'app'], // L1
+    ['driver' => 'valkey', 'namespace' => 'app', 'dsn' => 'valkey://127.0.0.1:6379'], // L2
+], writeToL1: false); // optional L1 write-through
+
+$value = $cache->remember('user:42', function ($item) use ($pdo) {
+    $item->expiresAfter(300);
+
+    $stmt = $pdo->prepare('SELECT payload FROM users_cache_source WHERE id = ?');
+    $stmt->execute([42]);
+
+    return $stmt->fetchColumn();
+});
+```
+
+Request flow:
+- check APCu (L1)
+- check Redis/Valkey (L2)
+- query DB on miss
+- write L2
+- optionally write L1 (controlled by `writeToL1`)
 
 ## Security Hardening
 

@@ -15,8 +15,10 @@ final class ChainCacheAdapter extends AbstractCacheAdapter
     /**
      * @param array<int, CacheItemPoolInterface> $pools
      */
-    public function __construct(private readonly array $pools)
-    {
+    public function __construct(
+        private readonly array $pools,
+        private readonly bool $writeToL1 = true,
+    ) {
         if ($pools === []) {
             throw new InvalidArgumentException('ChainCacheAdapter requires at least one pool.');
         }
@@ -110,7 +112,10 @@ final class ChainCacheAdapter extends AbstractCacheAdapter
     {
         return $this->saveEncoded($item, function (CacheItemInterface $saveItem, array $expires): bool {
             $ok = true;
-            foreach ($this->pools as $pool) {
+            $poolCount = count($this->pools);
+            $start = $this->writeToL1 || $poolCount === 1 ? 0 : 1;
+            for ($idx = $start; $idx < $poolCount; $idx++) {
+                $pool = $this->pools[$idx];
                 $target = $pool->getItem($saveItem->getKey());
                 $target->set($saveItem->get());
                 $target->expiresAfter($expires['ttl']);

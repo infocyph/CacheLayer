@@ -61,6 +61,7 @@ The facade exposes factory methods for all bundled adapters:
 * ``Cache::sharedMemory(string $namespace = 'default', int $segmentSize = 16777216)``
 * ``Cache::nullStore()``
 * ``Cache::chain(array $pools)``
+* ``Cache::tiered(array $tiers, bool $writeToL1 = true)``
 * ``Cache::mongodb(string $namespace = 'default', ?object $collection = null, ?object $client = null, string $database = 'cachelayer', string $collectionName = 'entries', string $uri = 'mongodb://127.0.0.1:27017')``
 * ``Cache::scyllaDb(string $namespace = 'default', ?object $session = null, string $keyspace = 'cachelayer', string $table = 'cachelayer_entries')``
 
@@ -68,6 +69,39 @@ The facade exposes factory methods for all bundled adapters:
 
 ``pdo()`` defaults to SQLite (temp-file database per namespace) when DSN/PDO is not provided.
 ``sqlite()`` is a convenience wrapper over ``pdo()`` for explicit SQLite file selection.
+
+``tiered()`` accepts either concrete pool instances or descriptor arrays with a
+``driver`` key (for example ``apcu``, ``valkey``, ``redis``, ``pdo``, ``sqlite``).
+Use ``writeToL1 = false`` to skip write-through to the first tier while still
+allowing promotion from lower tiers on read.
+
+Tiered L1/L2/DB flow example:
+
+.. code-block:: php
+
+   use Infocyph\CacheLayer\Cache\Cache;
+
+   $cache = Cache::tiered([
+       ['driver' => 'apcu', 'namespace' => 'app'], // L1
+       ['driver' => 'valkey', 'namespace' => 'app', 'dsn' => 'valkey://127.0.0.1:6379'], // L2
+   ], writeToL1: false); // optional L1 write-through
+
+   $value = $cache->remember('user:42', function ($item) use ($pdo) {
+       $item->expiresAfter(300);
+
+       $stmt = $pdo->prepare('SELECT payload FROM users_cache_source WHERE id = ?');
+       $stmt->execute([42]);
+
+       return $stmt->fetchColumn();
+   });
+
+Request path:
+
+* check APCu (L1)
+* check Redis/Valkey (L2)
+* query DB on miss
+* write L2
+* optionally write L1 (``writeToL1``)
 
 Key and TTL Rules
 -----------------
