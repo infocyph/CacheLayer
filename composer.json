@@ -35,12 +35,15 @@
         "psr/simple-cache": "^3.0"
     },
     "require-dev": {
-        "infocyph/phpforge": "dev-main"
+        "aws/aws-sdk-php": "^3.0",
+        "infocyph/phpforge": "dev-main",
+        "mongodb/mongodb": "^1.20 || ^2.0"
     },
     "suggest": {
         "ext-apcu": "For APCu-based caching (in-memory, per-process)",
         "ext-mbstring": "Recommended for development tools output formatting (Pest/Termwind)",
         "ext-memcached": "For Memcached-based caching (distributed, RAM)",
+        "ext-mongodb": "For MongoDB usage via MongoDbCacheAdapter",
         "ext-pdo": "For PDO-based SQL caching (MySQL/MariaDB/PostgreSQL/etc.)",
         "ext-pdo_mysql": "For MySQL/MariaDB usage via Cache::pdo(...)",
         "ext-pdo_pgsql": "For PostgreSQL usage via Cache::pdo(...)",
