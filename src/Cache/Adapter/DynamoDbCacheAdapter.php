@@ -20,7 +20,7 @@ final class DynamoDbCacheAdapter extends AbstractCacheAdapter
         $this->ns = sanitize_cache_ns($namespace);
 
         foreach (['getItem', 'putItem', 'deleteItem', 'scan', 'batchWriteItem'] as $method) {
-            if (!method_exists($this->client, $method)) {
+            if (!$this->supportsClientMethod($method)) {
                 throw new RuntimeException(
                     sprintf('DynamoDbCacheAdapter requires client method `%s()`.', $method),
                 );
@@ -40,7 +40,7 @@ final class DynamoDbCacheAdapter extends AbstractCacheAdapter
 
     public function count(): int
     {
-        $result = AdapterValueNormalizer::fromArrayLikeOrToArray($this->client->scan([
+        $result = AdapterValueNormalizer::fromArrayLikeOrToArray($this->call('scan', [
             'TableName' => $this->table,
             'FilterExpression' => '#ns = :ns AND (attribute_not_exists(#exp) OR #exp > :now)',
             'Select' => 'COUNT',
@@ -61,7 +61,7 @@ final class DynamoDbCacheAdapter extends AbstractCacheAdapter
 
     public function deleteItem(string $key): bool
     {
-        $this->client->deleteItem([
+        $this->call('deleteItem', [
             'TableName' => $this->table,
             'Key' => ['ckey' => ['S' => $this->map($key)]],
         ]);
@@ -83,7 +83,7 @@ final class DynamoDbCacheAdapter extends AbstractCacheAdapter
 
     public function getItem(string $key): GenericCacheItem
     {
-        $result = AdapterValueNormalizer::fromArrayLikeOrToArray($this->client->getItem([
+        $result = AdapterValueNormalizer::fromArrayLikeOrToArray($this->call('getItem', [
             'TableName' => $this->table,
             'Key' => ['ckey' => ['S' => $this->map($key)]],
             'ConsistentRead' => true,
@@ -126,7 +126,7 @@ final class DynamoDbCacheAdapter extends AbstractCacheAdapter
                 $itemMap['expires'] = ['N' => (string) $expires['expiresAt']];
             }
 
-            $this->client->putItem([
+            $this->call('putItem', [
                 'TableName' => $this->table,
                 'Item' => $itemMap,
             ]);
@@ -159,6 +159,16 @@ final class DynamoDbCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
+     * @param array<string, mixed> $params
+     */
+    private function call(string $method, array $params): mixed
+    {
+        $callable = [$this->client, $method];
+
+        return is_callable($callable) ? $callable($params) : null;
+    }
+
+    /**
      * @param list<string> $keys
      */
     private function deleteBatches(array $keys): void
@@ -168,7 +178,7 @@ final class DynamoDbCacheAdapter extends AbstractCacheAdapter
                 fn(string $key): array => ['DeleteRequest' => ['Key' => ['ckey' => ['S' => $key]]]],
                 $batch,
             );
-            $this->client->batchWriteItem(['RequestItems' => [$this->table => $requests]]);
+            $this->call('batchWriteItem', ['RequestItems' => [$this->table => $requests]]);
         }
     }
 
@@ -201,7 +211,7 @@ final class DynamoDbCacheAdapter extends AbstractCacheAdapter
 
         do {
             $result = AdapterValueNormalizer::fromArrayLikeOrToArray(
-                $this->client->scan($this->scanParams($lastKey)),
+                $this->call('scan', $this->scanParams($lastKey)),
             ) ?? [];
             $this->appendScanResultKeys($keys, $result);
             $lastKey = $this->extractLastEvaluatedKey($result);
@@ -234,5 +244,10 @@ final class DynamoDbCacheAdapter extends AbstractCacheAdapter
         }
 
         return $params;
+    }
+
+    private function supportsClientMethod(string $method): bool
+    {
+        return method_exists($this->client, $method) || is_callable([$this->client, $method]);
     }
 }
