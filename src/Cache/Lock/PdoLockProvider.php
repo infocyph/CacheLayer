@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Infocyph\CacheLayer\Cache\Lock;
 
-use PDO;
 use Throwable;
 
 final readonly class PdoLockProvider implements LockProviderInterface
@@ -16,13 +15,13 @@ final readonly class PdoLockProvider implements LockProviderInterface
     private int $retrySleepMicros;
 
     public function __construct(
-        private PDO $pdo,
+        private \PDO $pdo,
         private string $prefix = 'cachelayer:lock:',
         int $retrySleepMicros = 50_000,
         private FileLockProvider $fallback = new FileLockProvider(),
     ) {
         $this->retrySleepMicros = max(1_000, $retrySleepMicros);
-        $driver = $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+        $driver = $this->pdo->getAttribute(\PDO::ATTR_DRIVER_NAME);
         $this->driver = is_string($driver) ? $driver : '';
     }
 

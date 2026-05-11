@@ -52,6 +52,7 @@ The facade exposes factory methods for all bundled adapters:
 * ``Cache::apcu(string $namespace = 'default')``
 * ``Cache::memcache(string $namespace = 'default', array $servers = [['127.0.0.1', 11211, 0]], ?Memcached $client = null)``
 * ``Cache::redis(string $namespace = 'default', string $dsn = 'redis://127.0.0.1:6379', ?Redis $client = null)``
+* ``Cache::valkey(string $namespace = 'default', string $dsn = 'valkey://127.0.0.1:6379', ?Redis $client = null)``
 * ``Cache::redisCluster(string $namespace = 'default', array $seeds = ['127.0.0.1:6379'], float $timeout = 1.0, float $readTimeout = 1.0, bool $persistent = false, ?object $client = null)``
 * ``Cache::sqlite(string $namespace = 'default', ?string $file = null)``
 * ``Cache::pdo(string $namespace = 'default', ?string $dsn = null, ?string $username = null, ?string $password = null, ?PDO $pdo = null, string $table = 'cachelayer_entries')``
@@ -61,7 +62,7 @@ The facade exposes factory methods for all bundled adapters:
 * ``Cache::nullStore()``
 * ``Cache::chain(array $pools)``
 * ``Cache::mongodb(string $namespace = 'default', ?object $collection = null, ?object $client = null, string $database = 'cachelayer', string $collectionName = 'entries', string $uri = 'mongodb://127.0.0.1:27017')``
-* ``Cache::dynamoDb(string $namespace = 'default', string $table = 'cachelayer_entries', ?object $client = null, array $config = [])``
+* ``Cache::scyllaDb(string $namespace = 'default', ?object $session = null, string $keyspace = 'cachelayer', string $table = 'cachelayer_entries')``
 
 ``local()`` chooses APCu when available (``extension_loaded('apcu')`` and ``apcu_enabled()``), otherwise File cache.
 
@@ -172,11 +173,13 @@ Lock provider selection:
 
 * ``setLockProvider(LockProviderInterface $provider): self``
 * ``useRedisLock(?Redis $client = null, string $prefix = 'cachelayer:lock:'): self``
+* ``useValkeyLock(?Redis $client = null, string $prefix = 'cachelayer:lock:'): self``
 * ``useMemcachedLock(?Memcached $client = null, string $prefix = 'cachelayer:lock:'): self``
 
 Factory defaults:
 
 * ``Cache::redis(...)`` auto-configures ``RedisLockProvider``
+* ``Cache::valkey(...)`` auto-configures ``RedisLockProvider``
 * ``Cache::memcache(...)`` auto-configures ``MemcachedLockProvider``
 * ``Cache::pdo(...)`` / ``Cache::sqlite(...)`` auto-configure ``PdoLockProvider``
 * other adapters default to ``FileLockProvider``

@@ -74,4 +74,6 @@ interface CacheInterface extends ArrayAccess, CacheItemPoolInterface, Countable,
     public function useMemcachedLock(?\Memcached $client = null, string $prefix = 'cachelayer:lock:'): self;
 
     public function useRedisLock(?\Redis $client = null, string $prefix = 'cachelayer:lock:'): self;
+
+    public function useValkeyLock(?\Redis $client = null, string $prefix = 'cachelayer:lock:'): self;
 }

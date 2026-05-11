@@ -20,7 +20,7 @@ visibility, maintenance focus, and faster feature enrichment for caching.
 ## Features
 
 - Unified `Cache` facade implementing PSR-6, PSR-16, `ArrayAccess`, and `Countable`
-- Adapter support for APCu, File, PHP Files, Memcached, Redis, Redis Cluster, PDO (SQLite default), Shared Memory, MongoDB, and DynamoDB
+- Adapter support for APCu, File, PHP Files, Memcached, Redis, Valkey, Redis Cluster, PDO (SQLite default), Shared Memory, MongoDB, and ScyllaDB
 - Tagged invalidation with versioned tags: `setTagged()`, `invalidateTag()`, `invalidateTags()`
 - Stampede-safe `remember()` with pluggable lock providers
 - Per-adapter metrics counters and export hooks
@@ -41,7 +41,7 @@ Optional extensions/packages depend on adapter choice:
 - `ext-pdo` + driver (`pdo_sqlite`, `pdo_pgsql`, `pdo_mysql`, ...)
 - `ext-sysvshm`
 - `mongodb/mongodb`
-- `aws/aws-sdk-php`
+- `ext-cassandra`
 
 ## Installation
 

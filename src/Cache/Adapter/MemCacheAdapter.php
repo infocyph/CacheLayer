@@ -6,13 +6,12 @@ namespace Infocyph\CacheLayer\Cache\Adapter;
 
 use Infocyph\CacheLayer\Cache\Item\MemCacheItem;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
-use Memcached;
 use Psr\Cache\CacheItemInterface;
 use RuntimeException;
 
 class MemCacheAdapter extends AbstractCacheAdapter
 {
-    private readonly Memcached $mc;
+    private readonly \Memcached $mc;
 
     private readonly string $ns;
 
@@ -25,14 +24,14 @@ class MemCacheAdapter extends AbstractCacheAdapter
     public function __construct(
         string $namespace = 'default',
         array $servers = [['127.0.0.1', 11211, 0]],
-        ?Memcached $client = null,
+        ?\Memcached $client = null,
     ) {
-        if (!class_exists(Memcached::class)) {
+        if (!class_exists(\Memcached::class)) {
             throw new RuntimeException('Memcached extension not loaded');
         }
 
         $this->ns = sanitize_cache_ns($namespace);
-        $this->mc = $client ?? new Memcached();
+        $this->mc = $client ?? new \Memcached();
         if (!$client) {
             $this->mc->addServers($servers);
         }
@@ -72,7 +71,7 @@ class MemCacheAdapter extends AbstractCacheAdapter
         return true;
     }
 
-    public function getClient(): Memcached
+    public function getClient(): \Memcached
     {
         return $this->mc;
     }
@@ -81,7 +80,7 @@ class MemCacheAdapter extends AbstractCacheAdapter
     {
         $mappedKey = $this->map($key);
         $raw = $this->mc->get($mappedKey);
-        if ($this->mc->getResultCode() === Memcached::RES_SUCCESS && is_string($raw)) {
+        if ($this->mc->getResultCode() === \Memcached::RES_SUCCESS && is_string($raw)) {
             $item = $this->hitItemFromBlob($key, $raw);
             if ($item instanceof MemCacheItem) {
                 return $item;
@@ -98,7 +97,7 @@ class MemCacheAdapter extends AbstractCacheAdapter
     {
         $this->mc->get($this->map($key));
 
-        return $this->mc->getResultCode() === Memcached::RES_SUCCESS;
+        return $this->mc->getResultCode() === \Memcached::RES_SUCCESS;
     }
 
     /**
@@ -112,7 +111,7 @@ class MemCacheAdapter extends AbstractCacheAdapter
         }
 
         $prefixed = array_map($this->map(...), $keys);
-        $raw = $this->mc->getMulti($prefixed, Memcached::GET_PRESERVE_ORDER);
+        $raw = $this->mc->getMulti($prefixed, \Memcached::GET_PRESERVE_ORDER);
         if (!is_array($raw)) {
             $raw = [];
         }

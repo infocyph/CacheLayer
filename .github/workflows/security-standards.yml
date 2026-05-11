@@ -26,10 +26,11 @@ jobs:
       run_svg_report: true
       fail_on_skipped_tests: true
       enable_redis_service: true
+      enable_valkey_service: true
       enable_memcached_service: true
       enable_postgres_service: true
       enable_mysql_service: true
-      enable_dynamodb_service: true
+      enable_scylladb_service: true
       enable_mongodb_service: true
       service_db_name: "cachelayer"
       service_db_user: "cachelayer"

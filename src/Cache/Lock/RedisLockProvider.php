@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Infocyph\CacheLayer\Cache\Lock;
 
-use Redis;
 use RuntimeException;
 
 final readonly class RedisLockProvider implements LockProviderInterface
@@ -15,7 +14,7 @@ final readonly class RedisLockProvider implements LockProviderInterface
     private int $retrySleepMicros;
 
     public function __construct(
-        private Redis $redis,
+        private \Redis $redis,
         private string $prefix = 'cachelayer:lock:',
         int $retrySleepMicros = 50_000,
     ) {
@@ -54,7 +53,7 @@ LUA;
 
     private function assertRedisExtensionLoaded(): void
     {
-        if (!class_exists(Redis::class)) {
+        if (!class_exists(\Redis::class)) {
             throw new RuntimeException('phpredis extension not loaded');
         }
     }

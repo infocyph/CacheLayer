@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Infocyph\CacheLayer\Cache;
 
-use Aws\DynamoDb\DynamoDbClient;
 use BadMethodCallException;
 use Closure;
 use Countable;
@@ -126,31 +125,6 @@ final class Cache implements CacheInterface
     public static function chain(array $pools): self
     {
         return new self(new Adapter\ChainCacheAdapter($pools));
-    }
-
-    /**
-     * @param array<string, mixed> $config
-     */
-    public static function dynamoDb(
-        string $namespace = 'default',
-        string $table = 'cachelayer_entries',
-        ?object $client = null,
-        array $config = [],
-    ): self {
-        if ($client === null) {
-            if (!class_exists(DynamoDbClient::class)) {
-                throw new CacheInvalidArgumentException(
-                    'aws/aws-sdk-php is required unless a DynamoDB client is provided.',
-                );
-            }
-
-            $client = new DynamoDbClient($config + [
-                'version' => 'latest',
-                'region' => 'us-east-1',
-            ]);
-        }
-
-        return new self(new Adapter\DynamoDbCacheAdapter($client, $table, $namespace));
     }
 
     /**
@@ -315,6 +289,26 @@ final class Cache implements CacheInterface
         );
     }
 
+    public static function scyllaDb(
+        string $namespace = 'default',
+        ?object $session = null,
+        string $keyspace = 'cachelayer',
+        string $table = 'cachelayer_entries',
+    ): self {
+        if ($session === null) {
+            if (!class_exists(\Cassandra::class)) {
+                throw new CacheInvalidArgumentException(
+                    'ext-cassandra is required unless a ScyllaDB/Cassandra session is provided.',
+                );
+            }
+
+            /** @var object $session */
+            $session = \Cassandra::cluster()->build()->connect($keyspace);
+        }
+
+        return new self(new Adapter\ScyllaDbCacheAdapter($session, $keyspace, $table, $namespace));
+    }
+
     public static function sharedMemory(string $namespace = 'default', int $segmentSize = 16_777_216): self
     {
         return new self(new Adapter\SharedMemoryCacheAdapter($namespace, $segmentSize));
@@ -333,6 +327,25 @@ final class Cache implements CacheInterface
         return self::pdo(
             namespace: $namespace,
             dsn: 'sqlite:' . $dbPath,
+        );
+    }
+
+    /**
+     * Static factory for Valkey cache.
+     *
+     * @param string $namespace Cache prefix.
+     * @param string $dsn DSN for Valkey connection (e.g. 'valkey://127.0.0.1:6379').
+     * @param \Redis|null $client Optional preconfigured Redis-compatible instance.
+     */
+    public static function valkey(
+        string $namespace = 'default',
+        string $dsn = 'valkey://127.0.0.1:6379',
+        ?\Redis $client = null,
+    ): self {
+        $adapter = new Adapter\ValkeyCacheAdapter($namespace, $dsn, $client);
+
+        return (new self($adapter))->setLockProvider(
+            new RedisLockProvider($adapter->getClient()),
         );
     }
 
@@ -961,6 +974,11 @@ final class Cache implements CacheInterface
         return $this->setLockProvider(new RedisLockProvider($client, $prefix));
     }
 
+    public function useValkeyLock(?\Redis $client = null, string $prefix = 'cachelayer:lock:'): self
+    {
+        return $this->useRedisLock($client, $prefix);
+    }
+
     private function applyJitteredTtl(CacheItemInterface $item): void
     {
         if (!$item instanceof AbstractCacheItem) {
@@ -1103,7 +1121,8 @@ final class Cache implements CacheInterface
             'SharedMemory' => 'shared_memory',
             'WeakMap' => 'weak_map',
             'RedisCluster' => 'redis_cluster',
-            'DynamoDb' => 'dynamodb',
+            'Valkey' => 'valkey',
+            'ScyllaDb' => 'scylladb',
             'MongoDb' => 'mongodb',
             default => strtolower((string) preg_replace('/(?<!^)[A-Z]/', '_$0', $short)),
         };

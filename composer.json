@@ -18,7 +18,8 @@
         "mariadb",
         "postgres",
         "mongodb",
-        "dynamodb",
+        "scylladb",
+        "valkey",
         "weakmap",
         "chain-cache"
     ],
@@ -35,12 +36,12 @@
         "psr/simple-cache": "^3.0"
     },
     "require-dev": {
-        "aws/aws-sdk-php": "^3.0",
         "infocyph/phpforge": "dev-main",
         "mongodb/mongodb": "^1.20 || ^2.0"
     },
     "suggest": {
         "ext-apcu": "For APCu-based caching (in-memory, per-process)",
+        "ext-cassandra": "For ScyllaDB/Cassandra usage via ScyllaDbCacheAdapter",
         "ext-mbstring": "Recommended for development tools output formatting (Pest/Termwind)",
         "ext-memcached": "For Memcached-based caching (distributed, RAM)",
         "ext-mongodb": "For MongoDB usage via MongoDbCacheAdapter",
@@ -50,7 +51,6 @@
         "ext-pdo_sqlite": "For default SQLite usage via Cache::pdo(...) or Cache::sqlite(...)",
         "ext-redis": "For Redis-based caching (persistent, networked)",
         "ext-sysvshm": "For shared-memory caching via SharedMemoryCacheAdapter",
-        "aws/aws-sdk-php": "For DynamoDB adapter",
         "mongodb/mongodb": "For MongoDB caching via MongoDbCacheAdapter"
     },
     "minimum-stability": "stable",

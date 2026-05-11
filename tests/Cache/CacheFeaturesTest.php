@@ -162,7 +162,7 @@ test('remember uses configured lock provider', function () {
 
         public function release(?LockHandle $handle): void
         {
-            if (!$handle instanceof LockHandle) {
+            if (! $handle instanceof LockHandle) {
                 return;
             }
             $this->calls['release']++;

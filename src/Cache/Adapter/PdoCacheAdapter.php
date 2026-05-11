@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Infocyph\CacheLayer\Cache\Adapter;
 
 use Infocyph\CacheLayer\Cache\Item\GenericCacheItem;
-use PDO;
-use PDOException;
 use Psr\Cache\CacheItemInterface;
 use RuntimeException;
 
@@ -18,7 +16,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
 
     private readonly string $ns;
 
-    private readonly PDO $pdo;
+    private readonly \PDO $pdo;
 
     private readonly string $table;
 
@@ -27,7 +25,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
         ?string $dsn = null,
         ?string $username = null,
         ?string $password = null,
-        ?PDO $pdo = null,
+        ?\PDO $pdo = null,
         string $table = 'cachelayer_entries',
     ) {
         if (!preg_match('/^[A-Za-z0-9_]+$/', $table)) {
@@ -48,11 +46,11 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
                 throw new RuntimeException('Unable to resolve PDO DSN.');
             }
 
-            $this->pdo = new PDO($resolvedDsn, $username, $password);
+            $this->pdo = new \PDO($resolvedDsn, $username, $password);
         }
 
-        $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-        $driver = $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+        $this->pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+        $driver = $this->pdo->getAttribute(\PDO::ATTR_DRIVER_NAME);
         $this->driver = is_string($driver) ? $driver : '';
 
         $this->configureDriverDefaults();
@@ -120,7 +118,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
         return $stmt->execute($mapped);
     }
 
-    public function getClient(): PDO
+    public function getClient(): \PDO
     {
         return $this->pdo;
     }
@@ -131,7 +129,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
             "SELECT payload, expires FROM {$this->table} WHERE ckey = :k LIMIT 1",
         );
         $stmt->execute([':k' => $this->map($key)]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        $row = $stmt->fetch(\PDO::FETCH_ASSOC);
 
         if (!is_array($row)) {
             return new GenericCacheItem($this, $key);
@@ -279,7 +277,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
 
         try {
             $this->pdo->exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;');
-        } catch (PDOException) {
+        } catch (\PDOException) {
             // Best effort sqlite tuning.
         }
     }
@@ -296,11 +294,11 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
             }
 
             $this->pdo->exec("CREATE INDEX {$index} ON {$this->table}(expires)");
-        } catch (PDOException) {
+        } catch (\PDOException) {
             // Retry once for engines that do not support IF NOT EXISTS on indexes.
             try {
                 $this->pdo->exec("CREATE INDEX {$index} ON {$this->table}(expires)");
-            } catch (PDOException) {
+            } catch (\PDOException) {
                 // Ignore duplicate index/feature support errors.
             }
         }
@@ -354,7 +352,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
         $stmt->execute($mappedKeys);
 
         $rows = [];
-        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        foreach ($stmt->fetchAll(\PDO::FETCH_ASSOC) as $row) {
             if (!is_array($row)) {
                 continue;
             }
@@ -453,7 +451,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
 
         try {
             return $insert->execute($params);
-        } catch (PDOException) {
+        } catch (\PDOException) {
             // Another process may have inserted concurrently.
             $updateByKey = $this->pdo->prepare(
                 "UPDATE {$this->table}

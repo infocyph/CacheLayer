@@ -7,7 +7,6 @@ namespace Infocyph\CacheLayer\Cache\Adapter;
 use Infocyph\CacheLayer\Cache\Item\RedisCacheItem;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 use Psr\Cache\CacheItemInterface;
-use Redis;
 use RuntimeException;
 
 /**
@@ -23,23 +22,23 @@ class RedisCacheAdapter extends AbstractCacheAdapter
 {
     private readonly string $ns;
 
-    private readonly Redis $redis;
+    private readonly \Redis $redis;
 
     /**
      * Creates a new Redis cache adapter.
      *
      * @param string $namespace A namespace prefix to avoid key collisions.
      * @param string $dsn The Redis connection DSN (e.g., 'redis://127.0.0.1:6379').
-     * @param Redis|null $client Optional pre-configured Redis client instance.
+     * @param \Redis|null $client Optional pre-configured Redis client instance.
      *
      * @throws RuntimeException If the phpredis extension is not loaded.
      */
     public function __construct(
         string $namespace = 'default',
         string $dsn = 'redis://127.0.0.1:6379',
-        ?Redis $client = null,
+        ?\Redis $client = null,
     ) {
-        if (!class_exists(Redis::class)) {
+        if (!class_exists(\Redis::class)) {
             throw new RuntimeException('phpredis extension not loaded');
         }
 
@@ -91,7 +90,7 @@ class RedisCacheAdapter extends AbstractCacheAdapter
         return $this->redis->del($full) !== false;
     }
 
-    public function getClient(): Redis
+    public function getClient(): \Redis
     {
         return $this->redis;
     }
@@ -199,9 +198,9 @@ class RedisCacheAdapter extends AbstractCacheAdapter
         return $item instanceof RedisCacheItem;
     }
 
-    private function connect(string $dsn): Redis
+    private function connect(string $dsn): \Redis
     {
-        $r = new Redis();
+        $r = new \Redis();
         $parts = parse_url($dsn);
         if (!$parts) {
             throw new RuntimeException("Invalid Redis DSN: $dsn");
