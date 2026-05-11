@@ -21,26 +21,29 @@ if (! class_exists(Memcached::class)) {
     return;
 }
 
+$memcachedHost = getenv('IC_MEMCACHED_HOST') ?: getenv('CACHELAYER_MEMCACHED_HOST') ?: '127.0.0.1';
+$memcachedPort = (int) (getenv('IC_MEMCACHED_PORT') ?: getenv('CACHELAYER_MEMCACHED_PORT') ?: '11211');
+
 $probe = new Memcached;
-$probe->addServer('127.0.0.1', 11211);
+$probe->addServer($memcachedHost, $memcachedPort);
 $probe->set('ping', 'pong');
 if ($probe->getResultCode() !== Memcached::RES_SUCCESS) {
-    test('No Memcached server at 127.0.0.1:11211 – skipping')->skip();
+    test('No Memcached server available – skipping')->skip();
 
     return;
 }
 
 /* ── Test bootstrap / teardown ───────────────────────────────────── */
 
-beforeEach(function () {
+beforeEach(function () use ($memcachedHost, $memcachedPort) {
     $client = new Memcached;
-    $client->addServer('127.0.0.1', 11211);
+    $client->addServer($memcachedHost, $memcachedPort);
     $client->flush();                          // fresh slate
     ValueSerializer::clearResourceHandlers();
 
     $this->cache = Cache::memcache(
         'tests',
-        [['127.0.0.1', 11211, 0]],
+        [[$memcachedHost, $memcachedPort, 0]],
         $client
     );
 

@@ -8,9 +8,9 @@ if (! in_array('mysql', PDO::getAvailableDrivers(), true)) {
     return;
 }
 
-$dsn = getenv('CACHELAYER_MYSQL_DSN') ?: 'mysql:host=127.0.0.1;port=3306;dbname=cachelayer';
-$user = getenv('CACHELAYER_MYSQL_USER') ?: 'root';
-$pass = getenv('CACHELAYER_MYSQL_PASS');
+$dsn = getenv('IC_MYSQL_DSN') ?: getenv('CACHELAYER_MYSQL_DSN') ?: 'mysql:host=127.0.0.1;port=3306;dbname=cachelayer';
+$user = getenv('IC_SERVICE_USERNAME') ?: getenv('IC_MYSQL_USER') ?: getenv('CACHELAYER_MYSQL_USER') ?: 'root';
+$pass = getenv('IC_SERVICE_PASSWORD') ?: getenv('IC_MYSQL_PASSWORD') ?: getenv('CACHELAYER_MYSQL_PASS');
 if ($pass === false) {
     $pass = '';
 }

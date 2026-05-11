@@ -24,5 +24,13 @@ jobs:
       psalm_threads: "1"
       run_analysis: true
       run_svg_report: true
+      enable_redis_service: true
+      enable_memcached_service: true
+      enable_postgres_service: true
+      enable_mysql_service: true
+      enable_dynamodb_service: true
+      enable_mongodb_service: true
+      service_db_name: "cachelayer"
+      service_db_user: "cachelayer"
+      service_db_password: "123456pass"
       artifact_retention_days: 61
-

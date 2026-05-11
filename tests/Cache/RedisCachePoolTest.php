@@ -20,9 +20,26 @@ if (! class_exists(Redis::class)) {
 
     return;
 }
+
+$redisHost = getenv('IC_REDIS_HOST') ?: getenv('CACHELAYER_REDIS_HOST') ?: '127.0.0.1';
+$redisPort = (int) (getenv('IC_REDIS_PORT') ?: getenv('CACHELAYER_REDIS_PORT') ?: '6379');
+$redisPassword = getenv('IC_REDIS_PASSWORD');
+if ($redisPassword === false) {
+    $redisPassword = getenv('IC_SERVICE_PASSWORD');
+}
+if ($redisPassword === false) {
+    $redisPassword = getenv('CACHELAYER_REDIS_PASSWORD');
+}
+if ($redisPassword === false) {
+    $redisPassword = '';
+}
+
 try {
     $probe = new Redis;
-    $probe->connect('127.0.0.1', 6379, 0.5);
+    $probe->connect($redisHost, $redisPort, 0.5);
+    if ($redisPassword !== '') {
+        $probe->auth($redisPassword);
+    }
     $probe->ping();
 } catch (Throwable) {
     test('Redis server unreachable – skipping')->skip();
@@ -31,15 +48,18 @@ try {
 }
 
 /* ── bootstrap / teardown ────────────────────────────────────────── */
-beforeEach(function () {
+beforeEach(function () use ($redisHost, $redisPort, $redisPassword) {
     $client = new Redis;
-    $client->connect('127.0.0.1', 6379);
+    $client->connect($redisHost, $redisPort);
+    if ($redisPassword !== '') {
+        $client->auth($redisPassword);
+    }
     $client->flushDB();                               // fresh DB 0
     ValueSerializer::clearResourceHandlers();
 
     $this->cache = Cache::redis(
         'tests',
-        'redis://127.0.0.1:6379',
+        sprintf('redis://%s:%d', $redisHost, $redisPort),
         $client
     );
 
