@@ -142,6 +142,7 @@ Contributions are welcome.
 - Open an issue for bug reports or feature discussions
 - Open a pull request with focused changes and tests
 - Keep coding style and static checks passing before submitting
+- Follow the [Code of Conduct](CODE_OF_CONDUCT.md)
 
 ## License
 
