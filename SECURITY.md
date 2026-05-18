@@ -1,101 +1,49 @@
-# Security Guide
+# Security Policy
 
-This document captures CacheLayer hardening guidance and rollout options.
+## Supported Versions
 
-## Threat Model
+The project currently supports security updates for the latest release.
 
-CacheLayer stores serialized payloads in backends that may be writable by local
-or network-adjacent actors if infrastructure is misconfigured. Main risks:
+## Reporting a Vulnerability
 
-- Deserialization abuse when payloads are tampered.
-- Executable cache-file abuse in `phpFiles` adapter.
-- Insecure default temp-directory usage in shared environments.
+Please report vulnerabilities privately.
 
-## Implemented Hardening
+1. Use GitHub private vulnerability reporting for this repository (`Security` -> `Advisories` -> `Report a vulnerability`).
+2. If private reporting is unavailable, contact maintainers through a private channel.
+3. Do not open a public issue for security vulnerabilities.
 
-### 1) Serialization and Payload Hardening
+Please include:
 
-- `CachePayloadCodec` supports signed payloads (HMAC-SHA256).
-- Signed payloads are rejected when integrity verification fails.
-- When an integrity key is configured, unsigned payloads are rejected.
-- Maximum payload size can be enforced at decode time.
-- `ValueSerializer` supports strict mode:
-  - block closure payloads
-  - block object payloads
-- Native scalar/array serialization paths now decode with
-  `allowed_classes => false`.
+- Affected package version(s)
+- PHP version and runtime environment
+- Reproduction steps or proof of concept
+- Impact assessment (confidentiality/integrity/availability)
+- Any known workaround
 
-### Runtime API
+## Response Process
 
-```php
-$cache
-    ->configurePayloadSecurity(
-        integrityKey: 'replace-with-strong-secret',
-        maxPayloadBytes: 8_388_608,
-    )
-    ->configureSerializationSecurity(
-        allowClosurePayloads: false,
-        allowObjectPayloads: false,
-    );
-```
+- Initial acknowledgment: best effort, typically within a few days
+- Triage: best effort, based on maintainer availability
+- Fix and release timeline depends on severity and exploitability
 
-### Environment Variables
+If a report is accepted, a patched release will be prepared and published. Credit will be provided unless you request otherwise.
 
-- `CACHELAYER_PAYLOAD_INTEGRITY_KEY`
-- `CACHELAYER_MAX_PAYLOAD_BYTES`
+## Protected by PHPForge
 
-### 2) `phpFiles` Adapter Guardrails
+This project is protected by [PHPForge](https://github.com/infocyph/PHPForge), an automated quality and security tooling layer for Infocyph PHP projects.
 
-`phpFiles` keeps executable `.php` cache files for performance, so strict
-directory controls are required. Runtime checks now reject:
+PHPForge helps keep the project reliable by running checks for:
 
-- symlinked cache directories
-- world-writable cache directories
+- Code style and standards
+- Tests and syntax validation
+- Static analysis and type safety
+- Security and taint analysis
+- Dependency vulnerability audit
+- Architecture boundary validation
+- Duplicate-code detection
+- API snapshot and comment-policy checks
+- Refactor safety checks
+- Benchmark and release-readiness checks
+- Git hooks and CI workflow protection
 
-Use `phpFiles` only on trusted hosts and private directories.
-
-### 3) Temp-Directory Hardening
-
-Default filesystem locations are now scoped under dedicated cachelayer temp
-subdirectories:
-
-- file adapter default base: `sys_get_temp_dir()/cachelayer/files`
-- php-files adapter default base: `sys_get_temp_dir()/cachelayer/phpfiles`
-- PDO SQLite default: `sys_get_temp_dir()/cachelayer/pdo/cache_<ns>.sqlite`
-
-These paths are created with restrictive permissions and world-writable checks.
-
-## Recommended Production Profile
-
-1. Set `CACHELAYER_PAYLOAD_INTEGRITY_KEY` to a strong random secret.
-2. Disable closure/object payloads unless explicitly required.
-3. Use explicit, private cache directories outside shared temp space.
-4. Prefer non-executable file storage adapters over `phpFiles` where possible.
-
-## Backend-Specific Notes
-
-### Redis / Valkey
-
-- Require authentication and network-level access controls.
-- Prefer TLS-enabled connections when crossing host boundaries.
-- Avoid exposing Redis/Valkey ports directly to public networks.
-
-### MongoDB / ScyllaDB / SQL Backends
-
-- Use least-privilege database credentials scoped to cache tables/collections.
-- Enforce transport security (TLS) where supported.
-- Keep cache schema/table permissions separate from application primary data.
-
-### Tiered Cache Deployments (L1/L2/DB)
-
-For `Cache::tiered()` production setups:
-
-- keep L1 (APCu) local-process only
-- protect L2 (Redis/Valkey) as a private service
-- treat DB fallback resolvers as trusted code paths only
-- configure bounded TTLs to reduce stale or poisoned cache lifetime
-
-## Disclosure
-
-If you discover a security issue, please open a private report to project
-maintainers before public disclosure.
+These automated gates strengthen code quality, reduce security risk and help prevent regressions before merge or release.
