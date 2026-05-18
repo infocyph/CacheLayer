@@ -117,12 +117,6 @@ You can also set:
 - `CACHELAYER_PAYLOAD_INTEGRITY_KEY`
 - `CACHELAYER_MAX_PAYLOAD_BYTES`
 
-See `SECURITY.md` for deployment guidance and threat model notes.
-
-## Documentation
-
-https://docs.infocyph.com/projects/CacheLayer
-
 ## Testing
 
 ```bash
@@ -135,15 +129,18 @@ Or run the full test pipeline:
 composer test:all
 ```
 
-## Contributing
+## Security
 
-Contributions are welcome.
+Protected by [PHPForge](https://github.com/infocyph/PHPForge) — an automated quality and security gate for PHP projects.
 
-- Open an issue for bug reports or feature discussions
-- Open a pull request with focused changes and tests
-- Keep coding style and static checks passing before submitting
-- Follow the [Code of Conduct](CODE_OF_CONDUCT.md)
+---
 
-## License
-
-MIT License. See [LICENSE](LICENSE).
+<div align="center">
+  <sub><strong>Made with ❤️ for the PHP community</strong></sub><br />
+  <sub><a href="LICENSE">MIT Licensed</a></sub><br />
+  <a href="https://docs.infocyph.com/projects/CacheLayer">Documentation</a> •
+  <a href="SECURITY.md">Security</a> •
+  <a href="CODE_OF_CONDUCT.md">Code of Conduct</a> •
+  <a href="CONTRIBUTING.md">Contributing</a> •
+  <a href="https://github.com/infocyph/CacheLayer/issues">Report | Request | Suggest</a>
+</div>

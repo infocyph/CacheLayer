@@ -1,65 +1,50 @@
 # Code of Conduct
 
-## Our Pledge
+## Our Commitment
 
-In the interest of fostering an open and welcoming environment, we as
-contributors and maintainers pledge to make participation in this project and
-our community a harassment-free experience for everyone, regardless of age,
-body size, disability, ethnicity, sex characteristics, gender identity and
-expression, level of experience, education, socio-economic status, nationality,
-personal appearance, race, religion, or sexual identity and orientation.
+We are committed to making participation in this project a harassment-free
+experience for everyone, regardless of age, body size, disability, ethnicity,
+gender identity and expression, level of experience, nationality, personal
+appearance, race, religion or sexual identity and orientation.
 
-## Our Standards
+## Expected Behavior
 
-Examples of behavior that contributes to a positive environment include:
+Examples of behavior that contributes to a positive environment:
 
-- Using welcoming and inclusive language.
-- Being respectful of differing viewpoints and experiences.
-- Gracefully accepting constructive criticism.
-- Focusing on what is best for the community.
-- Showing empathy toward other community members.
+- Be respectful and constructive.
+- Assume good intent and ask clarifying questions.
+- Give and receive feedback professionally.
+- Focus on what is best for the community and project.
+
+## Unacceptable Behavior
 
 Examples of unacceptable behavior include:
 
-- The use of sexualized language or imagery and unwelcome sexual attention or
-  advances.
-- Trolling, insulting or derogatory comments, and personal or political attacks.
-- Public or private harassment.
-- Publishing others' private information, such as a physical or electronic
-  address, without explicit permission.
-- Other conduct which could reasonably be considered inappropriate in a
-  professional setting.
+- Harassment, discrimination or personal attacks.
+- Trolling, insulting or derogatory comments.
+- Publishing private information without consent.
+- Any conduct that is inappropriate in a professional setting.
 
-## Our Responsibilities
+## Enforcement Responsibilities
 
-Project maintainers are responsible for clarifying standards of acceptable
-behavior and are expected to take appropriate and fair corrective action in
-response to any instances of unacceptable behavior.
-
-Project maintainers have the right and responsibility to remove, edit, or
-reject comments, commits, code, wiki edits, issues, and other contributions
-that are not aligned with this Code of Conduct.
+Project maintainers are responsible for clarifying and enforcing this code of
+conduct. They may remove, edit or reject comments, commits, code, issues, and
+other contributions that violate this policy.
 
 ## Scope
 
-This Code of Conduct applies within all project spaces, and it also applies
-when an individual is representing the project or its community in public
-spaces. Examples of representing a project or community include using an
-official project email address, posting via an official social media account,
-or acting as an appointed representative at an online or offline event.
+This code of conduct applies in all project spaces, including:
+
+- Issue trackers
+- Pull requests
+- Discussions and chat related to the project
+- Any public or private communication where someone represents the project
+
+## Reporting
+
+To report unacceptable behavior, contact project maintainers privately.
 
 ## Enforcement
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the project maintainers by opening a private security report or by
-contacting the maintainer email listed in `composer.json`.
-
-All complaints will be reviewed and investigated and will result in a response
-that is deemed necessary and appropriate to the circumstances. Project
-maintainers are obligated to maintain confidentiality with regard to the
-reporter of an incident.
-
-## Attribution
-
-This Code of Conduct is adapted from the Contributor Covenant, version 1.4,
-available at https://www.contributor-covenant.org/version/1/4/code-of-conduct/
+Maintainers may take any action they deem appropriate, including warnings,
+temporary bans or permanent bans from community participation.

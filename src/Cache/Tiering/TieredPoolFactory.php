@@ -33,18 +33,14 @@ final class TieredPoolFactory
      */
     private static function bool(array $descriptor, string $key, bool $default): bool
     {
-        if (!array_key_exists($key, $descriptor)) {
-            return $default;
-        }
-
-        $value = $descriptor[$key];
-        if (!is_bool($value)) {
-            throw new CacheInvalidArgumentException(
-                sprintf('Tier descriptor key `%s` must be bool, got %s.', $key, get_debug_type($value)),
-            );
-        }
-
-        return $value;
+        /** @var bool */
+        return self::typedValue(
+            $descriptor,
+            $key,
+            $default,
+            static fn(mixed $value): bool => is_bool($value),
+            'bool',
+        );
     }
 
     private static function buildScyllaSession(string $keyspace): object
@@ -164,18 +160,14 @@ final class TieredPoolFactory
      */
     private static function int(array $descriptor, string $key, int $default): int
     {
-        if (!array_key_exists($key, $descriptor)) {
-            return $default;
-        }
-
-        $value = $descriptor[$key];
-        if (!is_int($value)) {
-            throw new CacheInvalidArgumentException(
-                sprintf('Tier descriptor key `%s` must be int, got %s.', $key, get_debug_type($value)),
-            );
-        }
-
-        return $value;
+        /** @var int */
+        return self::typedValue(
+            $descriptor,
+            $key,
+            $default,
+            static fn(mixed $value): bool => is_int($value),
+            'int',
+        );
     }
 
     private static function memcachedClient(mixed $client, int|string $index): ?\Memcached
@@ -405,14 +397,35 @@ final class TieredPoolFactory
      */
     private static function string(array $descriptor, string $key, string $default): string
     {
+        /** @var string */
+        return self::typedValue(
+            $descriptor,
+            $key,
+            $default,
+            static fn(mixed $value): bool => is_string($value),
+            'string',
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $descriptor
+     * @param callable(mixed): bool $validator
+     */
+    private static function typedValue(
+        array $descriptor,
+        string $key,
+        mixed $default,
+        callable $validator,
+        string $expectedType,
+    ): mixed {
         if (!array_key_exists($key, $descriptor)) {
             return $default;
         }
 
         $value = $descriptor[$key];
-        if (!is_string($value)) {
+        if (!$validator($value)) {
             throw new CacheInvalidArgumentException(
-                sprintf('Tier descriptor key `%s` must be string, got %s.', $key, get_debug_type($value)),
+                sprintf('Tier descriptor key `%s` must be %s, got %s.', $key, $expectedType, get_debug_type($value)),
             );
         }
 
