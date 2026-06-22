@@ -60,8 +60,9 @@ trait CacheReadRememberTrait
     }
 
     /**
-     * @param string[] $keys
-     * @return iterable<CacheItemInterface>
+     * @param array $keys The keys argument.
+     * @phpstan-param string[] $keys
+     * @phpstan-return iterable<CacheItemInterface>
      */
     public function getItems(array $keys = []): iterable
     {
@@ -130,6 +131,11 @@ trait CacheReadRememberTrait
 
     /**
      * @throws Psr6InvalidArgumentException
+     * @param string $key The key argument.
+     * @param callable $resolver The resolver argument.
+     * @param mixed $ttl The ttl argument.
+     * @param array $tags The tags argument.
+     * @phpstan-param array<int, string> $tags
      */
     public function remember(
         string $key,

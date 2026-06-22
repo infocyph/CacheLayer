@@ -21,6 +21,11 @@ use Psr\Cache\CacheItemInterface;
  *
  * Cache items represent individual entries in a cache pool and provide
  * methods for accessing and manipulating their state.
+     * @param InternalCachePoolInterface|null $pool The cache pool this item belongs to.
+     * @param string $key The cache key for this item.
+     * @param mixed $value The cached value.
+     * @param bool $hit Whether this item was a cache hit.
+     * @param DateTimeInterface|null $exp The expiration time for this item.
  */
 abstract class AbstractCacheItem implements CacheItemInterface
 {
@@ -52,9 +57,9 @@ abstract class AbstractCacheItem implements CacheItemInterface
     }
 
     /**
-     * @param array{key:string,value:mixed,hit:bool,exp?:string|null} $data
-     *
      * @throws Exception
+     * @param array $data The data argument.
+     * @phpstan-param array{key:string,value:mixed,hit:bool,exp?:string|null} $data
      */
     public function __unserialize(array $data): void
     {

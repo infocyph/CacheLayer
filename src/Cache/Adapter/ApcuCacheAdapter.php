@@ -16,7 +16,8 @@ use RuntimeException;
  * in-memory caching. It's suitable for production environments where
  * shared memory caching is available and provides fast access to cached data.
  *
- * Note: This adapter requires the APCu extension to be installed and enabled.
+ * This This adapter requires the APCu extension to be installed and enabled.
+     * @param string $namespace A namespace prefix to avoid key collisions.
  */
 class ApcuCacheAdapter extends AbstractCacheAdapter
 {
@@ -25,9 +26,9 @@ class ApcuCacheAdapter extends AbstractCacheAdapter
     /**
      * Creates a new APCu cache adapter.
      *
-     * @param string $namespace A namespace prefix to avoid key collisions.
      *
      * @throws RuntimeException If the APCu extension is not enabled.
+     * @param string $namespace A namespace prefix to avoid key collisions.
      */
     public function __construct(string $namespace = 'default')
     {
@@ -63,7 +64,8 @@ class ApcuCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @param list<string> $keys
+     * @param array $keys The keys argument.
+     * @phpstan-param list<string> $keys
      */
     public function deleteItems(array $keys): bool
     {
@@ -99,8 +101,9 @@ class ApcuCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @param list<string> $keys
-     * @return array<string, ApcuCacheItem>
+     * @param array $keys The keys argument.
+     * @phpstan-param list<string> $keys
+     * @phpstan-return array<string, ApcuCacheItem>
      */
     public function multiFetch(array $keys): array
     {
@@ -155,9 +158,13 @@ class ApcuCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @param array<string, ApcuCacheItem> $items
-     * @param list<string> $stale
-     * @param array<mixed> $raw
+     * @param array $items The items argument.
+     * @param array $stale The stale argument.
+     * @param string $key The key argument.
+     * @param array $raw The raw argument.
+     * @phpstan-param array<string, ApcuCacheItem> $items
+     * @phpstan-param list<string> $stale
+     * @phpstan-param array<mixed> $raw
      */
     private function appendFetchedHit(array &$items, array &$stale, string $key, array $raw): bool
     {
@@ -197,7 +204,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @return list<string>
+     * @phpstan-return list<string>
      */
     private function listKeys(): array
     {

@@ -7,7 +7,8 @@ namespace Infocyph\CacheLayer\Cache\Adapter;
 final class AdapterValueNormalizer
 {
     /**
-     * @return array<string, mixed>|null
+     * @phpstan-return array<string, mixed>|null
+ * @param mixed $value The value argument.
      */
     public static function fromArrayLikeOrToArray(mixed $value): ?array
     {
@@ -21,7 +22,8 @@ final class AdapterValueNormalizer
     }
 
     /**
-     * @return array<string, mixed>|null
+     * @phpstan-return array<string, mixed>|null
+ * @param mixed $value The value argument.
      */
     public static function fromJsonOrArrayLike(mixed $value): ?array
     {
@@ -35,8 +37,9 @@ final class AdapterValueNormalizer
     }
 
     /**
-     * @param array<mixed, mixed> $value
-     * @return array<string, mixed>
+     * @param array $value The value argument.
+     * @phpstan-param array<mixed, mixed> $value
+     * @phpstan-return array<string, mixed>
      */
     public static function normalizeAssoc(array $value): array
     {
@@ -51,7 +54,8 @@ final class AdapterValueNormalizer
     }
 
     /**
-     * @return array<string, mixed>|null
+     * @phpstan-return array<string, mixed>|null
+ * @param object $value The value argument.
      */
     private static function normalizeFromToArray(object $value): ?array
     {

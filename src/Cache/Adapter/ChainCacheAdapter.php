@@ -13,7 +13,9 @@ use Psr\Cache\CacheItemPoolInterface;
 final class ChainCacheAdapter extends AbstractCacheAdapter
 {
     /**
-     * @param array<int, CacheItemPoolInterface> $pools
+     * @param array $pools The pools argument.
+     * @param bool $writeToL1 The write to l1 argument.
+     * @phpstan-param array<int, CacheItemPoolInterface> $pools
      */
     public function __construct(
         private readonly array $pools,
@@ -54,7 +56,8 @@ final class ChainCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @param list<string> $keys
+     * @param array $keys The keys argument.
+     * @phpstan-param list<string> $keys
      */
     public function deleteItems(array $keys): bool
     {
@@ -100,8 +103,9 @@ final class ChainCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @param list<string> $keys
-     * @return array<string, GenericCacheItem>
+     * @param array $keys The keys argument.
+     * @phpstan-param list<string> $keys
+     * @phpstan-return array<string, GenericCacheItem>
      */
     public function multiFetch(array $keys): array
     {

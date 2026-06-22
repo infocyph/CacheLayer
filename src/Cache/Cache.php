@@ -50,6 +50,8 @@ final class Cache implements CacheInterface
      * Cache constructor.
      *
      * @param CacheItemPoolInterface $adapter Any PSR-6 cache pool.
+     * @param LockProviderInterface $lockProvider The lock provider argument.
+     * @param CacheMetricsCollectorInterface $metrics The metrics argument.
      */
     public function __construct(
         private readonly CacheItemPoolInterface $adapter,
@@ -63,10 +65,10 @@ final class Cache implements CacheInterface
      * This method allows accessing cached values using property syntax.
      * It is equivalent to calling the `get()` method with the property name.
      *
-     * @param string $name The key for which to retrieve the value.
-     * @return mixed The value associated with the given key.
      *
      * @throws SimpleCacheInvalidArgument|Psr6InvalidArgumentException if the key is invalid.
+     * @param string $name The key for which to retrieve the value.
+     * @phpstan-return mixed The value associated with the given key.
      */
     public function __get(string $name): mixed
     {
@@ -77,6 +79,7 @@ final class Cache implements CacheInterface
      * Whether the given key is set in the cache.
      *
      * @throws Psr6InvalidArgumentException
+ * @param string $name The name argument.
      */
     public function __isset(string $name): bool
     {
@@ -90,6 +93,8 @@ final class Cache implements CacheInterface
      *
      *
      * @throws SimpleCacheInvalidArgument if the key is invalid
+ * @param string $name The name argument.
+ * @param mixed $value The value argument.
      */
     public function __set(string $name, mixed $value): void
     {
@@ -101,9 +106,9 @@ final class Cache implements CacheInterface
      *
      * This method deletes the cache entry associated with the given name.
      *
-     * @param string $name The name of the cache item to unset.
      *
      * @throws SimpleCacheInvalidArgument
+     * @param string $name The name of the cache item to unset.
      */
     public function __unset(string $name): void
     {
@@ -121,7 +126,8 @@ final class Cache implements CacheInterface
     }
 
     /**
-     * @param array<int, CacheItemPoolInterface> $pools
+     * @param array $pools The pools argument.
+     * @phpstan-param array<int, CacheItemPoolInterface> $pools
      */
     public static function chain(array $pools): self
     {
@@ -147,7 +153,7 @@ final class Cache implements CacheInterface
      *
      * @param string $namespace Cache prefix. Will be suffixed to each key.
      * @param string|null $dir Directory to store cache files (or null → sys temp dir), used if APCu is not enabled.
-     * @return static An instance of the cache using the selected adapter.
+     * @phpstan-return static An instance of the cache using the selected adapter.
      */
     public static function local(
         string $namespace = 'default',
@@ -163,9 +169,10 @@ final class Cache implements CacheInterface
     /**
      * Static factory for Memcached-based cache.
      *
-     * @param string $namespace Cache prefix. Will be suffixed to each key.
-     * @param array<int, array{0:string,1:int,2:int}> $servers Memcached servers as an array of `[host, port, weight]`.
      *                                                         The `weight` is a float between 0 and 1, and defaults to 0.
+     * @param string $namespace Cache prefix. Will be suffixed to each key.
+     * @param array $servers Memcached servers as an array of `[host, port, weight]`.
+     * @phpstan-param array<int, array{0:string,1:int,2:int}> $servers Memcached servers as an array of `[host, port, weight]`.
      * @param \Memcached|null $client Optional preconfigured Memcached instance.
      */
     public static function memcache(
@@ -250,9 +257,9 @@ final class Cache implements CacheInterface
     /**
      * Static factory for Redis cache.
      *
+     *                    or null to use the default ('redis://127.0.0.1:6379').
      * @param string $namespace Cache prefix.
      * @param string $dsn DSN for Redis connection (e.g. 'redis://127.0.0.1:6379'),
-     *                    or null to use the default ('redis://127.0.0.1:6379').
      * @param \Redis|null $client Optional preconfigured Redis instance.
      */
     public static function redis(
@@ -268,7 +275,13 @@ final class Cache implements CacheInterface
     }
 
     /**
-     * @param array<int, string> $seeds
+     * @param string $namespace The namespace argument.
+     * @param array $seeds The seeds argument.
+     * @param float $timeout The timeout argument.
+     * @param float $readTimeout The read timeout argument.
+     * @param bool $persistent The persistent argument.
+     * @param object|null $client The client argument.
+     * @phpstan-param array<int, string> $seeds
      */
     public static function redisCluster(
         string $namespace = 'default',
@@ -334,7 +347,9 @@ final class Cache implements CacheInterface
     /**
      * Builds a tiered cache from pool instances and/or descriptor arrays.
      *
-     * @param array<int, CacheItemPoolInterface|array<string, mixed>> $tiers
+     * @param array $tiers The tiers argument.
+     * @param bool $writeToL1 The write to l1 argument.
+     * @phpstan-param array<int, CacheItemPoolInterface|array<string, mixed>> $tiers
      */
     public static function tiered(array $tiers, bool $writeToL1 = true): self
     {
@@ -370,7 +385,6 @@ final class Cache implements CacheInterface
     /**
      * Removes all items from the cache.
      *
-     * @return bool
      *              True if the operation was successful, false otherwise.
      */
     public function clear(): bool
@@ -394,7 +408,7 @@ final class Cache implements CacheInterface
      * queue. If the adapter does not support deferred cache items, this
      * method is a no-op.
      *
-     * @return bool True if all deferred items were successfully saved, false otherwise.
+     * @phpstan-return bool True if all deferred items were successfully saved, false otherwise.
      */
     public function commit(): bool
     {
@@ -447,6 +461,7 @@ final class Cache implements CacheInterface
      * Delete an item from the cache.
      *
      * @throws SimpleCacheInvalidArgument if the key is invalid
+ * @param string $key The key argument.
      */
     public function delete(string $key): bool
     {
@@ -470,12 +485,11 @@ final class Cache implements CacheInterface
      * This method deletes the item from the cache if it exists. If the item does
      * not exist, it is silently ignored.
      *
-     * @param string $key
      *                    The key of the item to delete.
-     * @return bool
      *              True if the item was successfully deleted, false otherwise.
      *
      * @throws Psr6InvalidArgumentException
+ * @param string $key The key argument.
      */
     public function deleteItem(string $key): bool
     {
@@ -490,10 +504,11 @@ final class Cache implements CacheInterface
     /**
      * Deletes multiple items from the cache.
      *
-     * @param string[] $keys The array of keys to delete.
-     * @return bool True if all items were successfully deleted, false otherwise.
      *
      * @throws Psr6InvalidArgumentException
+     * @param array $keys The array of keys to delete.
+     * @phpstan-param string[] $keys The array of keys to delete.
+     * @phpstan-return bool True if all items were successfully deleted, false otherwise.
      */
     public function deleteItems(array $keys): bool
     {
@@ -512,9 +527,10 @@ final class Cache implements CacheInterface
     /**
      * Deletes multiple keys from the cache.
      *
-     * @param iterable<int|string, string> $keys
      *
      * @throws SimpleCacheInvalidArgument if any key is invalid
+     * @param iterable $keys The keys argument.
+     * @phpstan-param iterable<int|string, string> $keys
      */
     public function deleteMultiple(iterable $keys): bool
     {
@@ -533,7 +549,7 @@ final class Cache implements CacheInterface
     /**
      * Returns metrics grouped by readable adapter name.
      *
-     * @return array<string, array<string, int>>
+     * @phpstan-return array<string, array<string, int>>
      */
     public function exportMetrics(): array
     {
@@ -549,6 +565,8 @@ final class Cache implements CacheInterface
      * Fetches a value from the cache. If the key does not exist, returns $default.
      *
      * @throws SimpleCacheInvalidArgument|Psr6InvalidArgumentException if the key is invalid
+ * @param string $key The key argument.
+ * @param mixed $default The default argument.
      */
     public function get(string $key, mixed $default = null): mixed
     {
@@ -560,14 +578,13 @@ final class Cache implements CacheInterface
      *
      * This method returns a CacheItemInterface object containing the cached value.
      *
-     * @param string $key
      *                    The key of the item to retrieve.
-     * @return CacheItemInterface
      *                            The retrieved Cache Item.
      *
      * @throws CacheInvalidArgumentException
      *                                       If the $key is invalid or if a CacheLoader is not available when
      *                                       the value is not found.
+ * @param string $key The key argument.
      */
     public function getItem(string $key): CacheItemInterface
     {
@@ -584,10 +601,11 @@ final class Cache implements CacheInterface
      * `multiFetch` method. Otherwise, it iterates over the keys and calls
      * `getItem` on each key.
      *
-     * @param string[] $keys
      *                       An array of keys to fetch from the cache.
-     * @return iterable<CacheItemInterface>
      *                                      An iterable of CacheItemInterface objects.
+     * @param array $keys The keys argument.
+     * @phpstan-param string[] $keys
+     * @phpstan-return iterable<CacheItemInterface>
      */
     public function getItems(array $keys = []): iterable
     {
@@ -603,10 +621,11 @@ final class Cache implements CacheInterface
      * This method is a wrapper for `getItems()`, and is intended for use with
      * iterators.
      *
-     * @param string[] $keys
      *                       An array of keys to fetch from the cache.
-     * @return iterable<CacheItemInterface>
      *                                      An iterable of CacheItemInterface objects.
+     * @param array $keys The keys argument.
+     * @phpstan-param string[] $keys
+     * @phpstan-return iterable<CacheItemInterface>
      */
     public function getItemsIterator(array $keys = []): iterable
     {
@@ -616,10 +635,12 @@ final class Cache implements CacheInterface
     /**
      * Obtains multiple values by their keys.
      *
-     * @param iterable<int|string, string> $keys
-     * @return iterable<string, mixed>
      *
      * @throws SimpleCacheInvalidArgument|Psr6InvalidArgumentException if any key is invalid
+     * @param iterable $keys The keys argument.
+     * @param mixed $default The default argument.
+     * @phpstan-param iterable<int|string, string> $keys
+     * @phpstan-return iterable<string, mixed>
      */
     public function getMultiple(iterable $keys, mixed $default = null): iterable
     {
@@ -637,6 +658,7 @@ final class Cache implements CacheInterface
      * Determines whether an item exists in the cache.
      *
      * @throws Psr6InvalidArgumentException if the key is invalid
+ * @param string $key The key argument.
      */
     public function has(string $key): bool
     {
@@ -646,12 +668,11 @@ final class Cache implements CacheInterface
     /**
      * Checks if an item is present in the cache.
      *
-     * @param string $key
      *                    The key to check.
-     * @return bool
      *              True if the item exists in the cache, false otherwise.
      *
      * @throws Psr6InvalidArgumentException
+ * @param string $key The key argument.
      */
     public function hasItem(string $key): bool
     {
@@ -664,11 +685,11 @@ final class Cache implements CacheInterface
      * This method removes all cache items that have been tagged with the given tag.
      * It uses an internal tag index to efficiently locate and invalidate tagged entries.
      *
-     * @param string $tag The tag to invalidate. All cache entries with this tag will be removed.
-     * @return bool True if the operation was successful, false otherwise.
      *
      * @throws CacheInvalidArgumentException If the tag is invalid.
      * @throws Psr6InvalidArgumentException If there's an issue with cache operations.
+     * @param string $tag The tag to invalidate. All cache entries with this tag will be removed.
+     * @phpstan-return bool True if the operation was successful, false otherwise.
      */
     public function invalidateTag(string $tag): bool
     {
@@ -685,11 +706,12 @@ final class Cache implements CacheInterface
      * associated with that tag. The operation is successful only if all tags
      * are successfully invalidated.
      *
-     * @param array<int, string> $tags An array of tags to invalidate.
-     * @return bool True if all tags were successfully invalidated, false if any failed.
      *
      * @throws CacheInvalidArgumentException If any tag is invalid.
      * @throws Psr6InvalidArgumentException If there's an issue with cache operations.
+     * @param array $tags An array of tags to invalidate.
+     * @phpstan-param array<int, string> $tags An array of tags to invalidate.
+     * @phpstan-return bool True if all tags were successfully invalidated, false if any failed.
      */
     public function invalidateTags(array $tags): bool
     {
@@ -715,11 +737,12 @@ final class Cache implements CacheInterface
      *
      * {@inheritdoc}
      *
-     * @param string $offset
      *
      * @throws Psr6InvalidArgumentException
      *
      * @see has()
+     * @param mixed $offset The offset argument.
+     * @phpstan-param string $offset
      */
     public function offsetExists(mixed $offset): bool
     {
@@ -732,10 +755,11 @@ final class Cache implements CacheInterface
      * This method allows the use of array-like syntax to retrieve a value
      * from the cache. The offset is converted to a string before retrieval.
      *
-     * @param string $offset The key at which to retrieve the value.
-     * @return mixed The value at the specified offset.
      *
      * @throws SimpleCacheInvalidArgument|Psr6InvalidArgumentException if the key is invalid
+     * @param mixed $offset The key at which to retrieve the value.
+     * @phpstan-param string $offset The key at which to retrieve the value.
+     * @phpstan-return mixed The value at the specified offset.
      */
     public function offsetGet(mixed $offset): mixed
     {
@@ -749,10 +773,11 @@ final class Cache implements CacheInterface
      * in the cache. The offset is converted to a string before storing.
      * The time-to-live (TTL) for the cache entry is set to null by default.
      *
-     * @param string $offset The key at which to set the value.
-     * @param mixed $value The value to be stored at the specified offset.
      *
      * @throws SimpleCacheInvalidArgument if the key is invalid
+     * @param mixed $offset The key at which to set the value.
+     * @phpstan-param string $offset The key at which to set the value.
+     * @param mixed $value The value to be stored at the specified offset.
      */
     public function offsetSet(mixed $offset, mixed $value): void
     {
@@ -762,9 +787,10 @@ final class Cache implements CacheInterface
     /**
      * Unsets a key from the cache.
      *
-     * @param string $offset
      *
      * @throws Psr6InvalidArgumentException|SimpleCacheInvalidArgument if the key is invalid
+     * @param mixed $offset The offset argument.
+     * @phpstan-param string $offset
      */
     public function offsetUnset(mixed $offset): void
     {
@@ -776,6 +802,12 @@ final class Cache implements CacheInterface
      *
      * On cache miss, this acquires a host-local lock, re-checks cache, computes,
      * applies jittered TTL, persists, and returns the computed value.
+     *
+     * @param string $key The key argument.
+     * @param callable $resolver The resolver argument.
+     * @param mixed $ttl The ttl argument.
+     * @param array $tags The tags argument.
+     * @phpstan-param array<int, string> $tags
      */
     public function remember(
         string $key,
@@ -792,13 +824,12 @@ final class Cache implements CacheInterface
      * This method will throw a Psr6InvalidArgumentException if the item does not
      * implement CacheItemInterface.
      *
-     * @param CacheItemInterface $item
      *                                 The cache item to persist.
-     * @return bool
      *              True if the cache item was successfully persisted, false otherwise.
      *
      * @throws Psr6InvalidArgumentException
      *                                      If the item does not implement CacheItemInterface.
+ * @param CacheItemInterface $item The item argument.
      */
     public function save(CacheItemInterface $item): bool
     {
@@ -812,7 +843,7 @@ final class Cache implements CacheInterface
      * `commit()` method is invoked. It does not persist the item immediately.
      *
      * @param CacheItemInterface $item The cache item to defer.
-     * @return bool True if the item was successfully deferred, false if the item type is invalid.
+     * @phpstan-return bool True if the item was successfully deferred, false if the item type is invalid.
      */
     public function saveDeferred(CacheItemInterface $item): bool
     {
@@ -822,9 +853,12 @@ final class Cache implements CacheInterface
     /**
      * Persists a value in the cache, optionally with a TTL.
      *
-     * @param int|DateInterval|null $ttl Time-to-live in seconds or a DateInterval
      *
      * @throws SimpleCacheInvalidArgument if the key or TTL is invalid
+     * @param mixed $ttl Time-to-live in seconds or a DateInterval
+     * @param string $key The key argument.
+     * @param mixed $value The value argument.
+     * @phpstan-param int|DateInterval|null $ttl Time-to-live in seconds or a DateInterval
      */
     public function set(string $key, mixed $value, mixed $ttl = null): bool
     {
@@ -880,10 +914,12 @@ final class Cache implements CacheInterface
     /**
      * Persists multiple key ⇒ value pairs to the cache.
      *
-     * @param iterable<int|string, mixed> $values key ⇒ value mapping
-     * @param int|DateInterval|null $ttl TTL for all items
      *
      * @throws SimpleCacheInvalidArgument if any key is invalid
+     * @param iterable $values key ⇒ value mapping
+     * @phpstan-param iterable<int|string, mixed> $values key ⇒ value mapping
+     * @param mixed $ttl TTL for all items
+     * @phpstan-param int|DateInterval|null $ttl TTL for all items
      */
     public function setMultiple(iterable $values, mixed $ttl = null): bool
     {
@@ -905,13 +941,12 @@ final class Cache implements CacheInterface
     /**
      * Changes the namespace and directory for the pool.
      *
-     * If the adapter implements {@see CacheItemPoolInterface::setNamespaceAndDirectory},
-     * this call is forwarded to the adapter. Otherwise, a {@see BadMethodCallException} is thrown.
-     *
-     * @param string $namespace The new namespace.
-     * @param string|null $dir The new directory, or null to use the default.
+     * If the adapter supports namespace and directory switching, this call is
+     * forwarded to it. Otherwise, a {@see BadMethodCallException} is thrown.
      *
      * @throws BadMethodCallException if the adapter does not support this method.
+     * @param string $namespace The new namespace.
+     * @param string|null $dir The new directory, or null to use the default.
      */
     public function setNamespaceAndDirectory(string $namespace, ?string $dir = null): void
     {
@@ -933,14 +968,16 @@ final class Cache implements CacheInterface
      * Tags provide a way to group related cache items and invalidate them
      * together when the underlying data changes.
      *
-     * @param string $key The cache key under which to store the value.
-     * @param mixed $value The value to store in the cache.
-     * @param array<int, string> $tags An array of tags to associate with this cache entry.
-     * @param int|DateInterval|null $ttl Optional time-to-live for the cache entry.
-     * @return bool True if the operation was successful, false otherwise.
      *
      * @throws CacheInvalidArgumentException If the key or tags are invalid.
      * @throws SimpleCacheInvalidArgument If the key or TTL is invalid.
+     * @param string $key The cache key under which to store the value.
+     * @param mixed $value The value to store in the cache.
+     * @param array $tags An array of tags to associate with this cache entry.
+     * @phpstan-param array<int, string> $tags An array of tags to associate with this cache entry.
+     * @param mixed $ttl Optional time-to-live for the cache entry.
+     * @phpstan-param int|DateInterval|null $ttl Optional time-to-live for the cache entry.
+     * @phpstan-return bool True if the operation was successful, false otherwise.
      */
     public function setTagged(string $key, mixed $value, array $tags, mixed $ttl = null): bool
     {
@@ -1068,8 +1105,9 @@ final class Cache implements CacheInterface
     }
 
     /**
-     * @param array<int, string> $tags
-     * @return array<int, string>
+     * @param array $tags The tags argument.
+     * @phpstan-param array<int, string> $tags
+     * @phpstan-return array<int, string>
      */
     private function normalizeTagList(array $tags): array
     {
@@ -1083,6 +1121,7 @@ final class Cache implements CacheInterface
 
     /**
      * Converts a PSR-16 TTL (int|DateInterval|null) into an integer number of seconds.
+ * @param mixed $ttl The ttl argument.
      */
     private function normalizeTtl(mixed $ttl): ?int
     {
@@ -1142,8 +1181,9 @@ final class Cache implements CacheInterface
     }
 
     /**
-     * @param array<string, array<string, int>> $snapshot
-     * @return array<string, array<string, int>>
+     * @param array $snapshot The snapshot argument.
+     * @phpstan-param array<string, array<string, int>> $snapshot
+     * @phpstan-return array<string, array<string, int>>
      */
     private function readableMetricsSnapshot(array $snapshot): array
     {
@@ -1178,6 +1218,7 @@ final class Cache implements CacheInterface
      * Validates a cache key per PSR-16 rules (and reuses for PSR-6).
      *
      * @throws CacheInvalidArgumentException if the key is invalid.
+ * @param string $key The key argument.
      */
     private function validateKey(string $key): void
     {
@@ -1189,7 +1230,10 @@ final class Cache implements CacheInterface
     }
 
     /**
-     * @param array<int, string> $tags
+     * @param string $key The key argument.
+     * @param array $tags The tags argument.
+     * @param int|null $ttl The ttl argument.
+     * @phpstan-param array<int, string> $tags
      */
     private function writeTagMeta(string $key, array $tags, ?int $ttl): bool
     {

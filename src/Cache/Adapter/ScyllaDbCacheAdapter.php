@@ -80,7 +80,8 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @param list<string> $keys
+     * @param array $keys The keys argument.
+     * @phpstan-param list<string> $keys
      */
     public function deleteItems(array $keys): bool
     {
@@ -118,8 +119,9 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @param list<string> $keys
-     * @return array<string, GenericCacheItem>
+     * @param array $keys The keys argument.
+     * @phpstan-param list<string> $keys
+     * @phpstan-return array<string, GenericCacheItem>
      */
     public function multiFetch(array $keys): array
     {
@@ -158,7 +160,9 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @param array<int, mixed> $arguments
+     * @param string $method The method argument.
+     * @param array $arguments The arguments argument.
+     * @phpstan-param array<int, mixed> $arguments
      */
     private function callSession(string $method, array $arguments): mixed
     {
@@ -186,7 +190,9 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @param array<int, mixed> $arguments
+     * @param string $cql The cql argument.
+     * @param array $arguments The arguments argument.
+     * @phpstan-param array<int, mixed> $arguments
      */
     private function executeCql(string $cql, array $arguments = []): mixed
     {
@@ -201,7 +207,8 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @param array<int, mixed> $arguments
+     * @param array $arguments The arguments argument.
+     * @phpstan-param array<int, mixed> $arguments
      */
     private function executionOptions(array $arguments): mixed
     {
@@ -214,8 +221,10 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @param array<int, mixed> $arguments
-     * @return array<string, mixed>|null
+     * @param string $cql The cql argument.
+     * @param array $arguments The arguments argument.
+     * @phpstan-param array<int, mixed> $arguments
+     * @phpstan-return array<string, mixed>|null
      */
     private function firstRow(string $cql, array $arguments = []): ?array
     {
@@ -247,8 +256,9 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @param array<mixed, mixed> $rows
-     * @return array<int, array<string, mixed>>
+     * @param array $rows The rows argument.
+     * @phpstan-param array<mixed, mixed> $rows
+     * @phpstan-return array<int, array<string, mixed>>
      */
     private function normalizeRows(array $rows): array
     {
@@ -277,8 +287,10 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @param array<int, mixed> $arguments
-     * @return array<int, array<string, mixed>>
+     * @param string $cql The cql argument.
+     * @param array $arguments The arguments argument.
+     * @phpstan-param array<int, mixed> $arguments
+     * @phpstan-return array<int, array<string, mixed>>
      */
     private function queryRows(string $cql, array $arguments = []): array
     {

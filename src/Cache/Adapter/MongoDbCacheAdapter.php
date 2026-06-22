@@ -72,7 +72,8 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @param list<string> $keys
+     * @param array $keys The keys argument.
+     * @phpstan-param list<string> $keys
      */
     public function deleteItems(array $keys): bool
     {
@@ -111,8 +112,9 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @param list<string> $keys
-     * @return array<string, GenericCacheItem>
+     * @param array $keys The keys argument.
+     * @phpstan-param list<string> $keys
+     * @phpstan-return array<string, GenericCacheItem>
      */
     public function multiFetch(array $keys): array
     {

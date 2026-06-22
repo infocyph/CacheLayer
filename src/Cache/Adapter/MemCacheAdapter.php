@@ -19,7 +19,10 @@ class MemCacheAdapter extends AbstractCacheAdapter
     private array $knownKeys = [];
 
     /**
-     * @param array<int, array{0:string,1:int,2:int}> $servers
+     * @param string $namespace The namespace argument.
+     * @param array $servers The servers argument.
+     * @param \Memcached|null $client The client argument.
+     * @phpstan-param array<int, array{0:string,1:int,2:int}> $servers
      */
     public function __construct(
         string $namespace = 'default',
@@ -60,7 +63,8 @@ class MemCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @param list<string> $keys
+     * @param array $keys The keys argument.
+     * @phpstan-param list<string> $keys
      */
     public function deleteItems(array $keys): bool
     {
@@ -101,8 +105,9 @@ class MemCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @param list<string> $keys
-     * @return array<string, MemCacheItem>
+     * @param array $keys The keys argument.
+     * @phpstan-param list<string> $keys
+     * @phpstan-return array<string, MemCacheItem>
      */
     public function multiFetch(array $keys): array
     {
@@ -168,9 +173,15 @@ class MemCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @param array<string, MemCacheItem> $items
-     * @param list<string> $stale
-     * @param list<string> $staleLogicalKeys
+     * @param array $items The items argument.
+     * @param array $stale The stale argument.
+     * @param array $staleLogicalKeys The stale logical keys argument.
+     * @param string $logicalKey The logical key argument.
+     * @param string $mappedKey The mapped key argument.
+     * @param mixed $rawEntry The raw entry argument.
+     * @phpstan-param array<string, MemCacheItem> $items
+     * @phpstan-param list<string> $stale
+     * @phpstan-param list<string> $staleLogicalKeys
      */
     private function appendFetchedHit(
         array &$items,
@@ -198,8 +209,13 @@ class MemCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @param array<string, bool> $seen
-     * @param list<string> $out
+     * @param string $server The server argument.
+     * @param int $slabId The slab id argument.
+     * @param string $pref The pref argument.
+     * @param array $seen The seen argument.
+     * @param array $out The out argument.
+     * @phpstan-param array<string, bool> $seen
+     * @phpstan-param list<string> $out
      */
     private function collectDumpedKeys(
         string $server,
@@ -230,8 +246,9 @@ class MemCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @param array<mixed> $items
-     * @return list<int>
+     * @param array $items The items argument.
+     * @phpstan-param array<mixed> $items
+     * @phpstan-return list<int>
      */
     private function extractSlabIds(array $items): array
     {
@@ -249,7 +266,7 @@ class MemCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @return list<string>
+     * @phpstan-return list<string>
      */
     private function fastKnownKeys(): array
     {
@@ -257,7 +274,7 @@ class MemCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @return list<string>
+     * @phpstan-return list<string>
      */
     private function fetchKeys(): array
     {
@@ -290,7 +307,8 @@ class MemCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @return list<string>
+     * @phpstan-return list<string>
+ * @param string $pref The pref argument.
      */
     private function keysFromGetAll(string $pref): array
     {
@@ -310,7 +328,8 @@ class MemCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @return list<string>
+     * @phpstan-return list<string>
+ * @param string $pref The pref argument.
      */
     private function keysFromSlabDump(string $pref): array
     {
@@ -339,7 +358,7 @@ class MemCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @return array<string, list<int>>
+     * @phpstan-return array<string, list<int>>
      */
     private function slabIdsByServer(): array
     {
@@ -358,8 +377,10 @@ class MemCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @param array<int|string, string> $fullKeys
-     * @return list<string>
+     * @param array $fullKeys The full keys argument.
+     * @param string $pref The pref argument.
+     * @phpstan-param array<int|string, string> $fullKeys
+     * @phpstan-return list<string>
      */
     private function stripNamespace(array $fullKeys, string $pref): array
     {

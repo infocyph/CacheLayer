@@ -16,6 +16,8 @@ use RuntimeException;
  * Each cache entry is serialized and stored with a .cache extension.
  * It provides a simple filesystem-based caching solution suitable for
  * development environments or applications without access to dedicated cache systems.
+     * @param string $namespace A namespace prefix for cache files to avoid collisions.
+     * @param string|null $baseDir The base directory for cache files. If null, uses system temp directory.
  */
 class FileCacheAdapter extends AbstractCacheAdapter
 {
@@ -28,10 +30,10 @@ class FileCacheAdapter extends AbstractCacheAdapter
     /**
      * Creates a new file-based cache adapter.
      *
-     * @param string $namespace A namespace prefix for cache files to avoid collisions.
-     * @param string|null $baseDir The base directory for cache files. If null, uses system temp directory.
      *
      * @throws RuntimeException If the cache directory cannot be created or is not writable.
+     * @param string $namespace A namespace prefix for cache files to avoid collisions.
+     * @param string|null $baseDir The base directory for cache files. If null, uses system temp directory.
      */
     public function __construct(string $namespace = 'default', ?string $baseDir = null)
     {
@@ -66,7 +68,8 @@ class FileCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @param list<string> $keys
+     * @param array $keys The keys argument.
+     * @phpstan-param list<string> $keys
      */
     public function deleteItems(array $keys): bool
     {

@@ -14,7 +14,11 @@ trait PollingLockProviderHelpers
     }
 
     /**
-     * @param callable(string,string):bool $attemptAcquire
+     * @param string $prefix The prefix argument.
+     * @param string $key The key argument.
+     * @param float $waitSeconds The wait seconds argument.
+     * @param callable $attemptAcquire The attempt acquire argument.
+     * @phpstan-param callable(string,string):bool $attemptAcquire
      */
     protected function acquireWithRetry(
         string $prefix,
@@ -43,7 +47,9 @@ trait PollingLockProviderHelpers
     }
 
     /**
-     * @param callable(LockHandle):void $releaser
+     * @param LockHandle|null $handle The handle argument.
+     * @param callable $releaser The releaser argument.
+     * @phpstan-param callable(LockHandle):void $releaser
      */
     protected function releaseWithGuard(?LockHandle $handle, callable $releaser): void
     {
