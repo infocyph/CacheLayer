@@ -11,8 +11,9 @@ use Psr\Cache\CacheItemPoolInterface;
 final class TieredPoolFactory
 {
     /**
-     * @param array<int, mixed> $tiers
-     * @return array<int, CacheItemPoolInterface>
+     * @param array $tiers The tiers argument.
+     * @phpstan-param array<int, mixed> $tiers
+     * @phpstan-return array<int, CacheItemPoolInterface>
      */
     public static function fromArray(array $tiers): array
     {
@@ -29,7 +30,10 @@ final class TieredPoolFactory
     }
 
     /**
-     * @param array<string, mixed> $descriptor
+     * @param array $descriptor The descriptor argument.
+     * @param string $key The key argument.
+     * @param bool $default The default argument.
+     * @phpstan-param array<string, mixed> $descriptor
      */
     private static function bool(array $descriptor, string $key, bool $default): bool
     {
@@ -56,7 +60,9 @@ final class TieredPoolFactory
     }
 
     /**
-     * @param array<string, mixed> $descriptor
+     * @param array $descriptor The descriptor argument.
+     * @param int|string $index The index argument.
+     * @phpstan-param array<string, mixed> $descriptor
      */
     private static function descriptorToPool(array $descriptor, int|string $index): CacheItemPoolInterface
     {
@@ -137,7 +143,10 @@ final class TieredPoolFactory
     }
 
     /**
-     * @param array<string, mixed> $descriptor
+     * @param array $descriptor The descriptor argument.
+     * @param string $key The key argument.
+     * @param float $default The default argument.
+     * @phpstan-param array<string, mixed> $descriptor
      */
     private static function float(array $descriptor, string $key, float $default): float
     {
@@ -156,7 +165,10 @@ final class TieredPoolFactory
     }
 
     /**
-     * @param array<string, mixed> $descriptor
+     * @param array $descriptor The descriptor argument.
+     * @param string $key The key argument.
+     * @param int $default The default argument.
+     * @phpstan-param array<string, mixed> $descriptor
      */
     private static function int(array $descriptor, string $key, int $default): int
     {
@@ -186,7 +198,11 @@ final class TieredPoolFactory
     }
 
     /**
-     * @param array<string, mixed> $descriptor
+     * @param array $descriptor The descriptor argument.
+     * @param string $namespace The namespace argument.
+     * @param mixed $client The client argument.
+     * @param int|string $index The index argument.
+     * @phpstan-param array<string, mixed> $descriptor
      */
     private static function mongoPool(array $descriptor, string $namespace, mixed $client, int|string $index): CacheItemPoolInterface
     {
@@ -210,8 +226,9 @@ final class TieredPoolFactory
     }
 
     /**
-     * @param array<mixed, mixed> $tier
-     * @return array<string, mixed>
+     * @param array $tier The tier argument.
+     * @phpstan-param array<mixed, mixed> $tier
+     * @phpstan-return array<string, mixed>
      */
     private static function normalizeDescriptor(array $tier): array
     {
@@ -233,7 +250,9 @@ final class TieredPoolFactory
     }
 
     /**
-     * @param array<string, mixed> $descriptor
+     * @param array $descriptor The descriptor argument.
+     * @param string $keys The keys argument.
+     * @phpstan-param array<string, mixed> $descriptor
      */
     private static function nullableString(array $descriptor, string ...$keys): ?string
     {
@@ -313,7 +332,8 @@ final class TieredPoolFactory
     }
 
     /**
-     * @return array<int, string>
+     * @phpstan-return array<int, string>
+ * @param mixed $value The value argument.
      */
     private static function seeds(mixed $value): array
     {
@@ -344,7 +364,8 @@ final class TieredPoolFactory
     }
 
     /**
-     * @return array<int, array{0:string,1:int,2:int}>
+     * @phpstan-return array<int, array{0:string,1:int,2:int}>
+ * @param mixed $value The value argument.
      */
     private static function servers(mixed $value): array
     {
@@ -383,7 +404,8 @@ final class TieredPoolFactory
     }
 
     /**
-     * @param array<string, mixed> $descriptor
+     * @param array $descriptor The descriptor argument.
+     * @phpstan-param array<string, mixed> $descriptor
      */
     private static function sqliteDsn(array $descriptor): ?string
     {
@@ -393,7 +415,10 @@ final class TieredPoolFactory
     }
 
     /**
-     * @param array<string, mixed> $descriptor
+     * @param array $descriptor The descriptor argument.
+     * @param string $key The key argument.
+     * @param string $default The default argument.
+     * @phpstan-param array<string, mixed> $descriptor
      */
     private static function string(array $descriptor, string $key, string $default): string
     {
@@ -408,8 +433,13 @@ final class TieredPoolFactory
     }
 
     /**
-     * @param array<string, mixed> $descriptor
-     * @param callable(mixed): bool $validator
+     * @param array $descriptor The descriptor argument.
+     * @param string $key The key argument.
+     * @param mixed $default The default argument.
+     * @param callable $validator The validator argument.
+     * @param string $expectedType The expected type argument.
+     * @phpstan-param array<string, mixed> $descriptor
+     * @phpstan-param callable(mixed): bool $validator
      */
     private static function typedValue(
         array $descriptor,

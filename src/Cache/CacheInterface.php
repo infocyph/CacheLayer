@@ -26,6 +26,8 @@ use Psr\SimpleCache\CacheInterface as SimpleCacheInterface;
  * invalidation, cache stampede protection, and multiple storage adapters.
  *
  * @extends ArrayAccess<string, mixed>
+     * @return array
+     * @phpstan-return array<string, array<string, int>>
  */
 interface CacheInterface extends ArrayAccess, CacheItemPoolInterface, Countable, SimpleCacheInterface
 {
@@ -44,19 +46,24 @@ interface CacheInterface extends ArrayAccess, CacheItemPoolInterface, Countable,
      * Returns metrics grouped by readable adapter name (for example ``file``,
      * ``pdo``, ``redis``) and metric name.
      *
-     * @return array<string, array<string, int>>
+     * @phpstan-return array<string, array<string, int>>
      */
     public function exportMetrics(): array;
 
     public function invalidateTag(string $tag): bool;
 
     /**
-     * @param array<int, string> $tags
+     * @param array $tags The tags argument.
+     * @phpstan-param array<int, string> $tags
      */
     public function invalidateTags(array $tags): bool;
 
     /**
-     * @param array<int, string> $tags
+     * @param string $key The key argument.
+     * @param callable $resolver The resolver argument.
+     * @param mixed $ttl The ttl argument.
+     * @param array $tags The tags argument.
+     * @phpstan-param array<int, string> $tags
      */
     public function remember(string $key, callable $resolver, mixed $ttl = null, array $tags = []): mixed;
 
@@ -67,7 +74,11 @@ interface CacheInterface extends ArrayAccess, CacheItemPoolInterface, Countable,
     public function setMetricsExportHook(?callable $hook): self;
 
     /**
-     * @param array<int, string> $tags
+     * @param string $key The key argument.
+     * @param mixed $value The value argument.
+     * @param array $tags The tags argument.
+     * @param mixed $ttl The ttl argument.
+     * @phpstan-param array<int, string> $tags
      */
     public function setTagged(string $key, mixed $value, array $tags, mixed $ttl = null): bool;
 

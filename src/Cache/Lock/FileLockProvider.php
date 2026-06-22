@@ -78,7 +78,7 @@ final readonly class FileLockProvider implements LockProviderInterface
     }
 
     /**
-     * @return array<string, bool>
+     * @phpstan-return array<string, bool>
      */
     private static function &activeRegistry(): array
     {
@@ -98,7 +98,8 @@ final readonly class FileLockProvider implements LockProviderInterface
     }
 
     /**
-     * @return resource|false
+     * @phpstan-return resource|false
+ * @param string $path The path argument.
      */
     private function openLockFile(string $path): mixed
     {

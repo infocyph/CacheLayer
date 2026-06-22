@@ -43,9 +43,10 @@ final class Memoizer
     }
 
     /**
-     * @param array<int, mixed> $params
-     *
      * @throws ReflectionException
+     * @param callable $callable The callable argument.
+     * @param array $params The params argument.
+     * @phpstan-param array<int, mixed> $params
      */
     public function get(callable $callable, array $params = []): mixed
     {
@@ -68,9 +69,11 @@ final class Memoizer
     }
 
     /**
-     * @param array<int, mixed> $params
-     *
      * @throws ReflectionException
+     * @param object $object The object argument.
+     * @param callable $callable The callable argument.
+     * @param array $params The params argument.
+     * @phpstan-param array<int, mixed> $params
      */
     public function getFor(object $object, callable $callable, array $params = []): mixed
     {
@@ -95,7 +98,7 @@ final class Memoizer
     }
 
     /**
-     * @return array{hits:int,misses:int,total:int}
+     * @phpstan-return array{hits:int,misses:int,total:int}
      */
     public function stats(): array
     {
@@ -107,7 +110,9 @@ final class Memoizer
     }
 
     /**
-     * @param array<int, mixed> $params
+     * @param string $signature The signature argument.
+     * @param array $params The params argument.
+     * @phpstan-param array<int, mixed> $params
      */
     private static function buildCacheKey(string $signature, array $params): string
     {
@@ -122,6 +127,7 @@ final class Memoizer
 
     /**
      * @throws ReflectionException
+ * @param callable $callable The callable argument.
      */
     private static function callableSignature(callable $callable): string
     {

@@ -89,7 +89,8 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @param list<string> $keys
+     * @param array $keys The keys argument.
+     * @phpstan-param list<string> $keys
      */
     public function deleteItems(array $keys): bool
     {
@@ -124,8 +125,9 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @param list<string> $keys
-     * @return array<string, GenericCacheItem>
+     * @param array $keys The keys argument.
+     * @phpstan-param list<string> $keys
+     * @phpstan-return array<string, GenericCacheItem>
      */
     public function multiFetch(array $keys): array
     {
@@ -148,7 +150,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @return array<string, string>
+     * @phpstan-return array<string, string>
      */
     private function loadStore(): array
     {
@@ -178,7 +180,8 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @param array<string, string> $store
+     * @param array $store The store argument.
+     * @phpstan-param array<string, string> $store
      */
     private function store(array $store): bool
     {

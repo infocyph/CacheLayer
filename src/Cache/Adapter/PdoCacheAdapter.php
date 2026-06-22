@@ -103,7 +103,8 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @param list<string> $keys
+     * @param array $keys The keys argument.
+     * @phpstan-param list<string> $keys
      */
     public function deleteItems(array $keys): bool
     {
@@ -178,8 +179,9 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @param list<string> $keys
-     * @return array<string, GenericCacheItem>
+     * @param array $keys The keys argument.
+     * @phpstan-param list<string> $keys
+     * @phpstan-return array<string, GenericCacheItem>
      */
     public function multiFetch(array $keys): array
     {
@@ -320,7 +322,8 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @param array<int, string> $mappedKeys
+     * @param array $mappedKeys The mapped keys argument.
+     * @phpstan-param array<int, string> $mappedKeys
      */
     private function deleteMappedItems(array $mappedKeys): void
     {
@@ -334,8 +337,9 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @param array<int, string> $mappedKeys
-     * @return array<string, array{payload:string,expires:int|null}>
+     * @param array $mappedKeys The mapped keys argument.
+     * @phpstan-param array<int, string> $mappedKeys
+     * @phpstan-return array<string, array{payload:string,expires:int|null}>
      */
     private function fetchRowsByMappedKeys(array $mappedKeys): array
     {
@@ -372,7 +376,9 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @param array{payload:string,expires:int|null} $row
+     * @param string $key The key argument.
+     * @param array $row The row argument.
+     * @phpstan-param array{payload:string,expires:int|null} $row
      */
     private function hydrateItemFromRow(string $key, array $row): ?GenericCacheItem
     {
@@ -419,7 +425,9 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @param array{':k':string,':p':string,':e':int|null} $params
+     * @param array $params The params argument.
+     * @param string $mappedKey The mapped key argument.
+     * @phpstan-param array{':k':string,':p':string,':e':int|null} $params
      */
     private function upsert(array $params, string $mappedKey): bool
     {

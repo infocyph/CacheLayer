@@ -16,7 +16,10 @@ use RuntimeException;
  * It supports both standalone Redis instances and Redis clusters,
  * making it suitable for production environments with multiple web servers.
  *
- * Note: This adapter requires the phpredis extension to be installed.
+ * This This adapter requires the phpredis extension to be installed.
+     * @param string $namespace A namespace prefix to avoid key collisions.
+     * @param string $dsn The Redis connection DSN (e.g., 'redis://127.0.0.1:6379').
+     * @param \Redis|null $client Optional pre-configured Redis client instance.
  */
 class RedisCacheAdapter extends AbstractCacheAdapter
 {
@@ -27,11 +30,11 @@ class RedisCacheAdapter extends AbstractCacheAdapter
     /**
      * Creates a new Redis cache adapter.
      *
+     *
+     * @throws RuntimeException If the phpredis extension is not loaded.
      * @param string $namespace A namespace prefix to avoid key collisions.
      * @param string $dsn The Redis connection DSN (e.g., 'redis://127.0.0.1:6379').
      * @param \Redis|null $client Optional pre-configured Redis client instance.
-     *
-     * @throws RuntimeException If the phpredis extension is not loaded.
      */
     public function __construct(
         string $namespace = 'default',
@@ -77,7 +80,8 @@ class RedisCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @param list<string> $keys
+     * @param array $keys The keys argument.
+     * @phpstan-param list<string> $keys
      */
     public function deleteItems(array $keys): bool
     {
@@ -121,8 +125,9 @@ class RedisCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @param list<string> $keys
-     * @return array<string, RedisCacheItem>
+     * @param array $keys The keys argument.
+     * @phpstan-param list<string> $keys
+     * @phpstan-return array<string, RedisCacheItem>
      */
     public function multiFetch(array $keys): array
     {

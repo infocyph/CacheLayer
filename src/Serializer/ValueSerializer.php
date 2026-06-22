@@ -49,11 +49,11 @@ final class ValueSerializer
     /**
      * Decode a payload produced by {@see encode()}.
      *
-     * @param string $payload The encoded string
-     * @param bool $base64 True ⇒ expect base64; false ⇒ raw
-     * @return mixed Original value
      *
      * @throws InvalidArgumentException Forwarded from ::unserialize()
+     * @param string $payload The encoded string
+     * @param bool $base64 True ⇒ expect base64; false ⇒ raw
+     * @phpstan-return mixed Original value
      */
     public static function decode(string $payload, bool $base64 = true): mixed
     {
@@ -69,16 +69,15 @@ final class ValueSerializer
     /**
      * Encode any value into a transport-safe (optionally base64) string.
      *
-     * ```php
+     * Example:
      * $token = ValueSerializer::encode($payload);        // base64 by default
      * $same  = ValueSerializer::decode($token);
-     * ```
      *
-     * @param mixed $value Any PHP value
-     * @param bool $base64 True ⇒ wrap with base64; false ⇒ raw
-     * @return string Encoded payload
      *
      * @throws InvalidArgumentException Forwarded from ::serialize()
+     * @param mixed $value Any PHP value
+     * @param bool $base64 True ⇒ wrap with base64; false ⇒ raw
+     * @phpstan-return string Encoded payload
      */
     public static function encode(mixed $value, bool $base64 = true): string
     {
@@ -95,7 +94,7 @@ final class ValueSerializer
      * Opis closures.
      *
      * @param string $str The string to check.
-     * @return bool True if the string is a serialized Opis closure, false otherwise.
+     * @phpstan-return bool True if the string is a serialized Opis closure, false otherwise.
      */
     public static function isSerializedClosure(string $str): bool
     {
@@ -122,11 +121,11 @@ final class ValueSerializer
      *  2. `restoreFn`: takes the array (or other serializable value) returned
      *     by `wrapFn` and returns a resource of type `$type`.
      *
+     *
+     * @throws InvalidArgumentException If a handler for `$type` already exists.
      * @param string $type The type of resource this handler is for.
      * @param callable $wrapFn The callable that wraps the resource.
      * @param callable $restoreFn The callable that restores the resource.
-     *
-     * @throws InvalidArgumentException If a handler for `$type` already exists.
      */
     public static function registerResourceHandler(
         string $type,
@@ -150,10 +149,10 @@ final class ValueSerializer
      * resource handlers, and serializes it into a string using Opis Closure's
      * serialize function.
      *
-     * @param mixed $value The value to be serialized, which may contain resources.
-     * @return string The serialized string representation of the value.
      *
      * @throws InvalidArgumentException If a resource type has no registered handler.
+     * @param mixed $value The value to be serialized, which may contain resources.
+     * @phpstan-return string The serialized string representation of the value.
      */
     public static function serialize(mixed $value): string
     {
@@ -176,7 +175,7 @@ final class ValueSerializer
      * within the resulting value using registered resource handlers.
      *
      * @param string $blob The serialized string to be converted back to its original form.
-     * @return mixed The original value, with any resources restored.
+     * @phpstan-return mixed The original value, with any resources restored.
      */
     public static function unserialize(string $blob): mixed
     {
@@ -205,7 +204,7 @@ final class ValueSerializer
      * involve serialisation.
      *
      * @param mixed $resource A value that may contain wrapped resources.
-     * @return mixed The same value with any wrapped resources restored.
+     * @phpstan-return mixed The same value with any wrapped resources restored.
      */
     public static function unwrap(mixed $resource): mixed
     {
@@ -236,7 +235,7 @@ final class ValueSerializer
      * resource handlers.
      *
      * @param mixed $value The value to be wrapped, which may contain resources.
-     * @return mixed The value with any resources wrapped, or the original value if no resources are found.
+     * @phpstan-return mixed The value with any resources wrapped, or the original value if no resources are found.
      */
     public static function wrap(mixed $value): mixed
     {
@@ -306,13 +305,7 @@ final class ValueSerializer
             return false;
         }
 
-        foreach ($value as $item) {
-            if (self::requiresOpisSerialization($item)) {
-                return true;
-            }
-        }
-
-        return false;
+        return array_any($value, fn($item) => self::requiresOpisSerialization($item));
     }
 
     /**
@@ -320,7 +313,7 @@ final class ValueSerializer
      * that were wrapped by {@see wrapRecursive}.
      *
      * @param mixed $resource A value that may contain wrapped resources.
-     * @return mixed The same value with any wrapped resources restored.
+     * @phpstan-return mixed The same value with any wrapped resources restored.
      */
     private static function unwrapRecursive(mixed $resource): mixed
     {
@@ -355,10 +348,10 @@ final class ValueSerializer
      * If the value is an array, the method recursively processes each
      * element in the array.
      *
-     * @param mixed $resource The value to be wrapped, which may contain resources.
-     * @return mixed The value with any resources wrapped, or the original value if no resources are found.
      *
      * @throws InvalidArgumentException If no handler is registered for a resource type.
+     * @param mixed $resource The value to be wrapped, which may contain resources.
+     * @phpstan-return mixed The value with any resources wrapped, or the original value if no resources are found.
      */
     private static function wrapRecursive(mixed $resource): mixed
     {

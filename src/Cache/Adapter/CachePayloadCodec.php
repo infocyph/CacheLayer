@@ -45,7 +45,8 @@ final class CachePayloadCodec
     }
 
     /**
-     * @return array{value:mixed,expires:int|null}|null
+     * @phpstan-return array{value:mixed,expires:int|null}|null
+ * @param string $blob The blob argument.
      */
     public static function decode(string $blob): ?array
     {
@@ -103,7 +104,8 @@ final class CachePayloadCodec
     }
 
     /**
-     * @return array{ttl:int|null,expiresAt:int|null}
+     * @phpstan-return array{ttl:int|null,expiresAt:int|null}
+ * @param CacheItemInterface $item The item argument.
      */
     public static function expirationFromItem(CacheItemInterface $item): array
     {
@@ -153,7 +155,8 @@ final class CachePayloadCodec
     }
 
     /**
-     * @return array{value:mixed,expires:int|null}|null
+     * @phpstan-return array{value:mixed,expires:int|null}|null
+ * @param mixed $decoded The decoded argument.
      */
     private static function decodeArrayPayload(mixed $decoded): ?array
     {
@@ -184,7 +187,8 @@ final class CachePayloadCodec
     }
 
     /**
-     * @return array{value:mixed,expires:int|null}|null
+     * @phpstan-return array{value:mixed,expires:int|null}|null
+ * @param mixed $decoded The decoded argument.
      */
     private static function decodeCacheItem(mixed $decoded): ?array
     {
@@ -196,8 +200,9 @@ final class CachePayloadCodec
     }
 
     /**
-     * @param array<string, mixed> $decoded
-     * @return array{value:mixed,expires:int|null}|null
+     * @param array $decoded The decoded argument.
+     * @phpstan-param array<string, mixed> $decoded
+     * @phpstan-return array{value:mixed,expires:int|null}|null
      */
     private static function decodeFormattedPayload(array $decoded): ?array
     {

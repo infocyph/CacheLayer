@@ -15,7 +15,13 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter
     private readonly string $ns;
 
     /**
-     * @param array<int, string> $seeds
+     * @param string $namespace The namespace argument.
+     * @param array $seeds The seeds argument.
+     * @param float $timeout The timeout argument.
+     * @param float $readTimeout The read timeout argument.
+     * @param bool $persistent The persistent argument.
+     * @param object|null $client The client argument.
+     * @phpstan-param array<int, string> $seeds
      */
     public function __construct(
         string $namespace = 'default',
@@ -76,7 +82,8 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @param list<string> $keys
+     * @param array $keys The keys argument.
+     * @phpstan-param list<string> $keys
      */
     public function deleteItems(array $keys): bool
     {
@@ -108,8 +115,9 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @param list<string> $keys
-     * @return array<string, GenericCacheItem>
+     * @param array $keys The keys argument.
+     * @phpstan-param list<string> $keys
+     * @phpstan-return array<string, GenericCacheItem>
      */
     public function multiFetch(array $keys): array
     {

@@ -9,16 +9,6 @@ use Infocyph\CacheLayer\Cache\Item\GenericCacheItem;
 use Psr\Cache\CacheItemInterface;
 use Psr\Cache\CacheItemPoolInterface;
 
-/**
- * Abstract base class for cache adapter implementations.
- *
- * This class provides a foundation for building PSR-6 and PSR-16 compliant
- * cache adapters. It implements common functionality like deferred item management
- * and provides default implementations for several cache pool interface methods.
- *
- * Adapters extending this class must implement the abstract methods required
- * for their specific storage mechanism while inheriting common cache operations.
- */
 abstract class AbstractCacheAdapter implements CacheItemPoolInterface, Countable, InternalCachePoolInterface
 {
     /** @var array<string, CacheItemInterface> */
@@ -28,7 +18,6 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, Countable
      * Determines if this adapter supports the given cache item.
      *
      * @param CacheItemInterface $item The cache item to check.
-     * @return bool True if the adapter supports this item type.
      */
     abstract protected function supportsItem(CacheItemInterface $item): bool;
 
@@ -51,8 +40,9 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, Countable
     }
 
     /**
-     * @param list<string> $keys
-     * @return iterable<string, CacheItemInterface>
+     * @param array $keys The keys argument.
+     * @phpstan-param list<string> $keys
+     * @phpstan-return iterable<string, CacheItemInterface>
      */
     public function getItems(array $keys = []): iterable
     {
@@ -90,7 +80,8 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, Countable
     }
 
     /**
-     * @return array{value:mixed,expires:int|null}|null
+     * @phpstan-return array{value:mixed,expires:int|null}|null
+ * @param string $payload The payload argument.
      */
     protected function decodeRecordFromBase64(string $payload): ?array
     {
@@ -103,7 +94,8 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, Countable
     }
 
     /**
-     * @return array{value:mixed,expires:int|null}|null
+     * @phpstan-return array{value:mixed,expires:int|null}|null
+ * @param string $blob The blob argument.
      */
     protected function decodeRecordFromBlob(string $blob): ?array
     {
@@ -132,7 +124,10 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, Countable
     }
 
     /**
-     * @param callable():bool $onInvalid
+     * @param string $key The key argument.
+     * @param string|null $payload The payload argument.
+     * @param callable $onInvalid The on invalid argument.
+     * @phpstan-param callable():bool $onInvalid
      */
     protected function genericFromBase64WithInvalidator(string $key, ?string $payload, callable $onInvalid): GenericCacheItem
     {
@@ -149,7 +144,10 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, Countable
     }
 
     /**
-     * @param callable():bool $onInvalid
+     * @param string $key The key argument.
+     * @param string|null $blob The blob argument.
+     * @param callable $onInvalid The on invalid argument.
+     * @phpstan-param callable():bool $onInvalid
      */
     protected function genericFromBlobWithInvalidator(string $key, ?string $blob, callable $onInvalid): GenericCacheItem
     {
@@ -157,7 +155,9 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, Countable
     }
 
     /**
-     * @param array{value:mixed,expires:int|null} $record
+     * @param string $key The key argument.
+     * @param array $record The record argument.
+     * @phpstan-param array{value:mixed,expires:int|null} $record
      */
     protected function genericItemFromRecord(string $key, array $record): GenericCacheItem
     {
@@ -178,9 +178,11 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, Countable
     /**
      * @template T of CacheItemInterface
      *
-     * @param list<string> $keys
-     * @param callable(string):T $fetcher
-     * @return array<string, T>
+     * @param array $keys The keys argument.
+     * @param callable $fetcher The fetcher argument.
+     * @phpstan-param list<string> $keys
+     * @phpstan-param callable(string):T $fetcher
+     * @phpstan-return array<string, T>
      */
     protected function multiFetchItems(array $keys, callable $fetcher): array
     {
@@ -193,7 +195,9 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, Countable
     }
 
     /**
-     * @param callable(CacheItemInterface,array{ttl:int|null,expiresAt:int|null}):bool $writer
+     * @param CacheItemInterface $item The item argument.
+     * @param callable $writer The writer argument.
+     * @phpstan-param callable(CacheItemInterface,array{ttl:int|null,expiresAt:int|null}):bool $writer
      */
     protected function saveEncoded(CacheItemInterface $item, callable $writer): bool
     {
@@ -210,8 +214,12 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, Countable
     }
 
     /**
-     * @param callable(string):(array{value:mixed,expires:int|null}|null) $decoder
-     * @param callable():bool $onInvalid
+     * @param string $key The key argument.
+     * @param string|null $encoded The encoded argument.
+     * @param callable $onInvalid The on invalid argument.
+     * @param callable $decoder The decoder argument.
+     * @phpstan-param callable():bool $onInvalid
+     * @phpstan-param callable(string):(array{value:mixed,expires:int|null}|null) $decoder
      */
     private function genericFromEncodedWithInvalidator(
         string $key,
