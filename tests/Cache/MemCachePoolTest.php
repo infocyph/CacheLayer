@@ -99,14 +99,14 @@ test('get returns default when key missing (memcached)', function () {
 
     // Callable
     $val = $this->cache->get('call', function (MemCacheItem $item) {
-        $item->expiresAfter(1);
+        $item->expiresAfter(3);
 
         return 'hello';
     });
     expect($val)->toBe('hello');
     expect($this->cache->get('call'))->toBe('hello');
 
-    usleep(2_000_000);
+    usleep(4_000_000);
     expect($this->cache->get('call', 'again'))->toBe('again');
 });
 
