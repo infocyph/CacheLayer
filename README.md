@@ -22,6 +22,8 @@ visibility, maintenance focus, and faster feature enrichment for caching.
 - Unified `Cache` facade implementing PSR-6, PSR-16, `ArrayAccess`, and `Countable`
 - Adapter support for APCu, File, PHP Files, Memcached, Redis, Valkey, Redis Cluster, PDO (SQLite default), Shared Memory, MongoDB, and ScyllaDB
 - Tiered cache composition via `Cache::tiered()` (L1/L2/... descriptors or pool instances)
+- Node-local APCu L1 + SQLite L2 cache via `NodeCache`
+- Durable multi-node invalidation coordination via `ClusterCache`
 - Tagged invalidation with versioned tags: `setTagged()`, `invalidateTag()`, `invalidateTags()`
 - Stampede-safe `remember()` with pluggable lock providers
 - Per-adapter metrics counters and export hooks
@@ -95,6 +97,43 @@ Request flow:
 - query DB on miss
 - write L2
 - optionally write L1 (controlled by `writeToL1`)
+
+## Node-local cache (APCu -> SQLite)
+
+```php
+use Infocyph\CacheLayer\Node\NodeCache;
+use Infocyph\CacheLayer\Node\NodeCacheConfig;
+
+$cache = NodeCache::create(new NodeCacheConfig(
+    namespace: 'app',
+    sqliteFile: '/var/cache/my-app/cache.sqlite',
+));
+```
+
+This topology keeps an independent, disposable cache on each application
+server: APCu provides hot in-memory reads when available, while SQLite keeps a
+larger local cache across PHP-FPM restarts. It does not synchronize entries or
+invalidation across servers.
+
+## Cluster invalidation
+
+```php
+use Infocyph\CacheLayer\Cluster\ClusterCache;
+use Infocyph\CacheLayer\Cluster\ClusterCacheConfig;
+
+$cluster = ClusterCache::create(
+    node: new NodeCacheConfig(sqliteFile: '/var/cache/my-app/cache.sqlite'),
+    cluster: new ClusterCacheConfig('production', gethostname()),
+    transport: $durableInvalidationTransport,
+);
+
+$cluster->invalidateKey('product.42');
+$cluster->consume();
+```
+
+Cluster Cache distributes only durable invalidation events. It never replicates
+cached values, APCu state, or SQLite files; ordinary reads and writes remain
+local to each application node.
 
 ## Security Hardening
 

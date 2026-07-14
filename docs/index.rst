@@ -51,6 +51,8 @@ Quick Start
    adapters/index
    cookbook
    metrics-and-locking
+   node-cache
+   cluster-cache
    security
    serializer
    memoize
