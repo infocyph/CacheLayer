@@ -343,6 +343,50 @@ The schedule determines remote invalidation latency. For example, a task every
 five seconds means a healthy remote node may serve stale data for nearly five
 seconds plus normal request timing. TTL remains the final safety bound.
 
+Cluster consumers need scheduling
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+CacheLayer deliberately does not run a background daemon or install cron jobs:
+the host application owns process supervision, credentials, logging, retries,
+and graceful shutdown. However, **every node must run a consumer** for remote
+invalidations to become effective. Choose one of these deployment models:
+
+``cron`` or framework scheduler
+   Good for modest event volume and a known stale-data budget. Schedule the
+   same small CLI command on every application node. The poll interval is part
+   of the remote-staleness budget.
+
+Supervised long-running worker
+   Good for low-latency or high-volume systems. Run a worker under systemd,
+   Supervisor, Kubernetes, or your framework queue/worker runtime. It calls
+   bounded ``consume()`` loops and polls/sleeps between iterations.
+
+Transport-native delivery
+   A custom transport can integrate with a durable broker's worker model, but
+   it still must preserve the replay/cursor contract. CacheLayer's consumer is
+   explicitly pull-based and works with scheduled polling for all transports.
+
+For a cron deployment, create a command that only bootstraps the runtime for
+the current node and consumes one bounded batch:
+
+.. code-block:: php
+
+   // bin/cache-cluster-consume.php
+   $processed = $runtime->consume(1_000);
+
+Then schedule it on **every** node. This example polls every minute; lower the
+interval only when the resulting remote-staleness window is acceptable for the
+application and the transport can handle the polling rate:
+
+.. code-block:: text
+
+   * * * * * www-data /usr/bin/php /srv/application/bin/cache-cluster-consume.php
+
+Traditional cron cannot reliably poll more often than once a minute. For
+sub-minute propagation, use a framework scheduler that supports it or a
+supervised worker. Ensure the scheduler prevents overlapping runs on the same
+node, or make each invocation deliberately short and bounded.
+
 Continuous worker with bounded drain
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -406,6 +450,26 @@ retention period:
 The PDO transport's ``pruneBefore()`` is intentionally not part of the generic
 transport interface. Other transport implementations should use their own
 retention mechanism.
+
+Retention-pruning schedule
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Event pruning is separate from consumption. For the PDO transport, schedule a
+maintenance command against the shared database once; do not run competing
+pruners on every web node unless your job platform coordinates them.
+
+.. code-block:: php
+
+   // bin/cache-cluster-prune.php
+   $transport->pruneBefore(time() - 7 * 24 * 60 * 60, 5_000);
+
+.. code-block:: text
+
+   # One elected scheduler/worker, hourly; run repeatedly if the backlog is large.
+   12 * * * * www-data /usr/bin/php /srv/application/bin/cache-cluster-prune.php
+
+Keep the retention window longer than the largest supported outage. Pruning
+more often does not permit a shorter retention period safely.
 
 .. _cluster-failure-order:
 
@@ -484,7 +548,9 @@ During normal operation:
 * use ``$runtime->cache()->set()`` only for local fills;
 * call runtime ``invalidateKey()``, ``invalidateTag()``, or
   ``clearNamespace()`` after committed source-data changes;
-* run node SQLite pruning/checkpoint maintenance separately;
+* run a consumer on every node and node SQLite pruning/checkpoint maintenance
+  separately;
+* run shared-transport retention pruning from one coordinated scheduler;
 * monitor consumer lag, transport errors, cursor age, cache hit rate, and
   retention-prune activity.
 

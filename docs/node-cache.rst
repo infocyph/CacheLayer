@@ -333,6 +333,37 @@ A simple scheduled task can perform a small bounded prune every few minutes
 and checkpoint periodically. Do not run ``VACUUM`` on the request path; plan it
 separately if disk-space reclamation is required.
 
+Example cron schedule
+~~~~~~~~~~~~~~~~~~~~~
+
+CacheLayer does not install a cron entry or start a scheduler. Wire the
+maintenance API into your application's CLI bootstrap, then schedule that
+command with the mechanism your deployment already uses.
+
+.. code-block:: php
+
+   // bin/cache-node-maintenance.php
+   $maintenance = NodeCache::maintenance($config);
+   $maintenance->pruneExpired(5_000);
+   $maintenance->checkpoint();
+
+   // Run optimize less frequently, for example from a separate daily command.
+
+For a traditional cron-based deployment, a conservative starting point is:
+
+.. code-block:: text
+
+   # Every five minutes: bounded expired-row cleanup and passive WAL checkpoint.
+   */5 * * * * www-data /usr/bin/php /srv/application/bin/cache-node-maintenance.php
+
+   # Daily: bootstrap a command that calls $maintenance->optimize().
+   17 3 * * * www-data /usr/bin/php /srv/application/bin/cache-node-optimize.php
+
+Use your framework scheduler, Kubernetes ``CronJob``, systemd timer, or another
+platform scheduler instead when that is how application jobs are operated.
+Only one maintenance task is needed per local SQLite file; it is safe to use a
+bounded prune limit if overlap cannot be ruled out.
+
 Deployment and process guidance
 -------------------------------
 
