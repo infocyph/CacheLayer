@@ -1,62 +1,390 @@
+=======================
 Node-local Cache
-================
+=======================
 
-``NodeCache`` provides an opinionated node-local cache topology: APCu is the
-optional hot L1 and SQLite is the persistent local L2. Every application server
-owns a separate cache; this feature provides no cross-server synchronization,
-distributed locking, or consistency guarantee.
+``NodeCache`` is an opinionated cache for one application server. It combines
+an optional APCu L1 (hot, process-local memory) with a SQLite L2 (durable local
+disk). The returned object is the usual :class:`Cache` facade, so application
+code uses the same PSR-6, PSR-16, tagged-cache, and ``remember()`` API as every
+other CacheLayer backend.
 
-Setup
------
+Use it when every server may safely hold its own, disposable copy of cached
+data. It is the storage foundation for :doc:`cluster-cache`, but it is also
+useful on its own.
+
+What Node Cache is and is not
+-----------------------------
+
+Node Cache is:
+
+* a local APCu -> SQLite cache topology;
+* persistent across PHP-FPM or application-worker restarts when the local
+  SQLite file survives;
+* compatible with normal ``Cache`` reads, writes, tags, batches, deferred
+  writes, metrics, and ``remember()``;
+* fail-open by default for APCu and SQLite runtime failures.
+
+Node Cache is not:
+
+* a shared cache between servers or containers;
+* a distributed lock, queue, counter, rate limiter, or session store;
+* a substitute for an authoritative database;
+* an immediate global-revocation mechanism for security-sensitive data.
+
+For cross-node invalidation while retaining local cached values, use
+:doc:`cluster-cache`.
+
+Topology and request lifecycle
+------------------------------
+
+The topology is deliberately simple:
+
+.. code-block:: text
+
+   PHP request / worker
+          |
+          v
+   Cache facade (PSR-6 / PSR-16 / tags / remember)
+          |
+          v
+   APCu L1, when enabled and available
+          |
+          | miss
+          v
+   SQLite L2 on this node's local disk
+          |
+          | miss
+          v
+   application resolver / authoritative source
+
+Read lifecycle
+~~~~~~~~~~~~~~
+
+1. APCu is checked when enabled.
+2. On an APCu miss, SQLite is checked.
+3. A SQLite hit is promoted to APCu with its remaining TTL.
+4. A miss returns the caller's default, or ``remember()`` resolves the value.
+5. Expired rows are misses. They are left for bounded maintenance rather than
+   being deleted on every read.
+
+Write lifecycle
+~~~~~~~~~~~~~~~
+
+1. A normal write is persisted to SQLite first.
+2. A successful SQLite write is copied to APCu when APCu is available.
+3. A delete or namespace clear is attempted across both layers.
+4. Tagged entries and tag-version metadata are local to this node.
+
+With the default ``failOpen: true``, an L2 failure can fall back to an L1 write
+so the request can continue. This is a resilience choice: the L1-only value is
+lost when that PHP/APCu process is restarted. Set ``failOpen: false`` when a
+storage failure must be surfaced to the application instead.
+
+Requirements and filesystem placement
+--------------------------------------
+
+Node Cache requires ``ext-pdo`` with the SQLite driver. APCu is optional.
+APCu is used only if all of the following are true:
+
+* ``apcuEnabled`` is ``true`` (the default);
+* the APCu extension is loaded;
+* APCu is enabled for the executing PHP SAPI.
+
+Put the SQLite database in a writable directory that is local to the node,
+outside the repository and web root. SQLite creates companion ``-wal`` and
+``-shm`` files, so the directory—not merely the database file—must be writable
+by the application account.
+
+Do not use NFS, SMB, a synchronized folder, or another network/shared
+filesystem for the Node Cache SQLite file. The factory rejects symlinked and
+world-writable cache directories as a safety measure.
+
+Recommended layout:
+
+.. code-block:: text
+
+   /var/cache/my-application/
+       node-cache.sqlite
+       node-cache.sqlite-wal
+       node-cache.sqlite-shm
+       locks/                 # optional, used by remember() file locks
+
+Configuration and bootstrap
+---------------------------
+
+Create one ``NodeCacheConfig`` for each application node. The SQLite path and
+lock directory should be local; the namespace names the logical cache within
+that database.
 
 .. code-block:: php
 
    use Infocyph\CacheLayer\Node\NodeCache;
    use Infocyph\CacheLayer\Node\NodeCacheConfig;
 
-   $cache = NodeCache::create(new NodeCacheConfig(
-       namespace: 'application',
-       sqliteFile: '/var/cache/application/cache.sqlite',
-   ));
+   $config = new NodeCacheConfig(
+       sqliteFile: '/var/cache/my-application/node-cache.sqlite',
+       namespace: 'catalog',
+       lockDirectory: '/var/cache/my-application/locks',
+       busyTimeoutMs: 1_000,
+       apcuEnabled: true,
+       failOpen: true,
+   );
 
-   $user = $cache->remember('user:42', fn () => loadUser(42), 300, ['users']);
+   $cache = NodeCache::create($config);
 
-APCu is used only when its extension is enabled. When unavailable, the cache
-uses SQLite only; it does not select another storage backend.
+Configuration reference
+~~~~~~~~~~~~~~~~~~~~~~~
 
-Behavior
---------
+``sqliteFile``
+   Required path to the SQLite database. It must not contain a NUL byte.
 
-Reads check APCu before SQLite. A SQLite hit is promoted to APCu with its
-remaining TTL. Writes persist to SQLite before APCu. Cache failures are
-fail-open by default, so the caller can still resolve the authoritative value.
-Set ``failOpen: false`` to make runtime cache failures visible.
+``namespace``
+   Logical cache partition inside the SQLite database. It defaults to
+   ``default`` and is sanitized before use. Use a stable, application-specific
+   name such as ``catalog`` or ``billing``.
 
-Entries, tag metadata, and tag invalidation are local to the current server.
-Use bounded TTLs, versioned keys, or application-level invalidation broadcasts
-when values must be refreshed across servers.
+``lockDirectory``
+   Optional directory for the file lock provider used by ``remember()``. Leave
+   it ``null`` to use the library default, or point it at a local writable
+   directory for an explicit deployment layout.
 
-Maintenance
------------
+``busyTimeoutMs``
+   SQLite busy timeout in milliseconds. The default is 1,000. Increase it
+   cautiously only when legitimate local write contention is observed; it does
+   not make a shared/network filesystem safe.
 
-Expired entries are treated as misses during reads and are not deleted on the
-read path. Run bounded maintenance independently on each server:
+``apcuEnabled``
+   Enables APCu L1 when the extension and SAPI support it. Set it to ``false``
+   for deterministic SQLite-only behavior, CLI jobs, or troubleshooting.
+
+``failOpen``
+   Defaults to ``true``. When true, recoverable layer failures are treated as
+   cache degradation where possible. When false, APCu/SQLite failures propagate
+   to the caller.
+
+Normal cache operations
+-----------------------
+
+``NodeCache::create()`` returns ``Infocyph\CacheLayer\Cache\Cache``. Do not
+reach into its SQLite adapter for ordinary application work. Use the facade.
+
+Simple read and write
+~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: php
+
+   $cache->set('product.42', ['id' => 42, 'name' => 'Keyboard'], 300);
+
+   $product = $cache->get('product.42');
+   $missing = $cache->get('does-not-exist', 'fallback');
+
+   $cache->delete('product.42');
+   $cache->clear(); // clears this namespace on this node only
+
+``set()`` accepts an integer TTL, a ``DateInterval``, or ``null``. ``null``
+uses no explicit expiry; prefer bounded TTLs for data that can change. A TTL of
+zero expires immediately. Valid keys contain only letters, digits, ``_``,
+``.``, and ``-``.
+
+Read-through caching with ``remember()``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Use ``remember()`` for the normal cache-aside read path. It reads first, then
+uses the configured local lock to prevent many concurrent requests on the same
+node from doing the same expensive work.
+
+.. code-block:: php
+
+   $product = $cache->remember(
+       'product.42',
+       function ($item) use ($repository) {
+           $item->expiresAfter(300);
+
+           return $repository->find(42);
+       },
+       tags: ['products', 'product.42'],
+   );
+
+The lock is node-local. Two different servers may both recompute a missing
+value; that is expected for Node Cache. Use short, suitable TTLs and make the
+resolver safe to run more than once.
+
+Tags and invalidation
+~~~~~~~~~~~~~~~~~~~~~
+
+Tags group related cached values. CacheLayer invalidates them by changing local
+tag versions rather than scanning every cached key.
+
+.. code-block:: php
+
+   $cache->setTagged(
+       'category.10.products',
+       $products,
+       ['products', 'category.10'],
+       300,
+   );
+
+   $cache->invalidateTag('category.10');
+   $cache->invalidateTags(['products', 'search-results']);
+
+Tag invalidation affects this node only. In a multi-node deployment,
+``invalidateTag()`` on a Node Cache does not notify other machines; call
+``ClusterRuntime::invalidateTag()`` instead when Cluster Cache is configured.
+
+PSR-6 items and deferred writes
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The facade also acts as a PSR-6 pool. Deferred items are held in memory until
+``commit()`` and are then written to SQLite in a batch before APCu is updated.
+
+.. code-block:: php
+
+   $first = $cache->getItem('product.42')
+       ->set($product)
+       ->expiresAfter(300);
+   $second = $cache->getItem('product.43')
+       ->set($otherProduct)
+       ->expiresAfter(300);
+
+   $cache->saveDeferred($first);
+   $cache->saveDeferred($second);
+   $cache->commit();
+
+For simple batches, use the PSR-16 methods instead:
+
+.. code-block:: php
+
+   $cache->setMultiple([
+       'product.42' => $product,
+       'product.43' => $otherProduct,
+   ], 300);
+
+   $products = $cache->getMultiple(['product.42', 'product.43']);
+   $cache->deleteMultiple(['product.42', 'product.43']);
+
+``saveDeferred()`` is for batching in one process. It does not survive a
+process crash before ``commit()`` and is not an asynchronous queue.
+
+Common source-data workflows
+----------------------------
+
+Create or update a record
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+After the authoritative database transaction succeeds, either delete the exact
+key or invalidate the business tag. Avoid writing a speculative database value
+to cache before its transaction commits.
+
+.. code-block:: php
+
+   $database->transaction(function () use ($repository, $input): void {
+       $repository->updateProduct(42, $input);
+   });
+
+   $cache->delete('product.42');
+   $cache->invalidateTags(['products', 'category.10']);
+
+The next reader rebuilds entries through ``remember()``. This approach avoids
+having cache state become the source of truth.
+
+Delete a record
+~~~~~~~~~~~~~~~
+
+Delete the exact record key and any aggregate tags after the source deletion is
+committed:
+
+.. code-block:: php
+
+   $repository->deleteProduct(42);
+   $cache->delete('product.42');
+   $cache->invalidateTag('products');
+
+When a direct key and its aggregate/list views may be cached, invalidating both
+is normal and safe.
+
+Maintenance lifecycle
+---------------------
+
+Run maintenance independently on every node. Reads correctly ignore expired
+rows, but pruning prevents the local SQLite file from accumulating them.
+
+.. code-block:: php
+
+   use Infocyph\CacheLayer\Node\NodeCache;
 
    $maintenance = NodeCache::maintenance($config);
    $deleted = $maintenance->pruneExpired(5_000);
    $maintenance->checkpoint();
    $maintenance->optimize();
 
-SQLite location and security
-----------------------------
+``pruneExpired($limit)``
+   Deletes at most ``$limit`` expired rows in the configured namespace. It
+   returns the number deleted. Run it periodically and keep the limit bounded.
 
-Store the database on a writable local filesystem, outside the source tree and
-web root. The application user needs access to the SQLite database, WAL, and
-shared-memory files. Network and shared filesystems are unsupported. The
-factory rejects symlinked and world-writable cache directories.
+``checkpoint()``
+   Requests a passive SQLite WAL checkpoint. It is suitable for regular
+   maintenance because it does not force active writers to stop.
 
-Do not use Node Cache for authoritative records, distributed locks, global
-counters or rate limits, queues, or security state requiring immediate global
-revocation.
+``optimize()``
+   Runs SQLite ``PRAGMA optimize``. Schedule it less frequently than pruning,
+   for example as part of a daily maintenance job.
+
+A simple scheduled task can perform a small bounded prune every few minutes
+and checkpoint periodically. Do not run ``VACUUM`` on the request path; plan it
+separately if disk-space reclamation is required.
+
+Deployment and process guidance
+-------------------------------
+
+* Create the cache directory with ownership restricted to the application
+  account before starting PHP-FPM/workers.
+* Persist the SQLite file on the node if warm cache across process restarts is
+  useful. Treat it as disposable: deleting it only causes cold misses.
+* In containers, mount a node-local writable volume. Do not mount the same
+  SQLite cache volume into multiple nodes.
+* Configure APCu for the PHP SAPI that actually serves traffic. A CLI command
+  may not have the same APCu settings as PHP-FPM.
+* Use the same namespace for processes that should share a node-local cache;
+  use distinct namespaces to isolate applications or domains.
+* Keep cache TTLs shorter than the maximum period during which stale data would
+  be tolerable.
+
+Observability and failures
+--------------------------
+
+``exportMetrics()`` exposes adapter counters, including cache hits/misses and
+Node Cache layer events. Export it through your application's telemetry path:
+
+.. code-block:: php
+
+   $metrics = $cache->exportMetrics();
+
+Layer failures are represented by metrics such as APCu/SQLite failures when
+``failOpen`` is enabled. Alert on sustained failures, a sharp fall in hit rate,
+rapid SQLite file growth, and repeated lock contention. With ``failOpen``
+disabled, also handle the propagated cache exception according to the request's
+availability requirements.
+
+Troubleshooting
+---------------
+
+``APCu is not being used``
+   Check that ``apcuEnabled`` is true, the APCu extension is loaded, and APCu is
+   enabled for the active SAPI. SQLite-only operation is an intended fallback.
+
+``SQLite database is locked``
+   Confirm that the database is on a local filesystem, inspect concurrent local
+   writers, then consider a modest ``busyTimeoutMs`` increase. Do not solve
+   this by placing the file on a shared filesystem.
+
+``Data looks stale on another server``
+   This is expected with Node Cache alone. Add Cluster Cache and consume its
+   invalidation stream on every node, or rely on an appropriately short TTL.
+
+``The SQLite file keeps growing``
+   Schedule ``pruneExpired()`` and periodic checkpoints. Expired rows are not
+   removed by reads. Review TTL choices and cache cardinality as well.
+
+``A cache failure should fail the request``
+   Create the configuration with ``failOpen: false`` and ensure the application
+   handles the resulting exception at the appropriate boundary.
