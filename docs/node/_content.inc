@@ -9,8 +9,10 @@ code uses the same PSR-6, PSR-16, tagged-cache, and ``remember()`` API as every
 other CacheLayer backend.
 
 Use it when every server may safely hold its own, disposable copy of cached
-data. It is the storage foundation for :doc:`cluster-cache`, but it is also
+data. It is the storage foundation for :doc:`/cluster/index`, but it is also
 useful on its own.
+
+.. node-overview-start
 
 What Node Cache is and is not
 -----------------------------
@@ -32,7 +34,7 @@ Node Cache is not:
 * an immediate global-revocation mechanism for security-sensitive data.
 
 For cross-node invalidation while retaining local cached values, use
-:doc:`cluster-cache`.
+:doc:`/cluster/index`.
 
 Topology and request lifecycle
 ------------------------------
@@ -161,6 +163,8 @@ Configuration reference
    Defaults to ``true``. When true, recoverable layer failures are treated as
    cache degradation where possible. When false, APCu/SQLite failures propagate
    to the caller.
+
+.. node-operations-start
 
 Normal cache operations
 -----------------------
@@ -301,6 +305,8 @@ committed:
 
 When a direct key and its aggregate/list views may be cached, invalidating both
 is normal and safe.
+
+.. node-production-start
 
 Maintenance lifecycle
 ---------------------

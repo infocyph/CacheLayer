@@ -3,12 +3,14 @@ Cluster Cache
 ========================
 
 ``ClusterCache`` coordinates *invalidation* between independent
-:doc:`node-cache` instances. It does not copy cache values, APCu memory, or
+:doc:`/node/index` instances. It does not copy cache values, APCu memory, or
 SQLite files between machines. Normal reads and writes remain local and fast;
 a durable shared event stream tells other nodes which local values to discard.
 
 This is a cache-coherence tool for data that may be briefly stale. It provides
 durable eventual invalidation, not synchronous global consistency.
+
+.. cluster-overview-start
 
 Conceptual model
 ----------------
@@ -104,7 +106,7 @@ Prerequisites and transport choice
 Every node needs:
 
 * a local writable SQLite file and optional APCu, as described in
-  :doc:`node-cache`;
+  :doc:`/node/index`;
 * the same cluster name and a unique node ID;
 * access to the same durable, replayable event transport;
 * a consumer process or scheduled task that calls ``consume()``;
@@ -143,6 +145,8 @@ DDL and read/write rights when the transport is initialized.
 
 SQLite support in this class is useful for a local test only. Do **not** use a
 SQLite database as a shared multi-node event transport in production.
+
+.. cluster-topology-start
 
 Bootstrap one runtime per node
 ------------------------------
@@ -190,6 +194,66 @@ The critical boundary is ``$runtime->cache()``: all ordinary ``get()``,
 ``set()``, ``remember()``, ``delete()``, and ``clear()`` calls are **local
 only**. Use the runtime's three invalidation methods when an operation must be
 distributed.
+
+Adding the third, fourth, or Nth node
+-------------------------------------
+
+There is no central cluster object that receives a list of node instances and
+no node-registration call. A cluster is formed when independently running
+application nodes use the same ``cluster`` name and shared transport. Each
+node creates its own runtime, local SQLite file, and consumer.
+
+For example, this bootstrap function is deployed on every web/worker node. The
+deployment supplies a different ``$nodeId`` on each machine or instance:
+
+.. code-block:: php
+
+   use Infocyph\CacheLayer\Cluster\ClusterCache;
+   use Infocyph\CacheLayer\Cluster\ClusterCacheConfig;
+   use Infocyph\CacheLayer\Cluster\ClusterRuntime;
+   use Infocyph\CacheLayer\Cluster\Transport\InvalidationTransportInterface;
+   use Infocyph\CacheLayer\Node\NodeCacheConfig;
+
+   function bootCatalogCluster(string $nodeId, InvalidationTransportInterface $transport): ClusterRuntime
+   {
+       return ClusterCache::create(
+           node: new NodeCacheConfig(
+               sqliteFile: "/var/cache/catalog/{$nodeId}.sqlite",
+               namespace: 'catalog',
+           ),
+           cluster: new ClusterCacheConfig(
+               cluster: 'production-catalog', // identical on every node
+               nodeId: $nodeId,                // unique on every node
+           ),
+           transport: $transport,              // points to one shared event store
+       );
+   }
+
+   $nodeOne = bootCatalogCluster('catalog-web-01', $transport);
+   $nodeTwo = bootCatalogCluster('catalog-web-02', $transport);
+   $nodeThree = bootCatalogCluster('catalog-web-03', $transport);
+   // Continue with any number of nodes.
+
+In a real deployment these three calls run in separate processes/machines—not
+in one PHP request. Each process normally creates its own PDO connection to
+the same database or its own client connection to the selected transport.
+
+The node-addition flow is:
+
+1. Provision a private local cache directory/SQLite file for the new node.
+2. Give it a unique ``nodeId`` while retaining the existing cluster name,
+   namespace, and transport configuration.
+3. Start its consumer before or alongside application traffic.
+4. The new node begins with no cursor, safely reads retained events, and then
+   serves local cache reads/writes like every other node.
+5. Existing nodes require no configuration change; they already publish into
+   the common transport.
+
+When node one executes ``$nodeOne->invalidateKey('product.42')``, it invalidates
+its own cache and publishes an event. Nodes two, three, and every later node
+apply that event when their individual consumers next call ``consume()``.
+
+.. cluster-operations-start
 
 Local reads and writes
 ----------------------
@@ -417,6 +481,8 @@ If a node has a new empty local SQLite file, it has no cursor and begins from
 the retained stream. This may replay unnecessary invalidations but is safe. If
 a node intentionally changes its ``nodeId``, it gets a distinct cursor record;
 ensure the identity remains unique and monitor for unexpected backlog replay.
+
+.. cluster-reliability-start
 
 Retention, recovery, and offline nodes
 --------------------------------------
