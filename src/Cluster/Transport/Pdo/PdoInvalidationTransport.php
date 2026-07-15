@@ -8,21 +8,28 @@ use Infocyph\CacheLayer\Cluster\Event\InvalidationBatch;
 use Infocyph\CacheLayer\Cluster\Event\InvalidationEvent;
 use Infocyph\CacheLayer\Cluster\Event\InvalidationEventType;
 use Infocyph\CacheLayer\Cluster\Exception\ClusterTransportException;
-use Infocyph\CacheLayer\Cluster\Transport\InvalidationTransportInterface;
+use Infocyph\CacheLayer\Cluster\Transport\InvalidationTransportInspectorInterface;
+use Infocyph\CacheLayer\Cluster\Transport\TransactionalInvalidationTransportInterface;
 use PDO;
 use PDOException;
 
-final readonly class PdoInvalidationTransport implements InvalidationTransportInterface
+final readonly class PdoInvalidationTransport implements InvalidationTransportInspectorInterface, TransactionalInvalidationTransportInterface
 {
     private const string TABLE = 'cachelayer_invalidation_events';
 
     private string $driver;
 
-    public function __construct(private PDO $connection)
+    public function __construct(private PDO $connection, bool $allowSqliteForTesting = false)
     {
         $this->connection->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $driver = $connection->getAttribute(PDO::ATTR_DRIVER_NAME);
         $this->driver = is_string($driver) ? $driver : '';
+        if (!in_array($this->driver, ['mysql', 'pgsql', 'sqlite'], true)) {
+            throw new ClusterTransportException('PDO invalidation transport supports MySQL and PostgreSQL only.');
+        }
+        if ($this->driver === 'sqlite' && !$allowSqliteForTesting) {
+            throw new ClusterTransportException('SQLite is not a supported shared Cluster Cache transport.');
+        }
         $this->createSchemaIfMissing();
     }
 
@@ -55,6 +62,27 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
         return new InvalidationBatch($events);
     }
 
+    public function countAfter(string $cluster, ?string $cursor): int
+    {
+        try {
+            $sql = 'SELECT COUNT(*) FROM ' . self::TABLE . ' WHERE cluster_name = :cluster';
+            if ($cursor !== null) {
+                $sql .= ' AND event_id > :cursor';
+            }
+            $statement = $this->connection->prepare($sql);
+            $statement->bindValue(':cluster', $cluster, PDO::PARAM_STR);
+            if ($cursor !== null) {
+                $statement->bindValue(':cursor', $this->eventId($cursor), PDO::PARAM_STR);
+            }
+            $statement->execute();
+            $count = $statement->fetchColumn();
+        } catch (PDOException $exception) {
+            throw new ClusterTransportException('Unable to count pending invalidation events.', 0, $exception);
+        }
+
+        return is_numeric($count) ? (int) $count : 0;
+    }
+
     public function isCursorBefore(string $cursor, string $oldestAvailableId): bool
     {
         $cursor = $this->eventId($cursor);
@@ -63,6 +91,11 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
         return strlen($cursor) === strlen($oldestAvailableId)
             ? strcmp($cursor, $oldestAvailableId) < 0
             : strlen($cursor) < strlen($oldestAvailableId);
+    }
+
+    public function newestAvailableId(string $cluster): ?string
+    {
+        return $this->eventBoundary($cluster, 'MAX');
     }
 
     public function oldestAvailableId(string $cluster): ?string
@@ -164,6 +197,21 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
             . 'event_id ' . $id . ', cluster_name VARCHAR(128) NOT NULL, namespace_name VARCHAR(128) NOT NULL, '
             . 'event_type VARCHAR(32) NOT NULL, identifier VARCHAR(512) NULL, origin_node_id VARCHAR(255) NOT NULL, '
             . 'created_at BIGINT NOT NULL)';
+    }
+
+    private function eventBoundary(string $cluster, string $aggregate): ?string
+    {
+        try {
+            $statement = $this->connection->prepare(
+                'SELECT ' . $aggregate . '(event_id) FROM ' . self::TABLE . ' WHERE cluster_name = :cluster',
+            );
+            $statement->execute([':cluster' => $cluster]);
+            $id = $statement->fetchColumn();
+        } catch (PDOException $exception) {
+            throw new ClusterTransportException('Unable to read invalidation event boundary.', 0, $exception);
+        }
+
+        return is_int($id) || (is_string($id) && ctype_digit($id)) ? (string) $id : null;
     }
 
     /**

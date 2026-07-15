@@ -2,6 +2,8 @@
 
 use Infocyph\CacheLayer\Cache\Adapter\ArrayCacheAdapter;
 use Infocyph\CacheLayer\Cache\Cache;
+use Infocyph\CacheLayer\Cache\Lock\LockHandle;
+use Infocyph\CacheLayer\Cache\Lock\LockProviderInterface;
 use Infocyph\CacheLayer\Node\Adapter\NodeCacheAdapter;
 use Infocyph\CacheLayer\Node\Adapter\NodeSqliteCacheAdapter;
 use Infocyph\CacheLayer\Node\Connection\NodeSqliteConnection;
@@ -52,6 +54,44 @@ test('node cache supports deferred writes through its composed PSR-6 item', func
     expect($cache->saveDeferred($item))->toBeTrue()
         ->and($cache->commit())->toBeTrue()
         ->and($cache->get('deferred'))->toBe('value');
+});
+
+test('node cache uses the configured shared lock provider for remember operations', function () {
+    $lock = new class implements LockProviderInterface {
+        public int $acquired = 0;
+
+        public int $released = 0;
+
+        public function acquire(string $key, float $waitSeconds): ?LockHandle
+        {
+            if ($waitSeconds < 0) {
+                return null;
+            }
+
+            ++$this->acquired;
+
+            return new LockHandle($key, 'test-lock');
+        }
+
+        public function release(?LockHandle $handle): void
+        {
+            if (!$handle instanceof LockHandle) {
+                return;
+            }
+
+            ++$this->released;
+        }
+    };
+    $config = new NodeCacheConfig(
+        sqliteFile: $this->nodeCacheFile,
+        namespace: 'node.tests',
+        apcuEnabled: false,
+        lockProvider: $lock,
+    );
+
+    expect(NodeCache::create($config)->remember('locked', fn(): string => 'value', 300))->toBe('value')
+        ->and($lock->acquired)->toBe(1)
+        ->and($lock->released)->toBe(1);
 });
 
 test('SQLite hits promote into an L1 cache without returning the child item', function () {

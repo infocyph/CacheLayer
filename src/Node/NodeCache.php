@@ -29,7 +29,7 @@ final class NodeCache
 
         return new Cache(
             $adapter,
-            new FileLockProvider($config->lockDirectory),
+            $config->lockProvider ?? new FileLockProvider($config->lockDirectory),
             $metrics,
         );
     }
