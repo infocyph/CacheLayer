@@ -145,6 +145,36 @@ DDL and read/write rights when the transport is initialized.
 
 SQLite support in this class is useful for a local test only. Do **not** use a
 SQLite database as a shared multi-node event transport in production.
+It is rejected by default and requires an explicit test-only opt-in:
+
+.. code-block:: php
+
+   $transport = new PdoInvalidationTransport($sqliteConnection, allowSqliteForTesting: true);
+
+Redis and Valkey Streams transport
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``RedisStreamInvalidationTransport`` is included for lower-latency,
+higher-volume invalidation workloads. It appends events to one durable stream
+per cluster and each node replays from its own persisted stream cursor; it does
+not use a consumer group because every node must receive every invalidation.
+
+.. code-block:: php
+
+   use Infocyph\CacheLayer\Cluster\Transport\RedisStreamInvalidationTransport;
+
+   $transport = new RedisStreamInvalidationTransport(
+       $redis,
+       prefix: 'application:cache-invalidation:',
+       maxLength: 100_000,
+   );
+
+``maxLength`` bounds retained stream entries using Redis's approximate trimming.
+Set it large enough to cover the greatest expected outage and replay backlog;
+a node that falls behind the retained stream is safely recovered by clearing
+its local namespace. Redis/Valkey persistence and replication settings are an
+application operational requirement—the stream must be durable enough for the
+invalidation guarantee you need.
 
 .. cluster-topology-start
 
@@ -186,8 +216,10 @@ Method                           Meaning
 ``invalidateKey(string $key)``   Invalidate one key locally and publish an event.
 ``invalidateTag(string $tag)``   Invalidate one tag locally and publish an event.
 ``clearNamespace()``             Clear the local namespace and publish an event.
+``invalidateTags(array $tags)``  Publish one invalidation for each unique tag.
 ``consume(?int $limit)``         Replay up to ``limit`` events and return the count read.
 ``recoverIfRequired(): bool``    Perform retention-gap recovery; normally called by consume.
+``status(): ClusterStatus``      Report cursor, transport, consume, and recovery health.
 ===============================  =====================================================
 
 The critical boundary is ``$runtime->cache()``: all ordinary ``get()``,
@@ -403,6 +435,13 @@ minutes, according to the maximum acceptable stale window:
    // bin/cache-consume.php: bootstrap $runtime for this node first.
    $processed = $runtime->consume();
 
+For a worker that should catch up without running forever, use ``drain()``.
+It reads until it receives a partial batch or reaches ``maxBatches``:
+
+.. code-block:: php
+
+   $processed = $runtime->drain(limit: 1_000, maxBatches: 50);
+
 The schedule determines remote invalidation latency. For example, a task every
 five seconds means a healthy remote node may serve stale data for nearly five
 seconds plus normal request timing. TTL remains the final safety bound.
@@ -450,6 +489,30 @@ Traditional cron cannot reliably poll more often than once a minute. For
 sub-minute propagation, use a framework scheduler that supports it or a
 supervised worker. Ensure the scheduler prevents overlapping runs on the same
 node, or make each invocation deliberately short and bounded.
+
+Cluster health status
+~~~~~~~~~~~~~~~~~~~~~
+
+Use ``status()`` in a health endpoint or scheduled diagnostic. It returns a
+``ClusterStatus`` value with the local cursor and update time, oldest/newest
+transport event IDs, pending-event count when the transport can calculate it,
+and the most recent consume count, error, and recovery time.
+
+.. code-block:: php
+
+   $status = $runtime->status();
+
+   if ($status->lastConsumeError !== null) {
+       reportCacheConsumerFailure($status->lastConsumeError);
+   }
+
+   if ($status->pendingEventCount !== null && $status->pendingEventCount > 10_000) {
+       alertOnConsumerLag($status);
+   }
+
+The PDO transport implements detailed inspection. A custom transport that does
+not implement the optional inspection contract reports ``null`` for newest ID
+and pending count rather than inventing a lag estimate.
 
 Continuous worker with bounded drain
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -595,6 +658,39 @@ insertion atomic. It does not itself invalidate the origin node: origin events
 are skipped by that node's consumer, so the explicit local delete after a
 successful commit is required. Treat a failure of that delete as operationally
 important and retry/alert; a bounded TTL still limits the stale window.
+
+``PdoInvalidationTransport`` implements
+``TransactionalInvalidationTransportInterface``. Framework/database
+integrations should depend on that interface rather than the concrete PDO class
+when they need to attach an invalidation event to a database transaction.
+
+CacheLayer also provides a framework-neutral ``ClusterOutbox`` helper through
+``$runtime->outbox($pdo)``. Create it within the source transaction, publish
+its invalidations alongside the source write, commit, then apply its local
+invalidation after the commit succeeds:
+
+.. code-block:: php
+
+   $pdo->beginTransaction();
+   try {
+       updateProduct($pdo, 42, $input);
+       $outbox = $runtime->outbox($pdo);
+       $outbox->invalidateKey('product.42');
+       $pdo->commit();
+       $outbox->applyLocally();
+   } catch (Throwable $exception) {
+       if ($pdo->inTransaction()) {
+           $pdo->rollBack();
+       }
+
+       throw $exception;
+   }
+
+The outbox event is deliberately replayed by its origin node as well. Therefore
+if the process fails after commit but before ``applyLocally()``, the next local
+consumer run still invalidates the origin cache safely. A framework can wrap
+the final local application in its after-commit callback; transaction ownership
+and callback registration remain application concerns.
 
 Operations checklist
 --------------------

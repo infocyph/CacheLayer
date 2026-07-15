@@ -164,6 +164,22 @@ Configuration reference
    cache degradation where possible. When false, APCu/SQLite failures propagate
    to the caller.
 
+``lockProvider``
+   Optional ``LockProviderInterface`` used by ``remember()``. When omitted,
+   Node Cache uses its local file-lock default. Supply a shared
+   ``RedisLockProvider`` or ``ValkeyLockProvider`` when multiple application
+   nodes must coordinate one ``remember()`` resolver.
+
+.. code-block:: php
+
+   use Infocyph\CacheLayer\Cache\Lock\RedisLockProvider;
+
+   $config = new NodeCacheConfig(
+       sqliteFile: '/var/cache/my-application/node-cache.sqlite',
+       namespace: 'catalog',
+       lockProvider: new RedisLockProvider($redis, 'catalog:remember:'),
+   );
+
 .. node-operations-start
 
 Normal cache operations

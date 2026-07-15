@@ -11,4 +11,6 @@ interface CursorStoreInterface
     public function current(): ?string;
 
     public function reset(?string $eventId): void;
+
+    public function updatedAt(): ?int;
 }

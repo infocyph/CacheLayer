@@ -38,6 +38,23 @@ final readonly class ClusterCoordinator
         $this->coordinate($event, fn(): bool => $this->cache->invalidateTag($tag));
     }
 
+    /**
+     * @param array $tags The tags argument.
+     * @phpstan-param list<string> $tags
+     */
+    public function invalidateTags(array $tags): void
+    {
+        $seen = [];
+        foreach ($tags as $tag) {
+            if (isset($seen[$tag])) {
+                continue;
+            }
+
+            $seen[$tag] = true;
+            $this->invalidateTag($tag);
+        }
+    }
+
     private function coordinate(InvalidationEvent $event, callable $invalidate): void
     {
         if ($this->invalidateLocallyFirst) {

@@ -48,6 +48,7 @@ Quick Start
    :caption: Guide
 
    cache
+   counters
    adapters/index
    cookbook
    metrics-and-locking

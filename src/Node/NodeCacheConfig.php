@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Infocyph\CacheLayer\Node;
 
+use Infocyph\CacheLayer\Cache\Lock\LockProviderInterface;
 use Infocyph\CacheLayer\Node\Exception\NodeCacheConfigurationException;
 
 final readonly class NodeCacheConfig
@@ -17,6 +18,7 @@ final readonly class NodeCacheConfig
         public int $busyTimeoutMs = 1_000,
         public bool $apcuEnabled = true,
         public bool $failOpen = true,
+        public ?LockProviderInterface $lockProvider = null,
     ) {
         if ($sqliteFile === '' || str_contains($sqliteFile, "\0")) {
             throw new NodeCacheConfigurationException('The SQLite cache file path is invalid.');

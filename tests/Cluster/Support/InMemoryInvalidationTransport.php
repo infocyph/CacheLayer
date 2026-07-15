@@ -6,9 +6,9 @@ namespace Infocyph\CacheLayer\Tests\Cluster\Support;
 
 use Infocyph\CacheLayer\Cluster\Event\InvalidationBatch;
 use Infocyph\CacheLayer\Cluster\Event\InvalidationEvent;
-use Infocyph\CacheLayer\Cluster\Transport\InvalidationTransportInterface;
+use Infocyph\CacheLayer\Cluster\Transport\InvalidationTransportInspectorInterface;
 
-final class InMemoryInvalidationTransport implements InvalidationTransportInterface
+final class InMemoryInvalidationTransport implements InvalidationTransportInspectorInterface
 {
     /** @var array<string, list<InvalidationEvent>> */
     private array $events = [];
@@ -42,6 +42,18 @@ final class InMemoryInvalidationTransport implements InvalidationTransportInterf
     public function oldestAvailableId(string $cluster): ?string
     {
         return $this->events[$cluster][0]->id ?? null;
+    }
+
+    public function newestAvailableId(string $cluster): ?string
+    {
+        $events = $this->events[$cluster] ?? [];
+
+        return $events === [] ? null : $events[array_key_last($events)]->id;
+    }
+
+    public function countAfter(string $cluster, ?string $cursor): int
+    {
+        return count($this->consumeAfter($cluster, $cursor, PHP_INT_MAX)->events);
     }
 
     public function publish(InvalidationEvent $event): string
