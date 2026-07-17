@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Infocyph\CacheLayer\Counter;
 
 use Infocyph\CacheLayer\Counter\Exception\AtomicCounterException;
+use Infocyph\CacheLayer\Support\RedisConnection;
+use InvalidArgumentException;
 
 final class AtomicCounters
 {
@@ -30,22 +32,10 @@ final class AtomicCounters
 
     private static function connect(string $dsn): \Redis
     {
-        $parts = parse_url($dsn);
-        if (!is_array($parts)) {
-            throw new AtomicCounterException("Invalid Redis-compatible DSN: {$dsn}");
+        try {
+            return RedisConnection::connect($dsn);
+        } catch (InvalidArgumentException $exception) {
+            throw new AtomicCounterException("Invalid Redis-compatible DSN: {$dsn}", 0, $exception);
         }
-
-        $client = new \Redis();
-        $host = is_string($parts['host'] ?? null) ? $parts['host'] : '127.0.0.1';
-        $port = is_int($parts['port'] ?? null) ? $parts['port'] : 6379;
-        $client->connect($host, $port);
-        if (is_string($parts['pass'] ?? null) && $parts['pass'] !== '') {
-            $client->auth($parts['pass']);
-        }
-        if (is_string($parts['path'] ?? null) && $parts['path'] !== '/') {
-            $client->select((int) ltrim($parts['path'], '/'));
-        }
-
-        return $client;
     }
 }
