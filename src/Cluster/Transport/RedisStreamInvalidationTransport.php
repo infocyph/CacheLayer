@@ -158,12 +158,16 @@ final readonly class RedisStreamInvalidationTransport implements InvalidationTra
 
     private function field(mixed $fields, string $name): string
     {
-        return EventField::requiredString(
-            $fields,
-            $name,
-            'Redis Stream event fields must be an array.',
-            "Redis Stream event has an invalid {$name} field.",
-        );
+        if (!is_array($fields)) {
+            throw new ClusterTransportException('Redis Stream event fields must be an array.');
+        }
+
+        $value = $fields[$name] ?? null;
+        if (!is_string($value) || $value === '') {
+            throw new ClusterTransportException("Redis Stream event has an invalid {$name} field.");
+        }
+
+        return $value;
     }
 
     /**
