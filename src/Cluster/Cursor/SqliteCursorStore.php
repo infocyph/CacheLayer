@@ -37,16 +37,11 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
 
     public function current(): ?string
     {
-        try {
-            $statement = $this->connection->prepare(
-                'SELECT last_event_id FROM cachelayer_cluster_cursors '
-                . 'WHERE cluster_name = :cluster AND node_id = :node_id LIMIT 1',
-            );
-            $statement->execute([':cluster' => $this->cluster, ':node_id' => $this->nodeId]);
-            $cursor = $statement->fetchColumn();
-        } catch (PDOException $exception) {
-            throw new ClusterCacheException('Unable to read the cluster cursor.', 0, $exception);
-        }
+        $cursor = $this->read(
+            'SELECT last_event_id FROM cachelayer_cluster_cursors '
+            . 'WHERE cluster_name = :cluster AND node_id = :node_id LIMIT 1',
+            'Unable to read the cluster cursor.',
+        );
 
         return is_string($cursor) && $cursor !== '' ? $cursor : null;
     }
@@ -58,16 +53,11 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
 
     public function updatedAt(): ?int
     {
-        try {
-            $statement = $this->connection->prepare(
-                'SELECT updated_at FROM cachelayer_cluster_cursors '
-                . 'WHERE cluster_name = :cluster AND node_id = :node_id LIMIT 1',
-            );
-            $statement->execute([':cluster' => $this->cluster, ':node_id' => $this->nodeId]);
-            $updatedAt = $statement->fetchColumn();
-        } catch (PDOException $exception) {
-            throw new ClusterCacheException('Unable to read the cluster cursor update time.', 0, $exception);
-        }
+        $updatedAt = $this->read(
+            'SELECT updated_at FROM cachelayer_cluster_cursors '
+            . 'WHERE cluster_name = :cluster AND node_id = :node_id LIMIT 1',
+            'Unable to read the cluster cursor update time.',
+        );
 
         return is_int($updatedAt) || (is_string($updatedAt) && ctype_digit($updatedAt))
             ? (int) $updatedAt
@@ -84,6 +74,18 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
             );
         } catch (PDOException $exception) {
             throw new ClusterCacheException('Unable to initialize the cluster cursor store.', 0, $exception);
+        }
+    }
+
+    private function read(string $sql, string $failureMessage): mixed
+    {
+        try {
+            $statement = $this->connection->prepare($sql);
+            $statement->execute([':cluster' => $this->cluster, ':node_id' => $this->nodeId]);
+
+            return $statement->fetchColumn();
+        } catch (PDOException $exception) {
+            throw new ClusterCacheException($failureMessage, 0, $exception);
         }
     }
 

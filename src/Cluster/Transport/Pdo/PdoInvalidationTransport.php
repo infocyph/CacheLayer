@@ -8,6 +8,7 @@ use Infocyph\CacheLayer\Cluster\Event\InvalidationBatch;
 use Infocyph\CacheLayer\Cluster\Event\InvalidationEvent;
 use Infocyph\CacheLayer\Cluster\Event\InvalidationEventType;
 use Infocyph\CacheLayer\Cluster\Exception\ClusterTransportException;
+use Infocyph\CacheLayer\Cluster\Transport\EventField;
 use Infocyph\CacheLayer\Cluster\Transport\InvalidationTransportInspectorInterface;
 use Infocyph\CacheLayer\Cluster\Transport\TransactionalInvalidationTransportInterface;
 use PDO;
@@ -329,16 +330,12 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
 
     private function requiredString(mixed $row, string $key): string
     {
-        if (!is_array($row)) {
-            throw new ClusterTransportException('Invalid PDO transport event row.');
-        }
-
-        $value = $row[$key] ?? null;
-        if (!is_string($value) || $value === '') {
-            throw new ClusterTransportException("Invalid {$key} returned by PDO transport.");
-        }
-
-        return $value;
+        return EventField::requiredString(
+            $row,
+            $key,
+            'Invalid PDO transport event row.',
+            "Invalid {$key} returned by PDO transport.",
+        );
     }
 
     private function timestampFromValue(mixed $value): int

@@ -6,6 +6,8 @@ namespace Infocyph\CacheLayer\Cache\Adapter;
 
 use Infocyph\CacheLayer\Cache\Item\RedisCacheItem;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
+use Infocyph\CacheLayer\Support\RedisConnection;
+use InvalidArgumentException;
 use Psr\Cache\CacheItemInterface;
 use RuntimeException;
 
@@ -205,23 +207,11 @@ class RedisCacheAdapter extends AbstractCacheAdapter
 
     private function connect(string $dsn): \Redis
     {
-        $r = new \Redis();
-        $parts = parse_url($dsn);
-        if (!$parts) {
-            throw new RuntimeException("Invalid Redis DSN: $dsn");
+        try {
+            return RedisConnection::connect($dsn);
+        } catch (InvalidArgumentException $exception) {
+            throw new RuntimeException("Invalid Redis DSN: $dsn", 0, $exception);
         }
-        $host = is_string($parts['host'] ?? null) ? $parts['host'] : '127.0.0.1';
-        $port = is_int($parts['port'] ?? null) ? $parts['port'] : 6379;
-        $r->connect($host, $port);
-        if (is_string($parts['pass'] ?? null) && $parts['pass'] !== '') {
-            $r->auth($parts['pass']);
-        }
-        if (is_string($parts['path'] ?? null) && $parts['path'] !== '/') {
-            $db = (int) ltrim($parts['path'], '/');
-            $r->select($db);
-        }
-
-        return $r;
     }
 
     private function map(string $key): string
