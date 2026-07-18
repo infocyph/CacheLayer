@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 use Infocyph\CacheLayer\Memoize\Memoizer;
 use Infocyph\CacheLayer\Memoize\MemoizeTrait;
 use Infocyph\CacheLayer\Memoize\OnceMemoizer;

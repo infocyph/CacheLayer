@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 use Infocyph\CacheLayer\Cache\Adapter\CachePayloadCodec;
 
 beforeEach(function () {

@@ -31,6 +31,7 @@ jobs:
       enable_postgres_service: true
       enable_mysql_service: true
       enable_scylladb_service: true
+      enable_elasticsearch_service: false
       enable_mongodb_service: true
       service_db_name: "cachelayer"
       service_db_user: "cachelayer"
