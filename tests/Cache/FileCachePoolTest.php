@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 /**  tests/FileCachePoolTest.php  */
 
 use Infocyph\CacheLayer\Cache\Cache;

@@ -117,10 +117,6 @@ final class OnceMemoizer
 
     private function trackCacheKey(string $key): void
     {
-        if (in_array($key, $this->order, true)) {
-            return;
-        }
-
         $this->order[] = $key;
         if (count($this->order) <= self::LIMIT) {
             return;

@@ -169,7 +169,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter
     private function appendFetchedHit(array &$items, array &$stale, string $key, array $raw): bool
     {
         $mapped = $this->map($key);
-        if (!array_key_exists($mapped, $raw) || !is_string($raw[$mapped])) {
+        if (!isset($raw[$mapped]) || !is_string($raw[$mapped])) {
             return false;
         }
 

@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 use Infocyph\CacheLayer\Cache\Cache;
 
 if (! in_array('mysql', PDO::getAvailableDrivers(), true)) {

@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 use Infocyph\CacheLayer\Cluster\ClusterCache;
 use Infocyph\CacheLayer\Cluster\ClusterCacheConfig;
 use Infocyph\CacheLayer\Cluster\Event\InvalidationEvent;
