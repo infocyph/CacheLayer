@@ -114,7 +114,11 @@ final readonly class RedisStreamInvalidationTransport implements InvalidationTra
         return is_string($id) ? $id : null;
     }
 
-    private function clusterFromStreamEvent(mixed $fields): string
+    /**
+     * @param array $fields The normalized stream fields.
+     * @phpstan-param array<string, mixed> $fields
+     */
+    private function clusterFromStreamEvent(array $fields): string
     {
         return $this->field($fields, 'cluster');
     }
@@ -125,8 +129,15 @@ final readonly class RedisStreamInvalidationTransport implements InvalidationTra
         [$rightMilliseconds, $rightSequence] = $this->idParts($right);
 
         return $leftMilliseconds === $rightMilliseconds
-            ? $leftSequence <=> $rightSequence
-            : $leftMilliseconds <=> $rightMilliseconds;
+            ? $this->compareUnsignedIntegers($leftSequence, $rightSequence)
+            : $this->compareUnsignedIntegers($leftMilliseconds, $rightMilliseconds);
+    }
+
+    private function compareUnsignedIntegers(string $left, string $right): int
+    {
+        return strlen($left) === strlen($right)
+            ? strcmp($left, $right)
+            : strlen($left) <=> strlen($right);
     }
 
     /**
@@ -136,14 +147,17 @@ final readonly class RedisStreamInvalidationTransport implements InvalidationTra
      */
     private function eventFromFields(string $id, array $fields): InvalidationEvent
     {
+        $fields = InvalidationTransportData::stringKeys($fields);
         $type = InvalidationEventType::tryFrom($this->field($fields, 'type'));
         if ($type === null) {
             throw new ClusterTransportException('Redis Stream event has an invalid event type.');
         }
 
-        $identifier = $this->field($fields, 'has_identifier') === '1'
-            ? $this->field($fields, 'identifier')
-            : null;
+        $hasIdentifier = $this->field($fields, 'has_identifier');
+        if ($hasIdentifier !== '0' && $hasIdentifier !== '1') {
+            throw new ClusterTransportException('Redis Stream event has an invalid has_identifier field.');
+        }
+        $identifier = $hasIdentifier === '1' ? $this->field($fields, 'identifier') : null;
 
         return new InvalidationEvent(
             $id,
@@ -152,28 +166,32 @@ final readonly class RedisStreamInvalidationTransport implements InvalidationTra
             $type,
             $identifier,
             $this->field($fields, 'origin'),
-            (int) $this->field($fields, 'created_at'),
+            InvalidationTransportData::unsignedInteger(
+                $this->field($fields, 'created_at'),
+                'created_at field',
+                'Redis Stream event',
+            ),
         );
     }
 
-    private function field(mixed $fields, string $name): string
+    /**
+     * @param array $fields The normalized stream fields.
+     * @param string $name The required field name.
+     * @phpstan-param array<string, mixed> $fields
+     */
+    private function field(array $fields, string $name): string
     {
-        if (!is_array($fields)) {
-            throw new ClusterTransportException('Redis Stream event fields must be an array.');
-        }
-
-        $value = $fields[$name] ?? null;
-        if (!is_string($value) || $value === '') {
-            throw new ClusterTransportException("Redis Stream event has an invalid {$name} field.");
-        }
-
-        return $value;
+        return InvalidationTransportData::requiredString(
+            $fields,
+            $name,
+            'Redis Stream event',
+        );
     }
 
     /**
      * @param string $id The ID argument.
      * @return array The ID parts.
-     * @phpstan-return array{int, int}
+     * @phpstan-return array{string, string}
      */
     private function idParts(string $id): array
     {
@@ -182,7 +200,10 @@ final readonly class RedisStreamInvalidationTransport implements InvalidationTra
             throw new ClusterTransportException('Redis Stream event IDs must have the form milliseconds-sequence.');
         }
 
-        return [(int) $parts[0], (int) $parts[1]];
+        return [
+            ltrim($parts[0], '0') ?: '0',
+            ltrim($parts[1], '0') ?: '0',
+        ];
     }
 
     private function stream(string $cluster): string

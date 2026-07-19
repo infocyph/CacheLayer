@@ -57,7 +57,7 @@ final readonly class PdoLockProvider implements LockProviderInterface
     private function acquireMysql(string $key, float $waitSeconds): ?LockHandle
     {
         $deadline = microtime(true) + max(0.0, $waitSeconds);
-        $lockKey = $this->prefix . hash('xxh128', $key);
+        $lockKey = $this->prefix . self::digestLockKey($key);
         $token = self::generateToken();
         if ($token === null) {
             return null;
@@ -86,7 +86,7 @@ final readonly class PdoLockProvider implements LockProviderInterface
     private function acquirePgsql(string $key, float $waitSeconds): ?LockHandle
     {
         $deadline = microtime(true) + max(0.0, $waitSeconds);
-        $lockKey = $this->prefix . hash('xxh128', $key);
+        $lockKey = $this->prefix . self::digestLockKey($key);
         $advisoryKey = self::signedCrc32($lockKey);
         $token = self::generateToken();
         if ($token === null) {

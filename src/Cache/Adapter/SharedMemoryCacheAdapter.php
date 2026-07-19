@@ -10,11 +10,17 @@ use RuntimeException;
 
 final class SharedMemoryCacheAdapter extends AbstractCacheAdapter
 {
+    use GenericCacheItemPoolBehavior;
+    use SecuresFilesystemDirectories;
+
     private const int VAR_ID = 1;
+
+    /** @var resource */
+    private readonly mixed $lockHandle;
 
     private readonly string $ns;
 
-    private readonly mixed $segment;
+    private readonly \SysvSharedMemory $segment;
 
     private readonly string $tokenFile;
 
@@ -27,65 +33,69 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter
         }
 
         $this->ns = sanitize_cache_ns($namespace);
-        $this->tokenFile = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'cachelayer_shm_' . $this->ns . '.tok';
-        if (!is_file($this->tokenFile)) {
-            touch($this->tokenFile);
-        }
+        $this->tokenFile = $this->createTokenFile();
+        $this->segment = $this->attachSegment($segmentSize);
+        $this->lockHandle = $this->openLockHandle();
 
-        $projectId = function_exists('ftok') ? ftok($this->tokenFile, 'C') : false;
-        $shmKey = is_int($projectId) && $projectId > 0
-            ? $projectId
-            : abs(crc32('cachelayer:' . $this->ns));
+        $this->withExclusiveLock(function (): void {
+            if (!shm_has_var($this->segment, self::VAR_ID)) {
+                shm_put_var($this->segment, self::VAR_ID, []);
+            }
+        });
+    }
 
-        $segment = shm_attach($shmKey, max(1_048_576, $segmentSize), 0666);
-        if ($segment === false) {
-            throw new RuntimeException('Unable to attach shared-memory segment');
-        }
-
-        $this->segment = $segment;
-        if (!shm_has_var($this->segment, self::VAR_ID)) {
-            shm_put_var($this->segment, self::VAR_ID, []);
-        }
+    public function __destruct()
+    {
+        fclose($this->lockHandle);
+        shm_detach($this->segment);
     }
 
     public function clear(): bool
     {
         $this->deferred = [];
 
-        return shm_put_var($this->segment, self::VAR_ID, []);
+        return $this->withExclusiveLock(
+            fn(): bool => shm_put_var($this->segment, self::VAR_ID, []),
+        );
     }
 
     public function count(): int
     {
-        $store = $this->loadStore();
-        $changed = false;
-        $count = 0;
+        return $this->withExclusiveLock(function (): int {
+            $store = $this->loadStore();
+            $changed = false;
+            $count = 0;
 
-        foreach ($store as $key => $blob) {
-            $record = CachePayloadCodec::decode((string) $blob);
-            if ($record === null || CachePayloadCodec::isExpired($record['expires'])) {
-                unset($store[$key]);
-                $changed = true;
+            foreach ($store as $key => $blob) {
+                $record = CachePayloadCodec::decode($blob);
+                if ($record === null || CachePayloadCodec::isExpired($record['expires'])) {
+                    unset($store[$key]);
+                    $changed = true;
 
-                continue;
+                    continue;
+                }
+
+                $count++;
             }
 
-            $count++;
-        }
+            if ($changed) {
+                $this->store($store);
+            }
 
-        if ($changed) {
-            $this->store($store);
-        }
-
-        return $count;
+            return $count;
+        });
     }
 
     public function deleteItem(string $key): bool
     {
-        $store = $this->loadStore();
-        unset($store[$this->map($key)]);
+        $mapped = $this->map($key);
 
-        return $this->store($store);
+        return $this->withExclusiveLock(function () use ($mapped): bool {
+            $store = $this->loadStore();
+            unset($store[$mapped]);
+
+            return $this->store($store);
+        });
     }
 
     /**
@@ -94,59 +104,92 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter
      */
     public function deleteItems(array $keys): bool
     {
-        $store = $this->loadStore();
+        $mappedKeys = [];
         foreach ($keys as $key) {
-            unset($store[$this->map((string) $key)]);
+            $mappedKeys[] = $this->map($key);
         }
 
-        return $this->store($store);
-    }
-
-    public function getItem(string $key): GenericCacheItem
-    {
-        $mapped = $this->map($key);
-        $store = $this->loadStore();
-        $blob = $store[$mapped] ?? null;
-
-        return $this->genericFromBlobWithInvalidator(
-            $key,
-            is_string($blob) ? $blob : null,
-            function () use (&$store, $mapped): bool {
-                unset($store[$mapped]);
-
-                return $this->store($store);
-            },
-        );
-    }
-
-    public function hasItem(string $key): bool
-    {
-        return $this->getItem($key)->isHit();
-    }
-
-    /**
-     * @param array $keys The keys argument.
-     * @phpstan-param list<string> $keys
-     * @phpstan-return array<string, GenericCacheItem>
-     */
-    public function multiFetch(array $keys): array
-    {
-        return $this->multiFetchItems($keys, $this->getItem(...));
-    }
-
-    public function save(CacheItemInterface $item): bool
-    {
-        return $this->saveEncoded($item, function (CacheItemInterface $saveItem, array $expires): bool {
+        return $this->withExclusiveLock(function () use ($mappedKeys): bool {
             $store = $this->loadStore();
-            $store[$this->map($saveItem->getKey())] = CachePayloadCodec::encode($saveItem->get(), $expires['expiresAt']);
+            foreach ($mappedKeys as $mapped) {
+                unset($store[$mapped]);
+            }
 
             return $this->store($store);
         });
     }
 
-    protected function supportsItem(CacheItemInterface $item): bool
+    public function getItem(string $key): GenericCacheItem
     {
-        return $item instanceof GenericCacheItem;
+        $mapped = $this->map($key);
+        $blob = $this->withSharedLock(
+            fn(): ?string => $this->loadStore()[$mapped] ?? null,
+        );
+
+        return $this->genericFromBlobWithInvalidator(
+            $key,
+            $blob,
+            fn(): bool => $this->deleteItem($key),
+        );
+    }
+
+    public function save(CacheItemInterface $item): bool
+    {
+        return $this->saveEncoded($item, function (CacheItemInterface $saveItem, array $expires): bool {
+            $mapped = $this->map($saveItem->getKey());
+            $blob = CachePayloadCodec::encode($saveItem->get(), $expires['expiresAt']);
+
+            return $this->withExclusiveLock(function () use ($mapped, $blob): bool {
+                $store = $this->loadStore();
+                $store[$mapped] = $blob;
+
+                return $this->store($store);
+            });
+        });
+    }
+
+    private function attachSegment(int $segmentSize): \SysvSharedMemory
+    {
+        if (!function_exists('ftok')) {
+            throw new RuntimeException('ftok() is required for collision-safe shared-memory keys');
+        }
+        $projectId = ftok($this->tokenFile, 'C');
+        if ($projectId <= 0) {
+            throw new RuntimeException('Unable to derive the shared-memory key');
+        }
+
+        $segment = shm_attach($projectId, max(1_048_576, $segmentSize), 0600);
+        if ($segment === false) {
+            throw new RuntimeException('Unable to attach shared-memory segment');
+        }
+
+        return $segment;
+    }
+
+    private function createTokenFile(): string
+    {
+        $directory = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR)
+            . DIRECTORY_SEPARATOR
+            . 'cachelayer'
+            . DIRECTORY_SEPARATOR
+            . 'shared-memory';
+        $this->prepareDirectory($directory);
+        $tokenFile = $directory . DIRECTORY_SEPARATOR . hash('xxh128', $this->ns) . '.tok';
+        if (!is_file($tokenFile)) {
+            if (file_put_contents($tokenFile, '', LOCK_EX) === false) {
+                throw new RuntimeException('Unable to create the shared-memory token file');
+            }
+            chmod($tokenFile, 0600);
+        }
+        if (is_link($tokenFile)) {
+            throw new RuntimeException('Refusing a symlinked shared-memory token file');
+        }
+        $permissions = fileperms($tokenFile);
+        if ($permissions !== false && (($permissions & 0x0002) === 0x0002)) {
+            throw new RuntimeException('Shared-memory token file must not be world-writable');
+        }
+
+        return $tokenFile;
     }
 
     /**
@@ -179,6 +222,31 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter
         return $this->ns . ':' . $key;
     }
 
+    /** @phpstan-return resource */
+    private function openLockHandle(): mixed
+    {
+        $lockHandle = fopen($this->tokenFile, 'c+');
+        if (is_resource($lockHandle)) {
+            return $lockHandle;
+        }
+
+        shm_detach($this->segment);
+
+        throw new RuntimeException('Unable to open the shared-memory lock file');
+    }
+
+    private function prepareDirectory(string $directory): void
+    {
+        $this->assertPathNotSymlink($directory, 'Shared-memory cache directory');
+        if (!is_dir($directory) && !mkdir($directory, 0700, true) && !is_dir($directory)) {
+            throw new RuntimeException('Unable to create the shared-memory cache directory');
+        }
+        if (!is_writable($directory)) {
+            throw new RuntimeException('Shared-memory cache directory is not writable');
+        }
+        $this->assertSecureDirectory($directory, 'Shared-memory cache directory');
+    }
+
     /**
      * @param array $store The store argument.
      * @phpstan-param array<string, string> $store
@@ -186,5 +254,50 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter
     private function store(array $store): bool
     {
         return shm_put_var($this->segment, self::VAR_ID, $store);
+    }
+
+    /**
+     * @template T
+     * @param callable $operation The operation to run while locked.
+     * @phpstan-param callable(): T $operation
+     * @phpstan-return T
+     */
+    private function withExclusiveLock(callable $operation): mixed
+    {
+        return $this->withLock(LOCK_EX, $operation);
+    }
+
+    /**
+     * @template T
+     * @param int $operation The flock operation.
+     * @param callable $callback The operation to run while locked.
+     * @phpstan-param callable(): T $callback
+     * @phpstan-return T
+     */
+    private function withLock(int $operation, callable $callback): mixed
+    {
+        if ($operation !== LOCK_EX && $operation !== LOCK_SH) {
+            throw new RuntimeException('Invalid shared-memory lock operation');
+        }
+        if (!flock($this->lockHandle, $operation)) {
+            throw new RuntimeException('Unable to lock the shared-memory cache');
+        }
+
+        try {
+            return $callback();
+        } finally {
+            flock($this->lockHandle, LOCK_UN);
+        }
+    }
+
+    /**
+     * @template T
+     * @param callable $operation The operation to run while locked.
+     * @phpstan-param callable(): T $operation
+     * @phpstan-return T
+     */
+    private function withSharedLock(callable $operation): mixed
+    {
+        return $this->withLock(LOCK_SH, $operation);
     }
 }

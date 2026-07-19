@@ -21,8 +21,16 @@ final readonly class InvalidationEvent
             throw new ClusterCacheException('Invalidation events require a cluster, namespace, and origin node ID.');
         }
 
-        if ($type !== InvalidationEventType::Namespace && $identifier === null) {
-            throw new ClusterCacheException('Key and tag invalidation events require an identifier.');
+        if ($type === InvalidationEventType::Namespace && $identifier !== null) {
+            throw new ClusterCacheException('Namespace invalidation events must not contain an identifier.');
+        }
+
+        if ($type !== InvalidationEventType::Namespace && ($identifier === null || $identifier === '')) {
+            throw new ClusterCacheException('Key and tag invalidation events require a non-empty identifier.');
+        }
+
+        if ($createdAt < 0) {
+            throw new ClusterCacheException('Invalidation event timestamps cannot be negative.');
         }
     }
 

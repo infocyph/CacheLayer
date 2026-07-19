@@ -48,7 +48,7 @@ class FileCacheAdapter extends AbstractCacheAdapter
             $files = [];
         }
         foreach ($files as $f) {
-            $ok = $ok && (!is_file($f) || unlink($f));
+            $ok = (!is_file($f) || unlink($f)) && $ok;
         }
         $this->deferred = [];
 
@@ -75,7 +75,7 @@ class FileCacheAdapter extends AbstractCacheAdapter
     {
         $ok = true;
         foreach ($keys as $k) {
-            $ok = $ok && $this->deleteItem($k);
+            $ok = $this->deleteItem($k) && $ok;
         }
 
         return $ok;
@@ -128,7 +128,7 @@ class FileCacheAdapter extends AbstractCacheAdapter
             return false;
         }
 
-        if (file_put_contents($tmp, $blob) === false) {
+        if (file_put_contents($tmp, $blob, LOCK_EX) === false) {
             if (is_file($tmp)) {
                 unlink($tmp);
             }

@@ -11,6 +11,8 @@ use WeakReference;
 
 final class WeakMapCacheAdapter extends AbstractCacheAdapter
 {
+    use GenericCacheItemPoolBehavior;
+
     private readonly string $ns;
 
     /** @var array<string, string> */
@@ -133,21 +135,6 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter
         );
     }
 
-    public function hasItem(string $key): bool
-    {
-        return $this->getItem($key)->isHit();
-    }
-
-    /**
-     * @param array $keys The keys argument.
-     * @phpstan-param list<string> $keys
-     * @phpstan-return array<string, GenericCacheItem>
-     */
-    public function multiFetch(array $keys): array
-    {
-        return $this->multiFetchItems($keys, $this->getItem(...));
-    }
-
     public function save(CacheItemInterface $item): bool
     {
         return $this->saveEncoded($item, function (CacheItemInterface $saveItem, array $expires): bool {
@@ -169,11 +156,6 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter
 
             return true;
         });
-    }
-
-    protected function supportsItem(CacheItemInterface $item): bool
-    {
-        return $item instanceof GenericCacheItem;
     }
 
     private function map(string $key): string

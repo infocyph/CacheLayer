@@ -71,7 +71,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter
     {
         $ok = true;
         foreach ($keys as $k) {
-            $ok = $ok && $this->deleteItem($k);
+            $ok = $this->deleteItem($k) && $ok;
         }
 
         return $ok;

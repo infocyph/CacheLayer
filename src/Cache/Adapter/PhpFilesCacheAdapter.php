@@ -143,7 +143,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
             return false;
         }
 
-        if (file_put_contents($tmp, $code) === false) {
+        if (file_put_contents($tmp, $code, LOCK_EX) === false) {
             if (is_file($tmp)) {
                 unlink($tmp);
             }

@@ -8,6 +8,11 @@ use Throwable;
 
 trait GeneratesLockTokens
 {
+    protected static function digestLockKey(string $key): string
+    {
+        return hash('xxh128', $key);
+    }
+
     protected static function generateToken(): ?string
     {
         try {

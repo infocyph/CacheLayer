@@ -89,3 +89,27 @@ it('memoize trait caches values within object', function () {
         ->and($inst->next())->toBe(1)
         ->and($inst->count)->toBe(1);
 });
+
+it('keeps global and per-object memoization buckets bounded', function () {
+    $memoizer = Memoizer::instance();
+    $reflection = new ReflectionClass($memoizer);
+    $staticCache = $reflection->getProperty('staticCache');
+    $objectCache = $reflection->getProperty('objectCache');
+    $seed = [];
+    for ($index = 0; $index < 2_048; $index++) {
+        $seed['seed-' . $index] = $index;
+    }
+    $staticCache->setValue($memoizer, $seed);
+
+    $object = new stdClass();
+    $weakMap = $objectCache->getValue($memoizer);
+    $weakMap[$object] = $seed;
+
+    $memoizer->get('strlen', ['fresh']);
+    $memoizer->getFor($object, 'strlen', ['fresh']);
+
+    expect($staticCache->getValue($memoizer))->toHaveCount(2_048)
+        ->and($weakMap[$object])->toHaveCount(2_048)
+        ->and(array_key_exists('seed-0', $staticCache->getValue($memoizer)))->toBeFalse()
+        ->and(array_key_exists('seed-0', $weakMap[$object]))->toBeFalse();
+});
