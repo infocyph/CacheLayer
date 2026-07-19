@@ -129,7 +129,7 @@ final class Memoizer
             $normalized[] = self::normalizeParam($param);
         }
 
-        return $signature . '|' . hash('sha256', serialize($normalized));
+        return $signature . '|' . hash('xxh128', serialize($normalized));
     }
 
     /**

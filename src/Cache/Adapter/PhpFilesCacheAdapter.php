@@ -209,7 +209,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
 
     private function fileFor(string $key): string
     {
-        return $this->dir . hash('sha256', $key) . '.php';
+        return $this->dir . hash('xxh128', $key) . '.php';
     }
 
     private function invalidateOpcache(string $file): void

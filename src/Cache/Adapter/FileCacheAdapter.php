@@ -227,7 +227,7 @@ class FileCacheAdapter extends AbstractCacheAdapter
 
     private function fileFor(string $key): string
     {
-        return $this->dir . hash('sha256', $key) . '.cache';
+        return $this->dir . hash('xxh128', $key) . '.cache';
     }
 
     private function throwCreationError(string $prefix): void

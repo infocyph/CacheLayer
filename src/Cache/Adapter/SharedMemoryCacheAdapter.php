@@ -174,7 +174,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter
             . DIRECTORY_SEPARATOR
             . 'shared-memory';
         $this->prepareDirectory($directory);
-        $tokenFile = $directory . DIRECTORY_SEPARATOR . hash('sha256', $this->ns) . '.tok';
+        $tokenFile = $directory . DIRECTORY_SEPARATOR . hash('xxh128', $this->ns) . '.tok';
         if (!is_file($tokenFile)) {
             if (file_put_contents($tokenFile, '', LOCK_EX) === false) {
                 throw new RuntimeException('Unable to create the shared-memory token file');

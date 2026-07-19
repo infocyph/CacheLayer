@@ -1201,7 +1201,7 @@ final class Cache implements CacheInterface
 
     private function stampedeLockKey(string $key): string
     {
-        return '__im_lock_' . hash('sha256', $key);
+        return '__im_lock_' . hash('xxh128', $key);
     }
 
     private function tagMetaKey(string $key): string

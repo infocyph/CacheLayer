@@ -10,7 +10,7 @@ trait GeneratesLockTokens
 {
     protected static function digestLockKey(string $key): string
     {
-        return rtrim(strtr(base64_encode(hash('sha256', $key, true)), '+/', '-_'), '=');
+        return hash('xxh128', $key);
     }
 
     protected static function generateToken(): ?string
