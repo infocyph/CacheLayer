@@ -5,6 +5,10 @@ declare(strict_types=1);
 use Infocyph\CacheLayer\Cluster\ClusterCache;
 use Infocyph\CacheLayer\Cluster\ClusterCacheConfig;
 use Infocyph\CacheLayer\Cluster\Event\InvalidationEvent;
+use Infocyph\CacheLayer\Cluster\Event\InvalidationEventType;
+use Infocyph\CacheLayer\Cluster\Exception\ClusterCacheException;
+use Infocyph\CacheLayer\Cluster\Exception\ClusterTransportException;
+use Infocyph\CacheLayer\Cluster\Transport\InvalidationTransportData;
 use Infocyph\CacheLayer\Cluster\Transport\Pdo\PdoInvalidationTransport;
 use Infocyph\CacheLayer\Node\NodeCacheConfig;
 use Infocyph\CacheLayer\Tests\Cluster\Support\InMemoryInvalidationTransport;
@@ -159,6 +163,46 @@ test('PDO transport refuses SQLite unless it is explicitly test-only', function 
 
     expect(fn () => new PdoInvalidationTransport($connection))
         ->toThrow(\Infocyph\CacheLayer\Cluster\Exception\ClusterTransportException::class);
+});
+
+test('invalidation transport data rejects malformed and overflowing timestamps', function () {
+    expect(fn () => InvalidationTransportData::unsignedInteger('-1', 'created_at', 'test transport'))
+        ->toThrow(ClusterTransportException::class)
+        ->and(fn () => InvalidationTransportData::unsignedInteger(
+            (string) PHP_INT_MAX . '0',
+            'created_at',
+            'test transport',
+        ))->toThrow(ClusterTransportException::class);
+});
+
+test('invalidation events enforce identifier and timestamp invariants', function () {
+    expect(fn () => new InvalidationEvent(
+        null,
+        'cluster',
+        'namespace',
+        InvalidationEventType::Key,
+        '',
+        'node',
+        time(),
+    ))->toThrow(ClusterCacheException::class)
+        ->and(fn () => new InvalidationEvent(
+            null,
+            'cluster',
+            'namespace',
+            InvalidationEventType::Namespace,
+            'unexpected',
+            'node',
+            time(),
+        ))->toThrow(ClusterCacheException::class)
+        ->and(fn () => new InvalidationEvent(
+            null,
+            'cluster',
+            'namespace',
+            InvalidationEventType::Namespace,
+            null,
+            'node',
+            -1,
+        ))->toThrow(ClusterCacheException::class);
 });
 
 test('transactional outbox publishes with the source transaction and applies locally after commit', function () {

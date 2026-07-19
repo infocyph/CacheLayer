@@ -27,7 +27,7 @@ trait PollingLockProviderHelpers
         callable $attemptAcquire,
     ): ?LockHandle {
         $deadline = microtime(true) + max(0.0, $waitSeconds);
-        $lockKey = $prefix . hash('xxh128', $key);
+        $lockKey = $prefix . self::digestLockKey($key);
         $token = self::generateToken();
         if ($token === null) {
             return null;

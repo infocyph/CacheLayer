@@ -25,7 +25,7 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, Countable
     {
         $ok = true;
         foreach ($this->deferred as $key => $item) {
-            $ok = $ok && $this->save($item);
+            $ok = $this->save($item) && $ok;
             unset($this->deferred[$key]);
         }
 

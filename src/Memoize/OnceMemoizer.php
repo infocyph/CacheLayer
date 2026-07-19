@@ -100,7 +100,7 @@ final class OnceMemoizer
 
         $snippet = implode("\n", array_slice($lines, $start - 1, $end - $start + 1));
         $normalized = preg_replace('/\s+/', '', $snippet) ?? $snippet;
-        $fingerprint = 'closure-src:' . hash('xxh3', $normalized);
+        $fingerprint = 'closure-src:' . hash('sha256', $normalized);
         $this->closureSourceMemo[$sourceKey] = $fingerprint;
 
         return $fingerprint;

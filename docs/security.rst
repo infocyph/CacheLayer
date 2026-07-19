@@ -26,6 +26,7 @@ Implemented Hardening
 * Signed payloads are rejected when integrity verification fails.
 * When an integrity key is configured, unsigned payloads are rejected.
 * Maximum payload size can be enforced at decode time.
+* Compressed payload expansion is capped before deserialization.
 * ``ValueSerializer`` supports strict mode:
 
   * block closure payloads
@@ -75,6 +76,17 @@ subdirectories:
 * PDO SQLite default: ``sys_get_temp_dir()/cachelayer/pdo/cache_<ns>.sqlite``
 
 These paths are created with restrictive permissions and world-writable checks.
+
+The shared-memory adapter also stores its ``ftok`` token in a private
+``cachelayer/shared-memory`` directory, creates the segment for the current
+user only, and serializes read-modify-write operations with a filesystem lock.
+
+4) Network Timeouts
+~~~~~~~~~~~~~~~~~~~
+
+Redis/Valkey connections created from a DSN use bounded one-second connect and
+read timeouts. Inject a preconfigured client when an application needs
+different timeout, TLS, retry, or socket-context settings.
 
 Recommended Production Profile
 ------------------------------

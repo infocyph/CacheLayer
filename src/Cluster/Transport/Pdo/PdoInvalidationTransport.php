@@ -8,6 +8,7 @@ use Infocyph\CacheLayer\Cluster\Event\InvalidationBatch;
 use Infocyph\CacheLayer\Cluster\Event\InvalidationEvent;
 use Infocyph\CacheLayer\Cluster\Event\InvalidationEventType;
 use Infocyph\CacheLayer\Cluster\Exception\ClusterTransportException;
+use Infocyph\CacheLayer\Cluster\Transport\InvalidationTransportData;
 use Infocyph\CacheLayer\Cluster\Transport\InvalidationTransportInspectorInterface;
 use Infocyph\CacheLayer\Cluster\Transport\TransactionalInvalidationTransportInterface;
 use PDO;
@@ -56,7 +57,7 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
             if (!is_array($row)) {
                 continue;
             }
-            $events[] = $this->eventFromRow($this->normalizeRow($row));
+            $events[] = $this->eventFromRow(InvalidationTransportData::stringKeys($row));
         }
 
         return new InvalidationBatch($events);
@@ -220,7 +221,9 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
      */
     private function eventFromRow(array $row): InvalidationEvent
     {
-        $type = InvalidationEventType::tryFrom($this->requiredString($row, 'event_type'));
+        $type = InvalidationEventType::tryFrom(
+            InvalidationTransportData::requiredString($row, 'event_type', 'PDO transport'),
+        );
         if ($type === null) {
             throw new ClusterTransportException('Invalid invalidation event record returned by PDO transport.');
         }
@@ -232,12 +235,16 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
 
         return new InvalidationEvent(
             $this->eventIdFromValue($row['event_id'] ?? null),
-            $this->requiredString($row, 'cluster_name'),
-            $this->requiredString($row, 'namespace_name'),
+            InvalidationTransportData::requiredString($row, 'cluster_name', 'PDO transport'),
+            InvalidationTransportData::requiredString($row, 'namespace_name', 'PDO transport'),
             $type,
             $identifier,
-            $this->requiredString($row, 'origin_node_id'),
-            $this->timestampFromValue($row['created_at'] ?? null),
+            InvalidationTransportData::requiredString($row, 'origin_node_id', 'PDO transport'),
+            InvalidationTransportData::unsignedInteger(
+                $row['created_at'] ?? null,
+                'invalidation event timestamp',
+                'PDO transport',
+            ),
         );
     }
 
@@ -300,23 +307,6 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
         return is_array($errorInfo) && ($errorInfo[1] ?? null) === 1061;
     }
 
-    /**
-     * @param array $row The row argument.
-     * @phpstan-param array<mixed, mixed> $row
-     * @phpstan-return array<string, mixed>
-     */
-    private function normalizeRow(array $row): array
-    {
-        $normalized = [];
-        foreach ($row as $key => $value) {
-            if (is_string($key)) {
-                $normalized[$key] = $value;
-            }
-        }
-
-        return $normalized;
-    }
-
     private function pruneSql(): string
     {
         $selection = 'SELECT event_id FROM ' . self::TABLE . ' WHERE created_at < :boundary ORDER BY event_id LIMIT :limit';
@@ -325,32 +315,5 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
         }
 
         return 'DELETE FROM ' . self::TABLE . ' WHERE event_id IN (' . $selection . ')';
-    }
-
-    private function requiredString(mixed $row, string $key): string
-    {
-        if (!is_array($row)) {
-            throw new ClusterTransportException('Invalid PDO transport event row.');
-        }
-
-        $value = $row[$key] ?? null;
-        if (!is_string($value) || $value === '') {
-            throw new ClusterTransportException("Invalid {$key} returned by PDO transport.");
-        }
-
-        return $value;
-    }
-
-    private function timestampFromValue(mixed $value): int
-    {
-        if (is_int($value)) {
-            return $value;
-        }
-
-        if (is_string($value) && ctype_digit($value)) {
-            return (int) $value;
-        }
-
-        throw new ClusterTransportException('Invalid invalidation event timestamp returned by PDO transport.');
     }
 }

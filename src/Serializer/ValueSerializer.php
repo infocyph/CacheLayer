@@ -98,15 +98,16 @@ final class ValueSerializer
      */
     public static function isSerializedClosure(string $str): bool
     {
-        if (array_key_exists($str, self::$serializedClosureMemo)) {
-            return self::$serializedClosureMemo[$str];
+        $memoKey = hash('sha256', $str);
+        if (array_key_exists($memoKey, self::$serializedClosureMemo)) {
+            return self::$serializedClosureMemo[$memoKey];
         }
 
         if (!str_contains($str, 'Opis\\Closure')) {
-            return self::rememberSerializedClosureMemo($str, false);
+            return self::rememberSerializedClosureMemo($memoKey, false);
         }
 
-        return self::rememberSerializedClosureMemo($str, (bool) preg_match(
+        return self::rememberSerializedClosureMemo($memoKey, (bool) preg_match(
             '/^(?:C:\d+:"Opis\\\\Closure\\\\SerializableClosure|O:\d+:"Opis\\\\Closure\\\\Box"|O:\d+:"Opis\\\\Closure\\\\Serializable")/',
             $str,
         ));
@@ -180,7 +181,7 @@ final class ValueSerializer
     public static function unserialize(string $blob): mixed
     {
         if (self::isNativeSerializedPayload($blob) && !self::containsOpisPayloadMarker($blob)) {
-            return self::unwrapRecursive(unserialize($blob, ['allowed_classes' => false]));
+            return self::unwrapRecursive(self::unserializeNative($blob));
         }
 
         if (self::isSerializedClosure($blob)) {
@@ -277,9 +278,13 @@ final class ValueSerializer
 
     private static function isNativeSerializedPayload(string $blob): bool
     {
+        if (str_starts_with($blob, 'N;')) {
+            return true;
+        }
+
         $first = $blob[0] ?? '';
 
-        return in_array($first, self::NATIVE_SERIALIZED_PREFIXES, true);
+        return ($blob[1] ?? '') === ':' && in_array($first, self::NATIVE_SERIALIZED_PREFIXES, true);
     }
 
     private static function rememberSerializedClosureMemo(string $key, bool $value): bool
@@ -306,6 +311,26 @@ final class ValueSerializer
         }
 
         return array_any($value, fn($item) => self::requiresOpisSerialization($item));
+    }
+
+    private static function unserializeNative(string $blob): mixed
+    {
+        set_error_handler(
+            static function (int $_severity, string $message): never {
+                throw new InvalidArgumentException(
+                    "Invalid native serialized payload (error {$_severity}): {$message}",
+                );
+            },
+        );
+
+        try {
+            return unserialize($blob, [
+                'allowed_classes' => false,
+                'max_depth' => 128,
+            ]);
+        } finally {
+            restore_error_handler();
+        }
     }
 
     /**

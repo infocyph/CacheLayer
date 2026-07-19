@@ -61,6 +61,9 @@ final class CachePayloadCodec
         }
 
         $expanded = self::expandIfCompressed($verifiedBlob);
+        if ($expanded === null) {
+            return null;
+        }
         if (self::isPayloadTooLarge($expanded)) {
             return null;
         }
@@ -216,7 +219,7 @@ final class CachePayloadCodec
         ];
     }
 
-    private static function expandIfCompressed(string $blob): string
+    private static function expandIfCompressed(string $blob): ?string
     {
         if (!str_starts_with($blob, self::COMPRESSED_PREFIX)) {
             return $blob;
@@ -225,12 +228,21 @@ final class CachePayloadCodec
         $payload = substr($blob, strlen(self::COMPRESSED_PREFIX));
         $raw = base64_decode($payload, true);
         if ($raw === false || !function_exists('gzdecode')) {
-            return $blob;
+            return null;
         }
 
-        $decoded = gzdecode($raw);
+        $maximumLength = self::$maxPayloadBytes === null
+            ? 0
+            : min(self::$maxPayloadBytes, PHP_INT_MAX - 1) + 1;
+        set_error_handler(static fn(): bool => true);
 
-        return is_string($decoded) ? $decoded : $blob;
+        try {
+            $decoded = gzdecode($raw, $maximumLength);
+        } finally {
+            restore_error_handler();
+        }
+
+        return is_string($decoded) ? $decoded : null;
     }
 
     private static function isPayloadTooLarge(string $blob): bool

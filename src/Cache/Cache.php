@@ -1201,17 +1201,17 @@ final class Cache implements CacheInterface
 
     private function stampedeLockKey(string $key): string
     {
-        return '__im_lock_' . hash('xxh128', $key);
+        return '__im_lock_' . hash('sha256', $key);
     }
 
     private function tagMetaKey(string $key): string
     {
-        return self::TAG_META_PREFIX . hash('xxh3', $key);
+        return self::TAG_META_PREFIX . hash('sha256', $key);
     }
 
     private function tagVersionKey(string $normalizedTag): string
     {
-        return self::TAG_VERSION_PREFIX . hash('xxh3', $normalizedTag);
+        return self::TAG_VERSION_PREFIX . hash('sha256', $normalizedTag);
     }
 
     /**

@@ -11,12 +11,9 @@ if (!function_exists('sanitize_cache_ns')) {
      */
     function sanitize_cache_ns(string $ns): string
     {
-        /** @var array<string, string> $cache */
-        static $cache = [];
-
         $sanitized = preg_replace('/[^A-Za-z0-9_\-]/', '_', $ns);
 
-        return $cache[$ns] ??= is_string($sanitized) ? $sanitized : '';
+        return is_string($sanitized) ? $sanitized : '';
     }
 }
 

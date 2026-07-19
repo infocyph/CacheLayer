@@ -38,3 +38,15 @@ test('payload codec rejects unsigned payload when integrity key is configured', 
     CachePayloadCodec::configureSecurity('secret-key-123', 8_388_608);
     expect(CachePayloadCodec::decode($unsigned))->toBeNull();
 });
+
+test('payload codec bounds decompressed payload size', function () {
+    CachePayloadCodec::configureCompression(1, 9);
+    CachePayloadCodec::configureSecurity(null, null);
+    $compressed = CachePayloadCodec::encode(str_repeat('A', 8_192), null);
+
+    CachePayloadCodec::configureSecurity(null, 512);
+
+    expect(CachePayloadCodec::decode($compressed))->toBeNull();
+
+    CachePayloadCodec::configureCompression(null);
+});

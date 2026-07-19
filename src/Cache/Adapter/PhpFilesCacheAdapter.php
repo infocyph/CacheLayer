@@ -143,7 +143,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
             return false;
         }
 
-        if (file_put_contents($tmp, $code) === false) {
+        if (file_put_contents($tmp, $code, LOCK_EX) === false) {
             if (is_file($tmp)) {
                 unlink($tmp);
             }
@@ -209,7 +209,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
 
     private function fileFor(string $key): string
     {
-        return $this->dir . hash('xxh128', $key) . '.php';
+        return $this->dir . hash('sha256', $key) . '.php';
     }
 
     private function invalidateOpcache(string $file): void

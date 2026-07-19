@@ -6,6 +6,8 @@ namespace Infocyph\CacheLayer\Cache\Lock;
 
 final readonly class FileLockProvider implements LockProviderInterface
 {
+    use GeneratesLockTokens;
+
     private string $directory;
 
     private int $retrySleepMicros;
@@ -32,7 +34,7 @@ final readonly class FileLockProvider implements LockProviderInterface
             return null;
         }
 
-        $path = $this->directory . DIRECTORY_SEPARATOR . hash('xxh128', $key) . '.lock';
+        $path = $this->directory . DIRECTORY_SEPARATOR . self::digestLockKey($key) . '.lock';
         $handle = $this->openLockFile($path);
         if (!is_resource($handle)) {
             return null;
@@ -86,15 +88,6 @@ final readonly class FileLockProvider implements LockProviderInterface
         static $registry = [];
 
         return $registry;
-    }
-
-    private static function generateToken(): ?string
-    {
-        try {
-            return bin2hex(random_bytes(16));
-        } catch (\Throwable) {
-            return null;
-        }
     }
 
     /**

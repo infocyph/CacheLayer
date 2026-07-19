@@ -13,6 +13,8 @@ final class Memoizer
 {
     use MemoizeTrait;
 
+    private const int CACHE_LIMIT = 2048;
+
     private static ?self $instance = null;
 
     private int $hits = 0;
@@ -63,6 +65,7 @@ final class Memoizer
 
         $this->misses++;
         $value = $callable(...$params);
+        self::evictOldestIfFull($this->staticCache);
         $this->staticCache[$cacheKey] = $value;
 
         return $value;
@@ -91,6 +94,7 @@ final class Memoizer
 
         $this->misses++;
         $value = $callable(...$params);
+        self::evictOldestIfFull($bucket);
         $bucket[$cacheKey] = $value;
         $this->objectCache[$object] = $bucket;
 
@@ -120,9 +124,12 @@ final class Memoizer
             return $signature;
         }
 
-        $normalized = array_map(self::normalizeParam(...), $params);
+        $normalized = [];
+        foreach ($params as $param) {
+            $normalized[] = self::normalizeParam($param);
+        }
 
-        return $signature . '|' . hash('xxh3', serialize($normalized));
+        return $signature . '|' . hash('sha256', serialize($normalized));
     }
 
     /**
@@ -158,13 +165,42 @@ final class Memoizer
         return 'callable:' . $file . ':' . $rf->getStartLine() . '-' . $rf->getEndLine();
     }
 
+    /**
+     * @param array $cache The cache bucket.
+     * @phpstan-param array<string, mixed> $cache
+     */
+    private static function evictOldestIfFull(array &$cache): void
+    {
+        if (count($cache) < self::CACHE_LIMIT) {
+            return;
+        }
+
+        $oldest = array_key_first($cache);
+        unset($cache[$oldest]);
+    }
+
+    /**
+     * @param array $values The values to normalize.
+     * @phpstan-param array<mixed> $values
+     * @phpstan-return array<mixed>
+     */
+    private static function normalizeArray(array $values): array
+    {
+        $normalized = [];
+        foreach ($values as $key => $value) {
+            $normalized[$key] = self::normalizeParam($value);
+        }
+
+        return $normalized;
+    }
+
     private static function normalizeParam(mixed $value): mixed
     {
         return match (true) {
             $value instanceof Closure => 'closure#' . spl_object_id($value),
             is_object($value) => 'obj#' . spl_object_id($value),
             is_resource($value) => 'res#' . get_resource_type($value) . '#' . (int) $value,
-            is_array($value) => array_map(self::normalizeParam(...), $value),
+            is_array($value) => self::normalizeArray($value),
             default => $value,
         };
     }
