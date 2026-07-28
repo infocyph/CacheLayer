@@ -143,10 +143,6 @@ trait CacheReadRememberTrait
         mixed $ttl = null,
         array $tags = [],
     ): mixed {
-        $this->validateKey($key);
-        $normalizedTtl = $this->normalizeTtl($ttl);
-        $normalizedTags = $this->normalizeTagList($tags);
-
         try {
             $item = $this->getItem($key);
         } catch (Psr6InvalidArgumentException $e) {
@@ -172,6 +168,9 @@ trait CacheReadRememberTrait
 
                 return $lockedItem->get();
             }
+
+            $normalizedTtl = $this->normalizeTtl($ttl);
+            $normalizedTags = $this->normalizeTagList($tags);
 
             if ($normalizedTtl !== null) {
                 $lockedItem->expiresAfter($normalizedTtl);

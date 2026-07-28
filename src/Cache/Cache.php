@@ -867,29 +867,7 @@ final class Cache implements CacheInterface
         $this->validateKey($key);
         $ttlSeconds = $this->normalizeTtl($ttl);
 
-        $result = false;
-        if (method_exists($this->adapter, 'set')) {
-            try {
-                $result = $this->adapter->set($key, $value, $ttlSeconds);
-            } catch (Psr6InvalidArgumentException $e) {
-                throw new CacheInvalidArgumentException($e->getMessage(), 0, $e);
-            }
-        } else {
-            // Fall back to PSR-6 approach
-            try {
-                $item = $this->adapter->getItem($key)->set($value)->expiresAfter($ttlSeconds);
-                $result = $this->save($item);
-            } catch (Psr6InvalidArgumentException $e) {
-                throw new CacheInvalidArgumentException($e->getMessage(), 0, $e);
-            }
-        }
-
-        if ($result) {
-            $this->clearTagMeta($key);
-            $this->metric('set');
-        }
-
-        return (bool) $result;
+        return $this->store($key, $value, $ttlSeconds);
     }
 
     public function setLockProvider(LockProviderInterface $lockProvider): self
@@ -984,12 +962,12 @@ final class Cache implements CacheInterface
     public function setTagged(string $key, mixed $value, array $tags, mixed $ttl = null): bool
     {
         $normalizedTags = $this->normalizeTagList($tags);
-        $ok = $this->set($key, $value, $ttl);
+        $this->validateKey($key);
+        $ttlSeconds = $this->normalizeTtl($ttl);
+        $ok = $this->store($key, $value, $ttlSeconds);
         if (!$ok) {
             return false;
         }
-
-        $ttlSeconds = $this->normalizeTtl($ttl);
 
         return $this->writeTagMeta($key, $normalizedTags, $ttlSeconds);
     }
@@ -1056,8 +1034,9 @@ final class Cache implements CacheInterface
     {
         $key = $this->tagVersionKey($normalizedTag);
         $item = $this->adapter->getItem($key);
-        if ($item->isHit() && is_int($item->get()) && $item->get() > 0) {
-            return $item->get();
+        $version = $item->isHit() ? $item->get() : null;
+        if (is_int($version) && $version > 0) {
+            return $version;
         }
 
         $item->set(1)->expiresAfter(null);
@@ -1206,6 +1185,33 @@ final class Cache implements CacheInterface
         return '__im_lock_' . hash('xxh128', $key);
     }
 
+    private function store(string $key, mixed $value, ?int $ttlSeconds): bool
+    {
+        $result = false;
+        if (method_exists($this->adapter, 'set')) {
+            try {
+                $result = $this->adapter->set($key, $value, $ttlSeconds);
+            } catch (Psr6InvalidArgumentException $e) {
+                throw new CacheInvalidArgumentException($e->getMessage(), 0, $e);
+            }
+        } else {
+            // Fall back to PSR-6 approach
+            try {
+                $item = $this->adapter->getItem($key)->set($value)->expiresAfter($ttlSeconds);
+                $result = $this->save($item);
+            } catch (Psr6InvalidArgumentException $e) {
+                throw new CacheInvalidArgumentException($e->getMessage(), 0, $e);
+            }
+        }
+
+        if ($result) {
+            $this->clearTagMeta($key);
+            $this->metric('set');
+        }
+
+        return (bool) $result;
+    }
+
     private function tagMetaKey(string $key): string
     {
         return self::TAG_META_PREFIX . hash('sha256', $key);
@@ -1246,9 +1252,8 @@ final class Cache implements CacheInterface
         }
 
         $versions = [];
-        foreach (array_values(array_unique($tags)) as $tag) {
-            $normalized = $this->normalizeTag((string) $tag);
-            $versions[$normalized] = $this->currentTagVersion($normalized);
+        foreach ($tags as $tag) {
+            $versions[$tag] = $this->currentTagVersion($tag);
         }
 
         $metaItem = $this->adapter->getItem($this->tagMetaKey($key));
