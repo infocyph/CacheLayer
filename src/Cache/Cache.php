@@ -38,6 +38,8 @@ final class Cache implements CacheInterface
 
     private const int STAMPEDE_JITTER_PERCENT = 8;
 
+    private const float STAMPEDE_LOCK_LEASE_SECONDS = 30.0;
+
     private const float STAMPEDE_LOCK_WAIT_SECONDS = 5.0;
 
     private const string TAG_META_PREFIX = '__im_tagm_';

@@ -159,7 +159,11 @@ trait CacheReadRememberTrait
             return $item->get();
         }
 
-        $lockHandle = $this->lockProvider->acquire($this->stampedeLockKey($key), self::STAMPEDE_LOCK_WAIT_SECONDS);
+        $lockHandle = $this->lockProvider->acquire(
+            $this->stampedeLockKey($key),
+            self::STAMPEDE_LOCK_WAIT_SECONDS,
+            self::STAMPEDE_LOCK_LEASE_SECONDS,
+        );
 
         try {
             $lockedItem = $this->getItem($key);

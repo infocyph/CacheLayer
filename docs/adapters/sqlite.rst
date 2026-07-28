@@ -16,6 +16,11 @@ Equivalent behavior:
 Use ``Cache::pdo(...)`` directly if you want to switch to MySQL/MariaDB/PostgreSQL
 without changing the rest of your cache usage pattern.
 
+SQLite does not provide the cross-process advisory-lock contract required by
+``LockProviderInterface``. Its ``PdoLockProvider`` therefore delegates locking
+to ``FileLockProvider``. All coordinating processes must use the same writable
+lock directory and filesystem.
+
 Example
 -------
 

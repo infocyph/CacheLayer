@@ -19,6 +19,8 @@ Highlights:
 * namespace-prefixed keys
 * ``MGET`` batch retrieval
 * factory auto-configures ``RedisLockProvider`` for ``remember()``
+* lock ownership uses random tokens with atomic Redis-compatible lease renewal
+  and release
 
 DSN notes:
 

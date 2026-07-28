@@ -24,6 +24,15 @@ Highlights:
   - MySQL/MariaDB: native ``ON DUPLICATE KEY UPDATE``
   - fallback path for other PDO drivers
 * batched ``multiFetch()`` via single ``IN (...)`` query
+* MySQL/MariaDB locking uses bounded connection-scoped named locks
+* PostgreSQL locking uses the two-key advisory-lock form
+* SQLite and other PDO drivers without advisory locks use an injected
+  ``FileLockProvider`` fallback
+
+PDO advisory locks remain owned by their creating connection until explicit
+release or connection loss. ``refresh()`` verifies local token ownership and
+connection health. The provider rejects re-entrant acquisition of the same
+lock through one provider instance.
 
 Examples:
 
