@@ -197,7 +197,7 @@ Stampede-Safe ``remember()``
 Behavior:
 
 1. Read existing value.
-2. On miss, acquire lock (``FileLockProvider`` by default).
+2. On miss, acquire a bounded lock lease (``FileLockProvider`` by default).
 3. Re-check value under lock.
 4. Compute and save value.
 5. Apply jitter to TTL to reduce herd effects.
@@ -217,6 +217,12 @@ Factory defaults:
 * ``Cache::memcache(...)`` auto-configures ``MemcachedLockProvider``
 * ``Cache::pdo(...)`` / ``Cache::sqlite(...)`` auto-configure ``PdoLockProvider``
 * other adapters default to ``FileLockProvider``
+
+The built-in ``remember()`` miss path requests a 30-second lease and waits up
+to five seconds for ownership. Cache hits do not acquire or inspect a lock.
+Keep resolvers within the lease duration. For longer operations, coordinate
+explicitly through ``LockProviderInterface`` and renew with ``refresh()`` as
+described in :doc:`metrics-and-locking`.
 
 Metrics and Export Hooks
 ------------------------

@@ -167,7 +167,7 @@ Configuration reference
 ``lockProvider``
    Optional ``LockProviderInterface`` used by ``remember()``. When omitted,
    Node Cache uses its local file-lock default. Supply a shared
-   ``RedisLockProvider`` or ``ValkeyLockProvider`` when multiple application
+   ``RedisLockProvider`` backed by Redis or Valkey when multiple application
    nodes must coordinate one ``remember()`` resolver.
 
 .. code-block:: php

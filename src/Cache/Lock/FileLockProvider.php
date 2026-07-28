@@ -23,8 +23,12 @@ final readonly class FileLockProvider implements LockProviderInterface
         $this->retrySleepMicros = max(1_000, $retrySleepMicros);
     }
 
-    public function acquire(string $key, float $waitSeconds): ?LockHandle
+    public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): ?LockHandle
     {
+        if ($leaseSeconds <= 0) {
+            throw new \InvalidArgumentException('Lock lease duration must be positive.');
+        }
+
         $activeLocks = &self::activeRegistry();
         if (isset($activeLocks[$key])) {
             return null;
@@ -60,7 +64,16 @@ final readonly class FileLockProvider implements LockProviderInterface
         }
         $activeLocks[$key] = true;
 
-        return new LockHandle($key, $token, $handle);
+        return new LockHandle($key, $token, $handle, $leaseSeconds);
+    }
+
+    public function refresh(?LockHandle $handle, float $leaseSeconds): bool
+    {
+        if ($leaseSeconds <= 0) {
+            throw new \InvalidArgumentException('Lock lease duration must be positive.');
+        }
+
+        return $handle instanceof LockHandle && is_resource($handle->resource);
     }
 
     public function release(?LockHandle $handle): void
@@ -91,8 +104,8 @@ final readonly class FileLockProvider implements LockProviderInterface
     }
 
     /**
+     * @param string $path The path argument.
      * @phpstan-return resource|false
- * @param string $path The path argument.
      */
     private function openLockFile(string $path): mixed
     {

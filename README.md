@@ -71,6 +71,29 @@ $cache->invalidateTag('users');
 $metrics = $cache->exportMetrics();
 ```
 
+## Lock leases
+
+`remember()` uses the configured lock provider to prevent concurrent cache
+fills. Lock providers expose an explicit lease and renewal contract:
+
+```php
+$handle = $locks->acquire('reports:daily', waitSeconds: 2, leaseSeconds: 30);
+
+if ($handle !== null) {
+    try {
+        // Renew before the lease expires when the protected work is long-lived.
+        $locks->refresh($handle, leaseSeconds: 30);
+    } finally {
+        $locks->release($handle);
+    }
+}
+```
+
+Redis and Valkey use token-checked Lua operations. Memcached uses CAS ownership
+checks. MySQL and PostgreSQL use connection-scoped advisory locks. File locks
+retain an open `flock`; SQLite and other PDO drivers safely fall back to that
+file-lock implementation. Release is always ownership guarded and best effort.
+
 ## Tiered Flow (L1 -> L2 -> DB)
 
 ```php

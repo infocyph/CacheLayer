@@ -19,6 +19,8 @@ Highlights:
 * ``MGET`` batch retrieval
 * TTL via ``SETEX`` when expiration is set
 * factory auto-configures ``RedisLockProvider`` for ``remember()`` when using this adapter
+* lock ownership uses random tokens with ``SET NX PX`` acquisition and atomic
+  Lua renewal/release
 
 DSN notes:
 

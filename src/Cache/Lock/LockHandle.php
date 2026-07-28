@@ -10,5 +10,6 @@ final readonly class LockHandle
         public string $key,
         public string $token,
         public mixed $resource = null,
+        public float $leaseSeconds = 0.0,
     ) {}
 }

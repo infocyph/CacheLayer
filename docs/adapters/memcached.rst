@@ -18,6 +18,8 @@ Highlights:
 * distributed in-memory cache
 * ``getMulti`` based batch reads
 * factory auto-configures ``MemcachedLockProvider`` for ``remember()`` when using this adapter
+* lock leases use ``add`` acquisition and CAS-guarded renewal/release so an
+  expired owner's cleanup cannot delete a replacement owner's lock
 
 You may pass your own preconfigured ``Memcached`` client.
 

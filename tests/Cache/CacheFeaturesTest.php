@@ -9,12 +9,12 @@ use Infocyph\CacheLayer\Cache\Metrics\InMemoryCacheMetricsCollector;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 
 beforeEach(function () {
-    $this->cacheDir = sys_get_temp_dir().'/pest_cache_features_'.uniqid();
+    $this->cacheDir = sys_get_temp_dir() . '/pest_cache_features_' . uniqid();
     $this->cache = Cache::file('features', $this->cacheDir);
 });
 
 afterEach(function () {
-    if (! is_dir($this->cacheDir)) {
+    if (!is_dir($this->cacheDir)) {
         return;
     }
 
@@ -22,7 +22,7 @@ afterEach(function () {
     $rim = new RecursiveIteratorIterator($it, RecursiveIteratorIterator::CHILD_FIRST);
     foreach ($rim as $file) {
         $path = $file->getRealPath();
-        if ($path === false || ! file_exists($path)) {
+        if ($path === false || !file_exists($path)) {
             continue;
         }
         $file->isDir() ? rmdir($path) : unlink($path);
@@ -102,10 +102,10 @@ test('invalidateTags removes value when duplicate tags are passed', function () 
 });
 
 test('rejects empty tags in tag operations', function () {
-    expect(fn () => $this->cache->invalidateTag('   '))
+    expect(fn() => $this->cache->invalidateTag('   '))
         ->toThrow(CacheInvalidArgumentException::class);
 
-    expect(fn () => $this->cache->setTagged('x', 'y', ['ok', ' ']))
+    expect(fn() => $this->cache->setTagged('x', 'y', ['ok', ' ']))
         ->toThrow(CacheInvalidArgumentException::class);
 });
 
@@ -148,23 +148,27 @@ test('tag version invalidation marks prior entries stale', function () {
 test('remember uses configured lock provider', function () {
     $calls = ['acquire' => 0, 'release' => 0];
 
-    $provider = new class($calls) implements LockProviderInterface
-    {
+    $provider = new class ($calls) implements LockProviderInterface {
         public function __construct(private array &$calls) {}
 
-        public function acquire(string $key, float $waitSeconds): ?LockHandle
+        public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): ?LockHandle
         {
-            if ($waitSeconds < 0) {
+            if ($waitSeconds < 0 || $leaseSeconds <= 0) {
                 return null;
             }
             $this->calls['acquire']++;
 
-            return new LockHandle($key, 'tkn');
+            return new LockHandle($key, 'tkn', leaseSeconds: $leaseSeconds);
+        }
+
+        public function refresh(?LockHandle $handle, float $leaseSeconds): bool
+        {
+            return $handle instanceof LockHandle && $leaseSeconds > 0;
         }
 
         public function release(?LockHandle $handle): void
         {
-            if (! $handle instanceof LockHandle) {
+            if (!$handle instanceof LockHandle) {
                 return;
             }
             $this->calls['release']++;
@@ -172,14 +176,14 @@ test('remember uses configured lock provider', function () {
     };
 
     $this->cache->setLockProvider($provider);
-    $this->cache->remember('guarded', fn () => 123, 10);
+    $this->cache->remember('guarded', fn() => 123, 10);
 
     expect($calls['acquire'])->toBe(1)
         ->and($calls['release'])->toBe(1);
 });
 
 test('metrics collector exports hit and miss counters', function () {
-    $collector = new InMemoryCacheMetricsCollector;
+    $collector = new InMemoryCacheMetricsCollector();
     $this->cache->setMetricsCollector($collector);
 
     $this->cache->get('x');

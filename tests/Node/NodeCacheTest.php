@@ -64,15 +64,20 @@ test('node cache uses the configured shared lock provider for remember operation
 
         public int $released = 0;
 
-        public function acquire(string $key, float $waitSeconds): ?LockHandle
+        public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): ?LockHandle
         {
-            if ($waitSeconds < 0) {
+            if ($waitSeconds < 0 || $leaseSeconds <= 0) {
                 return null;
             }
 
             ++$this->acquired;
 
-            return new LockHandle($key, 'test-lock');
+            return new LockHandle($key, 'test-lock', leaseSeconds: $leaseSeconds);
+        }
+
+        public function refresh(?LockHandle $handle, float $leaseSeconds): bool
+        {
+            return $handle instanceof LockHandle && $leaseSeconds > 0;
         }
 
         public function release(?LockHandle $handle): void
@@ -134,7 +139,7 @@ test('expired rows remain outside the read path until bounded pruning', function
 });
 
 test('node cache configuration rejects invalid paths and timeouts', function () {
-    expect(fn () => new NodeCacheConfig('', 'app'))->toThrow(NodeCacheConfigurationException::class)
-        ->and(fn () => new NodeCacheConfig('/tmp/cache.sqlite', 'app', busyTimeoutMs: -1))
+    expect(fn() => new NodeCacheConfig('', 'app'))->toThrow(NodeCacheConfigurationException::class)
+        ->and(fn() => new NodeCacheConfig('/tmp/cache.sqlite', 'app', busyTimeoutMs: -1))
         ->toThrow(NodeCacheConfigurationException::class);
 });
