@@ -76,3 +76,64 @@ test('sqlite PDO locks use the shared file-lock fallback', function (): void {
         }
     }
 });
+
+test('PostgreSQL PDO locks accept native boolean results', function (): void {
+    $pdo = new class () extends PDO {
+        public function __construct()
+        {
+        }
+
+        public function getAttribute(int $attribute): mixed
+        {
+            unset($attribute);
+
+            return 'pgsql';
+        }
+
+        public function prepare(string $query, array $options = []): PDOStatement|false
+        {
+            unset($query, $options);
+
+            return $this->successfulStatement();
+        }
+
+        public function query(string $query, ?int $fetchMode = null, mixed ...$fetchModeArgs): PDOStatement|false
+        {
+            unset($query, $fetchMode, $fetchModeArgs);
+
+            return $this->successfulStatement();
+        }
+
+        private function successfulStatement(): PDOStatement
+        {
+            return new class () extends PDOStatement {
+                public function __construct()
+                {
+                }
+
+                public function execute(?array $params = null): bool
+                {
+                    unset($params);
+
+                    return true;
+                }
+
+                public function fetchColumn(int $column = 0): mixed
+                {
+                    unset($column);
+
+                    return true;
+                }
+            };
+        }
+    };
+    $provider = new PdoLockProvider($pdo);
+    $handle = $provider->acquire('worker:postgres', 0.0, 10.0);
+
+    expect($handle)->not->toBeNull()
+        ->and($provider->refresh($handle, 10.0))->toBeTrue();
+
+    $provider->release($handle);
+
+    expect($provider->refresh($handle, 10.0))->toBeFalse();
+});

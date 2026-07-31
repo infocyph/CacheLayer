@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Infocyph\CacheLayer\Cache\Cache;
+use Infocyph\CacheLayer\Cache\Lock\PdoLockProvider;
 
 if (! in_array('pgsql', PDO::getAvailableDrivers(), true)) {
     test('PostgreSQL PDO driver not present')->skip();
@@ -55,4 +56,25 @@ test('pdo adapter delete and count on pgsql', function () {
     expect($this->cache->count())->toBe(1)
         ->and($this->cache->get('a'))->toBeNull()
         ->and($this->cache->get('b'))->toBe('B');
+});
+
+test('PostgreSQL advisory locks accept native PDO booleans and release ownership', function () use ($dsn, $user, $pass) {
+    $connect = static function () use ($dsn, $user, $pass): PDO {
+        return new PDO($dsn, $user, $pass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+    };
+    $holder = new PdoLockProvider($connect(), 'cachelayer:test:');
+    $contender = new PdoLockProvider($connect(), 'cachelayer:test:');
+    $key = 'postgres-lock-' . bin2hex(random_bytes(8));
+    $handle = $holder->acquire($key, 0.0, 5.0);
+
+    expect($handle)->not->toBeNull()
+        ->and($holder->refresh($handle, 5.0))->toBeTrue()
+        ->and($contender->acquire($key, 0.0, 5.0))->toBeNull();
+
+    $holder->release($handle);
+
+    $replacement = $contender->acquire($key, 0.0, 5.0);
+    expect($holder->refresh($handle, 5.0))->toBeFalse()
+        ->and($replacement)->not->toBeNull();
+    $contender->release($replacement);
 });
