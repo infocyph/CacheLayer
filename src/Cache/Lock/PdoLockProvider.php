@@ -91,6 +91,11 @@ final class PdoLockProvider implements LockProviderInterface
         ];
     }
 
+    private static function isDatabaseTrue(mixed $value): bool
+    {
+        return $value === true || $value === 1 || $value === '1' || $value === 't';
+    }
+
     private static function signedHex32(string $value): int
     {
         $unsigned = (int) hexdec($value);
@@ -150,7 +155,7 @@ final class PdoLockProvider implements LockProviderInterface
                 $stmt = $this->pdo->prepare('SELECT pg_try_advisory_lock(:k1, :k2)');
                 $stmt->execute([':k1' => $advisoryKeys[0], ':k2' => $advisoryKeys[1]]);
                 $result = $stmt->fetchColumn();
-                if ($result === 1 || $result === 't' || $result === '1') {
+                if (self::isDatabaseTrue($result)) {
                     $this->activeTokens[$lockKey] = $token;
 
                     return new LockHandle($lockKey, $token, $advisoryKeys, $leaseSeconds);
@@ -207,7 +212,7 @@ final class PdoLockProvider implements LockProviderInterface
             $stmt->execute([':k1' => $advisoryKeys[0], ':k2' => $advisoryKeys[1]]);
             $result = $stmt->fetchColumn();
 
-            return $result === 1 || $result === 't' || $result === '1';
+            return self::isDatabaseTrue($result);
         } catch (Throwable) {
             return false;
         }
