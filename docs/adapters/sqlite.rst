@@ -29,4 +29,4 @@ Example
    use Infocyph\CacheLayer\Cache\Cache;
 
    $cache = Cache::sqlite('jobs', __DIR__ . '/storage/cache/jobs.sqlite');
-   $cache->set('job:run:summary', ['ok' => 12, 'failed' => 1], 300);
+   $cache->set('job.run.summary', ['ok' => 12, 'failed' => 1], 300);

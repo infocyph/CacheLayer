@@ -9,7 +9,7 @@ use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 beforeEach(function () {
     $this->l1 = new ArrayCacheAdapter('l1');
     $this->l2 = new ArrayCacheAdapter('l2');
-    $this->cache = Cache::chain([$this->l1, $this->l2]);
+    $this->cache = Cache::tiered([$this->l1, $this->l2]);
 });
 
 test('chain adapter writes through all pools', function () {

@@ -1,0 +1,84 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Infocyph\CacheLayer\Cache;
+
+use Infocyph\CacheLayer\Cache\Item\CacheItem;
+use Psr\Cache\CacheItemInterface;
+
+/** @internal */
+final class CacheTagSnapshots
+{
+    /**
+     * @param array<string, CacheItemInterface> $items
+     * @return list<string>
+     */
+    public static function collectTags(array $items): array
+    {
+        $tagSet = [];
+        foreach ($items as $item) {
+            if (!$item instanceof CacheItem || !$item->isHit()) {
+                continue;
+            }
+            foreach ($item->getTagVersions() as $tag => $_version) {
+                $tagSet[$tag] = true;
+            }
+        }
+
+        return array_keys($tagSet);
+    }
+
+    /** @param array<string, int> $versions */
+    public static function isCurrent(CacheItem $item, array $versions): bool
+    {
+        foreach ($item->getTagVersions() as $tag => $expected) {
+            if (($versions[$tag] ?? 0) !== $expected) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * @param array<string, CacheItemInterface> $items
+     * @param callable(string): CacheItemInterface $miss
+     * @return array<string, CacheItemInterface>
+     */
+    public static function missTagged(array $items, callable $miss): array
+    {
+        foreach ($items as $key => $item) {
+            if (self::isTaggedHit($item)) {
+                $items[$key] = $miss($key);
+            }
+        }
+
+        return $items;
+    }
+
+    /**
+     * @param array<string, CacheItemInterface> $items
+     * @param array<string, int> $versions
+     * @param callable(string): CacheItemInterface $miss
+     * @return array{items:array<string, CacheItemInterface>, stale:list<string>}
+     */
+    public static function rejectStale(array $items, array $versions, callable $miss): array
+    {
+        $stale = [];
+        foreach ($items as $key => $item) {
+            if (!$item instanceof CacheItem || !$item->isHit() || self::isCurrent($item, $versions)) {
+                continue;
+            }
+            $stale[] = $key;
+            $items[$key] = $miss($key);
+        }
+
+        return ['items' => $items, 'stale' => $stale];
+    }
+
+    private static function isTaggedHit(CacheItemInterface $item): bool
+    {
+        return $item instanceof CacheItem && $item->isHit() && $item->getTagVersions() !== [];
+    }
+}

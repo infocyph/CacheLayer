@@ -6,7 +6,7 @@ namespace Infocyph\CacheLayer\Node\Adapter;
 
 use Infocyph\CacheLayer\Cache\Adapter\AbstractCacheAdapter;
 use Infocyph\CacheLayer\Cache\Adapter\CachePayloadCodec;
-use Infocyph\CacheLayer\Cache\Item\GenericCacheItem;
+use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Node\Exception\NodeCacheStorageException;
 use PDO;
 use PDOException;
@@ -92,7 +92,10 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter
     public function deleteItem(string $key): bool
     {
         try {
-            return $this->deleteStatement->execute([':namespace' => $this->namespace, ':cache_key' => $key]);
+            return $this->deleteStatement->execute([
+                ':namespace' => $this->namespace,
+                ':cache_key' => $this->mapData($key),
+            ]);
         } catch (PDOException $exception) {
             throw $this->storageException("Unable to delete node SQLite cache key '{$key}'.", $exception);
         }
@@ -109,13 +112,13 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter
         }
 
         try {
-            $this->connection->beginTransaction();
-            foreach ($keys as $key) {
-                $this->deleteStatement->execute([':namespace' => $this->namespace, ':cache_key' => $key]);
-            }
-            $this->connection->commit();
+            $mapped = array_map($this->mapData(...), $keys);
+            $marks = implode(',', array_fill(0, count($mapped), '?'));
+            $statement = $this->connection->prepare(
+                'DELETE FROM ' . self::TABLE . " WHERE namespace = ? AND cache_key IN ({$marks})",
+            );
 
-            return true;
+            return $statement->execute([$this->namespace, ...$mapped]);
         } catch (PDOException $exception) {
             $this->rollBack();
 
@@ -123,12 +126,12 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter
         }
     }
 
-    public function getItem(string $key): GenericCacheItem
+    public function getItem(string $key): CacheItem
     {
         try {
             $this->lookupStatement->execute([
                 ':namespace' => $this->namespace,
-                ':cache_key' => $key,
+                ':cache_key' => $this->mapData($key),
                 ':current_time' => time(),
             ]);
             $row = $this->lookupStatement->fetch();
@@ -137,21 +140,47 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter
         }
 
         if (!is_array($row) || !is_string($row['payload'] ?? null)) {
-            return new GenericCacheItem($this, $key);
+            return new CacheItem($this, $key);
         }
 
-        $record = CachePayloadCodec::decode($row['payload']);
-        if ($record === null || CachePayloadCodec::isExpired($record['expires'])) {
-            return new GenericCacheItem($this, $key);
+        $record = $this->decodeRecordFromBlob($row['payload']);
+        if ($record === null) {
+            return new CacheItem($this, $key);
         }
 
-        return new GenericCacheItem(
-            $this,
-            $key,
-            $record['value'],
-            true,
-            CachePayloadCodec::toDateTime($record['expires']),
+        return $this->genericItemFromRecord($key, $record);
+    }
+
+    /**
+     * @param list<string> $tags
+     * @return array<string, int>
+     */
+    #[\Override]
+    public function getTagVersions(array $tags): array
+    {
+        if ($tags === []) {
+            return [];
+        }
+        $keys = array_map($this->mapTag(...), $tags);
+        $marks = implode(',', array_fill(0, count($keys), '?'));
+        $statement = $this->connection->prepare(
+            'SELECT cache_key, payload FROM ' . self::TABLE
+            . " WHERE namespace = ? AND cache_key IN ({$marks})",
         );
+        $statement->execute([$this->namespace, ...$keys]);
+        $stored = [];
+        foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            if (is_array($row) && is_string($row['cache_key'] ?? null)) {
+                $stored[$row['cache_key']] = $row['payload'] ?? null;
+            }
+        }
+        $versions = [];
+        foreach ($tags as $tag) {
+            $value = $stored[$this->mapTag($tag)] ?? null;
+            $versions[$tag] = is_string($value) && ctype_digit($value) ? (int) $value : 0;
+        }
+
+        return $versions;
     }
 
     public function hasItem(string $key): bool
@@ -159,19 +188,93 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter
         return $this->getItem($key)->isHit();
     }
 
+    /** @param list<string> $tags */
+    #[\Override]
+    public function incrementTagVersions(array $tags): bool
+    {
+        $statement = $this->connection->prepare(
+            'INSERT INTO ' . self::TABLE . ' (namespace, cache_key, payload, expires_at) '
+            . "VALUES (?, ?, '1', NULL) ON CONFLICT(namespace, cache_key) "
+            . 'DO UPDATE SET payload = CAST(payload AS INTEGER) + 1',
+        );
+        foreach ($tags as $tag) {
+            if (!$statement->execute([$this->namespace, $this->mapTag($tag)])) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     /**
      * @param array $keys The keys argument.
      * @phpstan-param list<string> $keys
-     * @phpstan-return array<string, GenericCacheItem>
+     * @phpstan-return array<string, CacheItem>
      */
     public function multiFetch(array $keys): array
     {
-        return $this->multiFetchItems($keys, $this->getItem(...));
+        if ($keys === []) {
+            return [];
+        }
+        $mapped = array_map($this->mapData(...), $keys);
+        $marks = implode(',', array_fill(0, count($mapped), '?'));
+        $statement = $this->connection->prepare(
+            'SELECT cache_key, payload FROM ' . self::TABLE
+            . " WHERE namespace = ? AND cache_key IN ({$marks})"
+            . ' AND (expires_at IS NULL OR expires_at > ?)',
+        );
+        $statement->execute([$this->namespace, ...$mapped, time()]);
+        $rows = [];
+        foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            if (is_array($row) && is_string($row['cache_key'] ?? null) && is_string($row['payload'] ?? null)) {
+                $rows[$row['cache_key']] = $row['payload'];
+            }
+        }
+        $items = [];
+        foreach ($keys as $key) {
+            $payload = $rows[$this->mapData($key)] ?? null;
+            $items[$key] = is_string($payload)
+                ? $this->genericFromBlob($key, $payload)
+                : $this->genericMiss($key);
+        }
+
+        return $items;
     }
 
     public function save(CacheItemInterface $item): bool
     {
-        return $this->saveMany([$item]);
+        if (!$this->supportsItem($item)) {
+            return false;
+        }
+        $expiration = CachePayloadCodec::expirationFromItem($item);
+        if ($expiration['ttl'] !== null && $expiration['ttl'] <= 0) {
+            return $this->deleteItem($item->getKey());
+        }
+
+        try {
+            $this->upsertStatement->bindValue(':namespace', $this->namespace, PDO::PARAM_STR);
+            $this->upsertStatement->bindValue(':cache_key', $this->mapData($item->getKey()), PDO::PARAM_STR);
+            $this->upsertStatement->bindValue(
+                ':payload',
+                $this->encodeItem($item, $expiration['expiresAt']),
+                PDO::PARAM_LOB,
+            );
+            $this->upsertStatement->bindValue(
+                ':expires_at',
+                $expiration['expiresAt'],
+                $expiration['expiresAt'] === null ? PDO::PARAM_NULL : PDO::PARAM_INT,
+            );
+
+            return $this->upsertStatement->execute();
+        } catch (PDOException $exception) {
+            throw $this->storageException('Unable to store a node SQLite cache entry.', $exception);
+        }
+    }
+
+    /** @param array<string, CacheItemInterface> $items */
+    public function saveItems(array $items): bool
+    {
+        return $this->saveMany(array_values($items));
     }
 
     /**
@@ -180,34 +283,49 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter
      */
     public function saveMany(array $items): bool
     {
+        $rows = [];
+        $expired = [];
         foreach ($items as $item) {
             if (!$this->supportsItem($item)) {
                 return false;
             }
+            $expiration = CachePayloadCodec::expirationFromItem($item);
+            if ($expiration['ttl'] !== null && $expiration['ttl'] <= 0) {
+                $expired[] = $item->getKey();
+
+                continue;
+            }
+            $rows[] = [
+                $this->namespace,
+                $this->mapData($item->getKey()),
+                $this->encodeItem($item, $expiration['expiresAt']),
+                $expiration['expiresAt'],
+            ];
         }
 
-        if ($items === []) {
+        if ($rows === [] && $expired === []) {
             return true;
         }
 
         try {
             $this->connection->beginTransaction();
-            foreach ($items as $item) {
-                $this->persistItem($item);
-            }
-            $this->connection->commit();
+            if ($expired !== [] && !$this->deleteItems($expired)) {
+                $this->rollBack();
 
-            return true;
+                return false;
+            }
+            if ($rows !== [] && !$this->upsertRows($rows)) {
+                $this->rollBack();
+
+                return false;
+            }
+
+            return $this->connection->commit();
         } catch (PDOException $exception) {
             $this->rollBack();
 
             throw $this->storageException('Unable to store node SQLite cache entries.', $exception);
         }
-    }
-
-    protected function supportsItem(CacheItemInterface $item): bool
-    {
-        return $item instanceof GenericCacheItem;
     }
 
     private function createSchemaIfMissing(): void
@@ -227,20 +345,14 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter
         }
     }
 
-    private function persistItem(CacheItemInterface $item): void
+    private function mapData(string $key): string
     {
-        $expires = CachePayloadCodec::expirationFromItem($item);
-        if ($expires['ttl'] === 0) {
-            $this->deleteStatement->execute([':namespace' => $this->namespace, ':cache_key' => $item->getKey()]);
+        return 'd:' . $key;
+    }
 
-            return;
-        }
-
-        $this->upsertStatement->bindValue(':namespace', $this->namespace, PDO::PARAM_STR);
-        $this->upsertStatement->bindValue(':cache_key', $item->getKey(), PDO::PARAM_STR);
-        $this->upsertStatement->bindValue(':payload', CachePayloadCodec::encode($item->get(), $expires['expiresAt']), PDO::PARAM_LOB);
-        $this->upsertStatement->bindValue(':expires_at', $expires['expiresAt'], $expires['expiresAt'] === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
-        $this->upsertStatement->execute();
+    private function mapTag(string $tag): string
+    {
+        return 'm:tag:' . $tag;
     }
 
     private function rollBack(): void
@@ -253,5 +365,27 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter
     private function storageException(string $message, PDOException $exception): NodeCacheStorageException
     {
         return new NodeCacheStorageException($message, 0, $exception);
+    }
+
+    /** @param list<array{0:string, 1:string, 2:string, 3:int|null}> $rows */
+    private function upsertRows(array $rows): bool
+    {
+        foreach (array_chunk($rows, 200) as $chunk) {
+            $values = implode(',', array_fill(0, count($chunk), '(?, ?, ?, ?)'));
+            $statement = $this->connection->prepare(
+                'INSERT INTO ' . self::TABLE . " (namespace, cache_key, payload, expires_at) VALUES {$values} "
+                . 'ON CONFLICT(namespace, cache_key) DO UPDATE SET '
+                . 'payload = excluded.payload, expires_at = excluded.expires_at',
+            );
+            $parameters = [];
+            foreach ($chunk as $row) {
+                array_push($parameters, ...$row);
+            }
+            if (!$statement->execute($parameters)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

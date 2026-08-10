@@ -26,5 +26,5 @@ Example
    $cache = Cache::weakMap('objects');
    $dto = (object) ['id' => 42, 'name' => 'Ada'];
 
-   $cache->set('dto:42', $dto, 30);
-   $sameObject = $cache->get('dto:42');
+   $cache->set('dto.42', $dto, 30);
+   $sameObject = $cache->get('dto.42');

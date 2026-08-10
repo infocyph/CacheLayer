@@ -28,15 +28,12 @@ test('pdo adapter ttl expiry with sqlite', function () {
     expect($this->cache->get('ttl'))->toBeNull();
 });
 
-test('pdo adapter delete and count with sqlite', function () {
+test('pdo adapter bulk delete with sqlite', function () {
     $this->cache->set('a', 'A');
     $this->cache->set('b', 'B');
+    $this->cache->deleteMultiple(['a']);
 
-    expect($this->cache->count())->toBe(2);
-
-    $this->cache->delete('a');
-    expect($this->cache->count())->toBe(1)
-        ->and($this->cache->get('a'))->toBeNull()
+    expect($this->cache->get('a'))->toBeNull()
         ->and($this->cache->get('b'))->toBe('B');
 });
 

@@ -40,7 +40,7 @@
         "psr/simple-cache": "^3.0"
     },
     "require-dev": {
-        "infocyph/phpforge": "dev-main",
+        "infocyph/phpforge": "dev-main@dev",
         "mongodb/mongodb": "^1.20 || ^2.0"
     },
     "suggest": {

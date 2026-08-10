@@ -4,12 +4,14 @@
 Serialization in Adapters
 ===================================
 
-All adapters rely on ``CachePayloadCodec`` and ``ValueSerializer`` to persist
-arbitrary values consistently.
+All adapters rely on ``CachePayloadCodec``. It uses PHP's native serialization
+for ordinary values and delegates only top-level ``Closure`` values to
+``ClosureSerializer``.
 
 The payload format stores:
 
 * value
+* value encoding (native or Closure)
 * absolute expiration timestamp (or null)
 * internal format marker
 
@@ -25,4 +27,5 @@ Example
 
    $payload = $cache->get('payload');
 
-See :ref:`serializer` for resource handlers, closure support, and serializer API details.
+Resources and nested Closures are not supported. See :ref:`serializer` for the
+Closure-only serializer API.

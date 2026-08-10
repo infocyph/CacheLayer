@@ -27,13 +27,13 @@ Process flow:
    $cache = Cache::file('shop', __DIR__ . '/storage/cache');
 
    // Read-through cache on miss with stampede protection.
-   $product = $cache->remember('product:42', function ($item) {
+   $product = $cache->remember('product.42', function ($item) {
        $item->expiresAfter(300);
        return loadProductFromDatabase(42);
-   }, tags: ['products', 'product:42']);
+   }, tags: ['products', 'product.42']);
 
    // On product update, invalidate only related cache.
-   $cache->invalidateTags(['products', 'product:42']);
+   $cache->invalidateTags(['products', 'product.42']);
 
    // Optional: inspect adapter-level metrics.
    $metrics = $cache->exportMetrics();
@@ -67,18 +67,18 @@ Process flow:
    //     'secret',
    // );
 
-   $invoice = $cache->remember('invoice:2026-1001', function ($item) {
+   $invoice = $cache->remember('invoice.2026-1001', function ($item) {
        $item->expiresAfter(180);
        return buildInvoicePayload(1001);
-   }, tags: ['invoices', 'customer:77']);
+   }, tags: ['invoices', 'customer.77']);
 
    // Invalidate by business scope when source data changes.
-   $cache->invalidateTag('customer:77');
+   $cache->invalidateTag('customer.77');
 
 Recommended Rollout Pattern
 ---------------------------
 
-1. Start with ``Cache::local()`` or ``Cache::file()``.
+1. Start with ``Cache::apcu()`` or ``Cache::file()``.
 2. Add tags to all business-domain cache keys.
 3. Replace direct ``get()+set()`` misses with ``remember()``.
 4. Watch ``exportMetrics()`` and tune TTL values.

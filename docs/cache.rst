@@ -1,314 +1,100 @@
 .. _cache:
 
-============================
-Cache Facade (``Cache``)
-============================
+Cache facade
+============
 
-``Infocyph\CacheLayer\Cache\Cache`` is the unified facade for CacheLayer.
-It implements:
+``Infocyph\CacheLayer\Cache\Cache`` implements PSR-6, PSR-16, and
+``ArrayAccess``. It adds versioned tags, native bulk operations, bounded
+stampede protection, tiering, metrics, and per-instance payload policy.
 
-* PSR-6 (``CacheItemPoolInterface``)
-* PSR-16 (``Psr\SimpleCache\CacheInterface``)
-* ``ArrayAccess``
-* ``Countable``
+Factories
+---------
 
-It also adds tagged invalidation, stampede-safe ``remember()``, lock provider
-selection, metrics hooks, and payload compression controls.
+The supported factories are ``memory()``, ``weakMap()``, ``nullStore()``,
+``apcu()``, ``file()``, ``phpFiles()``, ``sharedMemory()``, ``redis()``,
+``valkey()``, ``redisCluster()``, ``memcached()``, ``pdo()``, ``sqlite()``,
+``mongodb()``, ``scylla()``, and ``tiered()``.
 
-CacheLayer was separated from the existing Intermix project for better
-standalone visibility and faster cache-specific feature enrichment.
+There are no compatibility aliases or runtime namespace/directory setters.
+Configuration is fixed when the cache is constructed.
 
-Installation
-------------
-
-.. code-block:: bash
-
-   composer require infocyph/cachelayer
-
-Quick Example
--------------
-
-.. code-block:: php
-
-   use Infocyph\CacheLayer\Cache\Cache;
-
-   $cache = Cache::file('app', __DIR__ . '/storage/cache');
-
-   $user = $cache->remember('user:42', function ($item) {
-       $item->expiresAfter(300);
-       return fetchUserFromDatabase(42);
-   }, tags: ['users']);
-
-   $cache->invalidateTag('users');
-
-Factory Methods
----------------
-
-The facade exposes factory methods for all bundled adapters:
-
-* ``Cache::local(string $namespace = 'default', ?string $dir = null)``
-* ``Cache::file(string $namespace = 'default', ?string $dir = null)``
-* ``Cache::phpFiles(string $namespace = 'default', ?string $dir = null)``
-* ``Cache::apcu(string $namespace = 'default')``
-* ``Cache::memcache(string $namespace = 'default', array $servers = [['127.0.0.1', 11211, 0]], ?Memcached $client = null)``
-* ``Cache::redis(string $namespace = 'default', string $dsn = 'redis://127.0.0.1:6379', ?Redis $client = null)``
-* ``Cache::valkey(string $namespace = 'default', string $dsn = 'valkey://127.0.0.1:6379', ?Redis $client = null)``
-* ``Cache::redisCluster(string $namespace = 'default', array $seeds = ['127.0.0.1:6379'], float $timeout = 1.0, float $readTimeout = 1.0, bool $persistent = false, ?object $client = null)``
-* ``Cache::sqlite(string $namespace = 'default', ?string $file = null)``
-* ``Cache::pdo(string $namespace = 'default', ?string $dsn = null, ?string $username = null, ?string $password = null, ?PDO $pdo = null, string $table = 'cachelayer_entries')``
-* ``Cache::memory(string $namespace = 'default')``
-* ``Cache::weakMap(string $namespace = 'default')``
-* ``Cache::sharedMemory(string $namespace = 'default', int $segmentSize = 16777216)``
-* ``Cache::nullStore()``
-* ``Cache::chain(array $pools)``
-* ``Cache::tiered(array $tiers, bool $writeToL1 = true)``
-* ``Cache::mongodb(string $namespace = 'default', ?object $collection = null, ?object $client = null, string $database = 'cachelayer', string $collectionName = 'entries', string $uri = 'mongodb://127.0.0.1:27017')``
-* ``Cache::scyllaDb(string $namespace = 'default', ?object $session = null, string $keyspace = 'cachelayer', string $table = 'cachelayer_entries')``
-
-``local()`` chooses APCu when available (``extension_loaded('apcu')`` and ``apcu_enabled()``), otherwise File cache.
-
-``pdo()`` defaults to SQLite (temp-file database per namespace) when DSN/PDO is not provided.
-``sqlite()`` is a convenience wrapper over ``pdo()`` for explicit SQLite file selection.
-
-``tiered()`` accepts either concrete pool instances or descriptor arrays with a
-``driver`` key (for example ``apcu``, ``valkey``, ``redis``, ``pdo``, ``sqlite``).
-Use ``writeToL1 = false`` to skip write-through to the first tier while still
-allowing promotion from lower tiers on read.
-
-Tiered L1/L2/DB flow example:
-
-.. code-block:: php
-
-   use Infocyph\CacheLayer\Cache\Cache;
-
-   $cache = Cache::tiered([
-       ['driver' => 'apcu', 'namespace' => 'app'], // L1
-       ['driver' => 'valkey', 'namespace' => 'app', 'dsn' => 'valkey://127.0.0.1:6379'], // L2
-   ], writeToL1: false); // optional L1 write-through
-
-   $value = $cache->remember('user:42', function ($item) use ($pdo) {
-       $item->expiresAfter(300);
-
-       $stmt = $pdo->prepare('SELECT payload FROM users_cache_source WHERE id = ?');
-       $stmt->execute([42]);
-
-       return $stmt->fetchColumn();
-   });
-
-Request path:
-
-* check APCu (L1)
-* check Redis/Valkey (L2)
-* query DB on miss
-* write L2
-* optionally write L1 (``writeToL1``)
-
-Key and TTL Rules
------------------
-
-Key validation is strict and shared across PSR-6/PSR-16 calls:
-
-* Allowed characters: ``A-Z``, ``a-z``, ``0-9``, ``_``, ``.``, ``-``
-* Empty keys or keys with spaces are rejected
-* Invalid keys throw ``Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException``
-
-TTL handling:
-
-* Supported types: ``null``, ``int``, ``DateInterval``
-* Negative TTL is rejected
-* TTL ``0`` behaves as immediate expiry (adapters treat it as delete/expired)
-
-PSR-16 Methods
---------------
-
-Common helpers:
-
-* ``get(string $key, mixed $default = null): mixed``
-* ``set(string $key, mixed $value, int|DateInterval|null $ttl = null): bool``
-* ``delete(string $key): bool``
-* ``clear(): bool``
-* ``getMultiple(iterable $keys, mixed $default = null): iterable``
-* ``setMultiple(iterable $values, int|DateInterval|null $ttl = null): bool``
-* ``deleteMultiple(iterable $keys): bool``
-* ``has(string $key): bool``
-
-``get()`` callable default
-~~~~~~~~~~~~~~~~~~~~~~~~
-
-If ``$default`` is callable, ``get()`` internally uses ``remember()`` semantics.
-On miss, the callable is executed and the result is persisted.
-
-.. code-block:: php
-
-   $value = $cache->get('profile:42', function ($item) {
-       $item->expiresAfter(120);
-       return computeProfile();
-   });
-
-PSR-6 Methods
--------------
-
-Standard pool methods are available and delegated to the underlying adapter:
-
-* ``getItem()``
-* ``getItems()``
-* ``hasItem()``
-* ``save()``
-* ``saveDeferred()``
-* ``commit()``
-* ``deleteItem()``
-* ``deleteItems()``
-* ``clear()``
-
-For adapters that implement ``multiFetch(array $keys)``, ``getItems()`` uses it
-for efficient batch retrieval.
-
-Tagged Caching
---------------
-
-CacheLayer uses tag-version invalidation (no full key scans required):
-
-* ``setTagged(string $key, mixed $value, array $tags, mixed $ttl = null): bool``
-* ``invalidateTag(string $tag): bool``
-* ``invalidateTags(array $tags): bool``
-
-When a tag is invalidated, its internal version is incremented. Entries tagged
-with older versions become stale and are treated as misses on read.
-
-.. code-block:: php
-
-   $cache->setTagged('home:feed', $payload, ['feed', 'home'], 300);
-
-   $cache->invalidateTag('feed');
-   $cache->get('home:feed'); // null (stale)
-
-Stampede-Safe ``remember()``
---------------------------
-
-``remember()`` protects expensive recomputation with a lock provider:
-
-.. code-block:: php
-
-   $value = $cache->remember('report:daily', function ($item) {
-       $item->expiresAfter(60);
-       return buildDailyReport();
-   }, tags: ['reports']);
-
-Behavior:
-
-1. Read existing value.
-2. On miss, acquire a bounded lock lease (``FileLockProvider`` by default).
-3. Re-check value under lock.
-4. Compute and save value.
-5. Apply jitter to TTL to reduce herd effects.
-6. Release lock.
-
-Lock provider selection:
-
-* ``setLockProvider(LockProviderInterface $provider): self``
-* ``useRedisLock(?Redis $client = null, string $prefix = 'cachelayer:lock:'): self``
-* ``useValkeyLock(?Redis $client = null, string $prefix = 'cachelayer:lock:'): self``
-* ``useMemcachedLock(?Memcached $client = null, string $prefix = 'cachelayer:lock:'): self``
-
-Factory defaults:
-
-* ``Cache::redis(...)`` auto-configures ``RedisLockProvider``
-* ``Cache::valkey(...)`` auto-configures ``RedisLockProvider``
-* ``Cache::memcache(...)`` auto-configures ``MemcachedLockProvider``
-* ``Cache::pdo(...)`` / ``Cache::sqlite(...)`` auto-configure ``PdoLockProvider``
-* other adapters default to ``FileLockProvider``
-
-The built-in ``remember()`` miss path requests a 30-second lease and waits up
-to five seconds for ownership. Cache hits do not acquire or inspect a lock.
-Keep resolvers within the lease duration. For longer operations, coordinate
-explicitly through ``LockProviderInterface`` and renew with ``refresh()`` as
-described in :doc:`metrics-and-locking`.
-
-Metrics and Export Hooks
-------------------------
-
-Methods:
-
-* ``setMetricsCollector(CacheMetricsCollectorInterface $metrics): self``
-* ``exportMetrics(): array``
-* ``setMetricsExportHook(?callable $hook): self``
-
-Default collector is ``InMemoryCacheMetricsCollector``.
-
-Metrics are grouped by readable adapter name and metric name, for example:
-
-.. code-block:: php
-
-   [
-       'file' => [
-           'hit' => 10,
-           'miss' => 4,
-           'set' => 3,
-       ],
-   ]
-
-Payload Compression
+Keys, tags, and TTL
 -------------------
 
-Use ``configurePayloadCompression(?int $thresholdBytes = null, int $level = 6)``
-to enable compression for encoded payloads.
+Keys and tags are 1--64 characters from ``A-Z``, ``a-z``, ``0-9``, ``_``,
+``.``, and ``-``. Bulk input is completely validated before mutation. Zero or
+negative TTL deletes the entry.
 
-Notes:
+Tags are stored as a version snapshot inside each record. Missing tag metadata
+means version zero. Invalidation atomically increments tag versions; a read
+fetches all required versions in one batch and rejects the whole record on any
+mismatch.
 
-* Compression is applied when payload size meets/exceeds threshold.
-* Requires ``gzencode``/``gzdecode`` functions.
-* Compression configuration is global (``CachePayloadCodec`` static state).
+Bulk behavior
+-------------
 
-Payload and Serialization Security
-----------------------------------
+``getMultiple()``, ``setMultiple()``, and ``deleteMultiple()`` call the native
+adapter batch contract. ``saveDeferred()`` queues items and ``commit()`` uses
+the same native bulk persistence path. Metrics distinguish batch operation
+count from key count.
 
-Methods:
+``get()`` defaults
+------------------
 
-* ``configurePayloadSecurity(?string $integrityKey = null, ?int $maxPayloadBytes = 8388608): self``
-* ``configureSerializationSecurity(bool $allowClosurePayloads = true, bool $allowObjectPayloads = true): self``
-
-Example:
+A callable PSR-16 default is returned unchanged. It is never executed or
+cached. Use ``remember()`` for explicit computation:
 
 .. code-block:: php
 
-   $cache
-       ->configurePayloadSecurity(
-           integrityKey: 'replace-with-strong-secret',
-           maxPayloadBytes: 8_388_608,
-       )
-       ->configureSerializationSecurity(
-           allowClosurePayloads: false,
-           allowObjectPayloads: false,
-       );
+   $value = $cache->remember(
+       'report.daily',
+       fn () => buildDailyReport(),
+       ttl: 60,
+       tags: ['reports'],
+   );
 
-Environment variables:
+The remember path is get, miss, lock, recheck, resolve, save, and release. Lock
+waiting is bounded and cache hits perform no lock operation.
 
-* ``CACHELAYER_PAYLOAD_INTEGRITY_KEY``
-* ``CACHELAYER_MAX_PAYLOAD_BYTES``
+Immutable options
+-----------------
 
-Convenience Features
---------------------
+.. code-block:: php
 
-Array and magic access:
+   use Infocyph\CacheLayer\Cache\Cache;
+   use Infocyph\CacheLayer\Cache\CacheOptions;
 
-* ``$cache['key'] = 'value';``
-* ``$cache['key'];``
-* ``$cache->key = 'value';``
-* ``$cache->key;``
+   $cache = Cache::redis('app', options: new CacheOptions(
+       integrityKey: $_ENV['CACHE_INTEGRITY_KEY'],
+       maxPayloadBytes: 8_388_608,
+       compressionThreshold: 4096,
+       allowClosures: false,
+       allowObjects: false,
+       failOpen: true,
+   ));
 
-Counting:
+``CacheOptions::fromEnvironment()`` is the explicit opt-in for
+``CACHELAYER_PAYLOAD_INTEGRITY_KEY`` and ``CACHELAYER_MAX_PAYLOAD_BYTES``.
+Options are isolated per instance and cannot be changed after record processing
+begins.
 
-* ``count($cache)`` delegates to adapter ``Countable`` support when available.
+Runtime failure policy
+----------------------
 
-Namespace/Directory Mutation
-----------------------------
+Construction and configuration failures throw. With the default
+``failOpen=true``, runtime read failures become misses and write/delete failures
+return ``false`` while incrementing ``backend_failure``. Set ``failOpen=false``
+to propagate the backend exception.
 
-``setNamespaceAndDirectory(string $namespace, ?string $dir = null): void``
-forwards to adapters that support runtime namespace/directory changes.
+Tiering
+-------
 
-Supported by:
+.. code-block:: php
 
-* File cache adapter
-* PHP files cache adapter
+   $cache = Cache::tiered([
+       ['driver' => 'apcu', 'namespace' => 'app'],
+       ['driver' => 'valkey', 'namespace' => 'app'],
+   ]);
 
-Unsupported adapters throw ``BadMethodCallException``.
+A batch is read once per tier for only the keys still missing, and lower-tier
+hits are promoted upward in a batch. Writes and deletes are one batch per tier.

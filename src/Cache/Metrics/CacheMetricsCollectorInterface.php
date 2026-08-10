@@ -11,5 +11,5 @@ interface CacheMetricsCollectorInterface
      */
     public function export(): array;
 
-    public function increment(string $adapterClass, string $metric): void;
+    public function increment(string $adapterClass, string $metric, int $amount = 1): void;
 }

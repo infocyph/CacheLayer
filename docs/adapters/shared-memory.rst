@@ -29,4 +29,4 @@ Example
    use Infocyph\CacheLayer\Cache\Cache;
 
    $cache = Cache::sharedMemory('worker-bus', 8 * 1024 * 1024);
-   $cache->set('heartbeat:worker-1', time(), 15);
+   $cache->set('heartbeat.worker-1', time(), 15);

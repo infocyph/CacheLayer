@@ -8,22 +8,16 @@ beforeEach(function () {
     $this->cluster = new class
     {
         /** @var array<string, array{value:string,expires:int|null}> */
-        private array $kv = [];
+        private array $values = [];
 
-        /** @var array<string, array<string, bool>> */
-        private array $sets = [];
+        public int $mgetCalls = 0;
 
         public function del(string|array $keys): int
         {
-            $keys = is_array($keys) ? $keys : [$keys];
             $deleted = 0;
-            foreach ($keys as $key) {
-                if (isset($this->kv[$key])) {
-                    unset($this->kv[$key]);
-                    $deleted++;
-                }
-                if (isset($this->sets[$key])) {
-                    unset($this->sets[$key]);
+            foreach (is_array($keys) ? $keys : [$keys] as $key) {
+                if (isset($this->values[$key])) {
+                    unset($this->values[$key]);
                     $deleted++;
                 }
             }
@@ -33,82 +27,88 @@ beforeEach(function () {
 
         public function exists(string $key): int
         {
-            $this->pruneKey($key);
-
-            return isset($this->kv[$key]) ? 1 : 0;
+            return $this->get($key) === false ? 0 : 1;
         }
 
         public function get(string $key): string|false
         {
-            $this->pruneKey($key);
+            $this->prune($key);
 
-            return $this->kv[$key]['value'] ?? false;
+            return $this->values[$key]['value'] ?? false;
         }
 
-        public function sAdd(string $key, string $member): int
+        public function incr(string $key): int
         {
-            $exists = isset($this->sets[$key][$member]);
-            $this->sets[$key][$member] = true;
+            $next = (int) ($this->get($key) ?: 0) + 1;
+            $this->set($key, (string) $next);
 
-            return $exists ? 0 : 1;
+            return $next;
         }
 
-        public function sCard(string $key): int
+        /** @param list<string> $keys */
+        public function mget(array $keys): array
         {
-            return count($this->sets[$key] ?? []);
+            $this->mgetCalls++;
+
+            return array_map(fn(string $key): string|false => $this->get($key), $keys);
         }
 
-        public function sMembers(string $key): array
+        /** @param array<string, string> $values */
+        public function mset(array $values): bool
         {
-            return array_keys($this->sets[$key] ?? []);
-        }
-
-        public function sRem(string $key, string $member): int
-        {
-            if (! isset($this->sets[$key][$member])) {
-                return 0;
+            foreach ($values as $key => $value) {
+                $this->set($key, $value);
             }
 
-            unset($this->sets[$key][$member]);
-
-            return 1;
+            return true;
         }
 
         public function set(string $key, string $value): bool
         {
-            $this->kv[$key] = ['value' => $value, 'expires' => null];
+            $this->values[$key] = ['value' => $value, 'expires' => null];
 
             return true;
         }
 
         public function setex(string $key, int $ttl, string $value): bool
         {
-            $this->kv[$key] = ['value' => $value, 'expires' => time() + max(1, $ttl)];
+            $this->values[$key] = ['value' => $value, 'expires' => time() + max(1, $ttl)];
 
             return true;
         }
 
-        private function pruneKey(string $key): void
+        /** @return list<string> */
+        public function keys(): array
         {
-            if (! isset($this->kv[$key])) {
-                return;
-            }
+            return array_keys($this->values);
+        }
 
-            $expires = $this->kv[$key]['expires'];
+        private function prune(string $key): void
+        {
+            $expires = $this->values[$key]['expires'] ?? null;
             if ($expires !== null && $expires <= time()) {
-                unset($this->kv[$key]);
+                unset($this->values[$key]);
             }
         }
     };
 
-    $this->cache = Cache::redisCluster('cluster-tests', ['127.0.0.1:7000'], 1.0, 1.0, false, $this->cluster);
+    $this->cache = Cache::redisCluster(
+        'cluster-tests',
+        ['127.0.0.1:7000'],
+        1.0,
+        1.0,
+        false,
+        $this->cluster,
+    );
 });
 
-test('redis cluster adapter stores and retrieves values', function () {
-    $this->cache->set('k', 'value');
+test('redis cluster adapter bulk-fetches cross-slot values', function () {
+    $this->cache->setMultiple(['alpha' => 'A', 'beta' => 'B', 'gamma' => 'C']);
+    $before = $this->cluster->mgetCalls;
 
-    expect($this->cache->get('k'))->toBe('value')
-        ->and($this->cache->count())->toBe(1);
+    expect($this->cache->getMultiple(['alpha', 'missing', 'beta']))
+        ->toBe(['alpha' => 'A', 'missing' => null, 'beta' => 'B'])
+        ->and($this->cluster->mgetCalls)->toBeGreaterThan($before);
 });
 
 test('redis cluster adapter honors ttl', function () {
@@ -118,13 +118,10 @@ test('redis cluster adapter honors ttl', function () {
     expect($this->cache->get('ttl'))->toBeNull();
 });
 
-test('redis cluster adapter clear removes cached values', function () {
-    $this->cache->set('a', 1);
-    $this->cache->set('b', 2);
-
+test('redis cluster clear uses bucket epochs without a permanent key index', function () {
+    $this->cache->setMultiple(['a' => 1, 'b' => 2]);
     $this->cache->clear();
 
-    expect($this->cache->count())->toBe(0)
-        ->and($this->cache->get('a'))->toBeNull()
-        ->and($this->cache->get('b'))->toBeNull();
+    expect($this->cache->getMultiple(['a', 'b']))->toBe(['a' => null, 'b' => null])
+        ->and(implode('|', $this->cluster->keys()))->not->toContain('__keys');
 });

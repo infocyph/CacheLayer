@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Infocyph\CacheLayer\Cache\Adapter;
 
-use Infocyph\CacheLayer\Cache\Item\GenericCacheItem;
+use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Psr\Cache\CacheItemInterface;
 
 final class NullCacheAdapter extends AbstractCacheAdapter
@@ -39,9 +39,16 @@ final class NullCacheAdapter extends AbstractCacheAdapter
         return true;
     }
 
-    public function getItem(string $key): GenericCacheItem
+    public function getItem(string $key): CacheItem
     {
-        return new GenericCacheItem($this, $key);
+        return new CacheItem($this, $key);
+    }
+
+    /** @param list<string> $tags */
+    #[\Override]
+    public function getTagVersions(array $tags): array
+    {
+        return array_fill_keys($tags, 0);
     }
 
     public function hasItem(string $key): bool
@@ -51,16 +58,25 @@ final class NullCacheAdapter extends AbstractCacheAdapter
         return false;
     }
 
+    /** @param list<string> $tags */
+    #[\Override]
+    public function incrementTagVersions(array $tags): bool
+    {
+        unset($tags);
+
+        return true;
+    }
+
     /**
      * @param array $keys The keys argument.
      * @phpstan-param list<string> $keys
-     * @phpstan-return array<string, GenericCacheItem>
+     * @phpstan-return array<string, CacheItem>
      */
     public function multiFetch(array $keys): array
     {
         $items = [];
         foreach ($keys as $key) {
-            $items[$key] = new GenericCacheItem($this, $key);
+            $items[$key] = new CacheItem($this, $key);
         }
 
         return $items;
@@ -71,8 +87,15 @@ final class NullCacheAdapter extends AbstractCacheAdapter
         return $this->supportsItem($item);
     }
 
-    protected function supportsItem(CacheItemInterface $item): bool
+    /** @param array<string, CacheItemInterface> $items */
+    public function saveItems(array $items): bool
     {
-        return $item instanceof GenericCacheItem;
+        foreach ($items as $item) {
+            if (!$this->supportsItem($item)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

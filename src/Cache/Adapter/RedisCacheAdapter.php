@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Infocyph\CacheLayer\Cache\Adapter;
 
-use Infocyph\CacheLayer\Cache\Item\RedisCacheItem;
+use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 use Infocyph\CacheLayer\Support\RedisConnection;
 use InvalidArgumentException;
@@ -69,7 +69,7 @@ class RedisCacheAdapter extends AbstractCacheAdapter
     {
         $iter = null;
         $count = 0;
-        while ($keys = $this->redis->scan($iter, $this->ns . ':*', 1000)) {
+        while ($keys = $this->redis->scan($iter, $this->ns . ':d:*', 1000)) {
             $count += count($keys);
         }
 
@@ -101,24 +101,37 @@ class RedisCacheAdapter extends AbstractCacheAdapter
         return $this->redis;
     }
 
-    public function getItem(string $key): RedisCacheItem
+    public function getItem(string $key): CacheItem
     {
         $raw = $this->redis->get($this->map($key));
         if (is_string($raw)) {
-            $record = CachePayloadCodec::decode($raw);
-            if ($record !== null && !CachePayloadCodec::isExpired($record['expires'])) {
-                return new RedisCacheItem(
-                    $this,
-                    $key,
-                    $record['value'],
-                    true,
-                    CachePayloadCodec::toDateTime($record['expires']),
-                );
+            $record = $this->decodeRecordFromBlob($raw);
+            if ($record !== null) {
+                return $this->genericItemFromRecord($key, $record);
             }
             $this->redis->del($this->map($key));
         }
 
-        return new RedisCacheItem($this, $key);
+        return new CacheItem($this, $key);
+    }
+
+    /** @param list<string> $tags */
+    #[\Override]
+    public function getTagVersions(array $tags): array
+    {
+        if ($tags === []) {
+            return [];
+        }
+
+        $values = $this->redis->mget(array_map($this->mapTag(...), $tags));
+        $values = is_array($values) ? array_values($values) : [];
+        $versions = [];
+        foreach ($tags as $index => $tag) {
+            $value = $values[$index] ?? null;
+            $versions[$tag] = is_numeric($value) ? max(0, (int) $value) : 0;
+        }
+
+        return $versions;
     }
 
     public function hasItem(string $key): bool
@@ -126,10 +139,29 @@ class RedisCacheAdapter extends AbstractCacheAdapter
         return $this->redis->exists($this->map($key)) === 1;
     }
 
+    /** @param list<string> $tags */
+    #[\Override]
+    public function incrementTagVersions(array $tags): bool
+    {
+        if ($tags === []) {
+            return true;
+        }
+        if (count($tags) === 1) {
+            return $this->redis->incr($this->mapTag($tags[0])) !== false;
+        }
+
+        $pipeline = $this->redis->multi(\Redis::PIPELINE);
+        foreach ($tags as $tag) {
+            $pipeline->incr($this->mapTag($tag));
+        }
+
+        return $pipeline->exec() !== false;
+    }
+
     /**
      * @param array $keys The keys argument.
      * @phpstan-param list<string> $keys
-     * @phpstan-return array<string, RedisCacheItem>
+     * @phpstan-return array<string, CacheItem>
      */
     public function multiFetch(array $keys): array
     {
@@ -150,26 +182,20 @@ class RedisCacheAdapter extends AbstractCacheAdapter
             $v = $rawVals[$idx] ?? null;
             if ($v !== null && $v !== false) {
                 if (!is_string($v)) {
-                    $items[$k] = new RedisCacheItem($this, $k);
+                    $items[$k] = new CacheItem($this, $k);
 
                     continue;
                 }
 
-                $record = CachePayloadCodec::decode($v);
-                if ($record !== null && !CachePayloadCodec::isExpired($record['expires'])) {
-                    $items[$k] = new RedisCacheItem(
-                        $this,
-                        $k,
-                        $record['value'],
-                        true,
-                        CachePayloadCodec::toDateTime($record['expires']),
-                    );
+                $record = $this->decodeRecordFromBlob($v);
+                if ($record !== null) {
+                    $items[$k] = $this->genericItemFromRecord($k, $record);
 
                     continue;
                 }
                 $stale[] = $this->map($k);
             }
-            $items[$k] = new RedisCacheItem($this, $k);
+            $items[$k] = new CacheItem($this, $k);
         }
 
         if ($stale !== []) {
@@ -182,27 +208,63 @@ class RedisCacheAdapter extends AbstractCacheAdapter
     public function save(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
-            throw new CacheInvalidArgumentException('RedisCacheAdapter expects RedisCacheItem');
+            throw new CacheInvalidArgumentException('The cache item belongs to another pool.');
         }
 
         $expires = CachePayloadCodec::expirationFromItem($item);
         $ttl = $expires['ttl'];
-        if ($ttl === 0) {
+        if ($ttl !== null && $ttl <= 0) {
             $this->redis->del($this->map($item->getKey()));
 
             return true;
         }
 
-        $blob = CachePayloadCodec::encode($item->get(), $expires['expiresAt']);
+        $blob = $this->encodeItem($item, $expires['expiresAt']);
 
         return $ttl === null
             ? $this->redis->set($this->map($item->getKey()), $blob)
             : $this->redis->setex($this->map($item->getKey()), max(1, $ttl), $blob);
     }
 
-    protected function supportsItem(CacheItemInterface $item): bool
+    /** @param array<string, CacheItemInterface> $items */
+    public function saveItems(array $items): bool
     {
-        return $item instanceof RedisCacheItem;
+        if (!$this->supportsItems($items)) {
+            return false;
+        }
+
+        $plain = [];
+        $expiring = [];
+        $expired = [];
+        foreach ($items as $item) {
+            $expiration = CachePayloadCodec::expirationFromItem($item);
+            if ($expiration['ttl'] !== null && $expiration['ttl'] <= 0) {
+                $expired[] = $this->map($item->getKey());
+
+                continue;
+            }
+            $blob = $this->encodeItem($item, $expiration['expiresAt']);
+            if ($expiration['ttl'] === null) {
+                $plain[$this->map($item->getKey())] = $blob;
+            } else {
+                $expiring[] = [$this->map($item->getKey()), max(1, $expiration['ttl']), $blob];
+            }
+        }
+
+        if ($expired !== []) {
+            $this->redis->del($expired);
+        }
+
+        $ok = $plain === [] || $this->redis->mset($plain);
+        if ($expiring === []) {
+            return $ok;
+        }
+        $pipeline = $this->redis->multi(\Redis::PIPELINE);
+        foreach ($expiring as [$key, $ttl, $blob]) {
+            $pipeline->setex($key, $ttl, $blob);
+        }
+
+        return $pipeline->exec() !== false && $ok;
     }
 
     private function connect(string $dsn): \Redis
@@ -216,6 +278,11 @@ class RedisCacheAdapter extends AbstractCacheAdapter
 
     private function map(string $key): string
     {
-        return $this->ns . ':' . $key;
+        return $this->ns . ':d:' . $key;
+    }
+
+    private function mapTag(string $tag): string
+    {
+        return $this->ns . ':m:tag:' . $tag;
     }
 }

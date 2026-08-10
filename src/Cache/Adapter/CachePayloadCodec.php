@@ -4,118 +4,37 @@ declare(strict_types=1);
 
 namespace Infocyph\CacheLayer\Cache\Adapter;
 
+use Closure;
 use DateTimeImmutable;
 use DateTimeInterface;
-use Infocyph\CacheLayer\Cache\Item\AbstractCacheItem;
-use Infocyph\CacheLayer\Serializer\ValueSerializer;
+use Infocyph\CacheLayer\Cache\CacheOptions;
+use Infocyph\CacheLayer\Cache\CacheRecord;
+use Infocyph\CacheLayer\Cache\Item\CacheItem;
+use Infocyph\CacheLayer\Serializer\ClosureSerializer;
+use InvalidArgumentException;
 use Psr\Cache\CacheItemInterface;
+use RuntimeException;
 use Throwable;
 
-final class CachePayloadCodec
+final readonly class CachePayloadCodec
 {
-    private const string COMPRESSED_PREFIX = 'imx-gz:';
+    private const string COMPRESSED_PREFIX = 'cl2-gz:';
 
-    private const string FORMAT = 'imx-record-v1';
+    private const string PLAIN_PREFIX = 'cl2:';
 
-    private const string SIGNED_PREFIX = 'imx-sig-v1:';
+    private const string SIGNED_PREFIX = 'cl2-sig:';
 
-    private static int $compressionLevel = 6;
+    public function __construct(private CacheOptions $options = new CacheOptions()) {}
 
-    private static ?int $compressionThresholdBytes = null;
-
-    private static ?string $integrityKey = null;
-
-    private static ?int $maxPayloadBytes = 8_388_608;
-
-    private static bool $securityBootstrapped = false;
-
-    public static function configureCompression(?int $thresholdBytes = null, int $level = 6): void
-    {
-        self::$compressionThresholdBytes = $thresholdBytes === null ? null : max(1, $thresholdBytes);
-        self::$compressionLevel = max(1, min(9, $level));
-    }
-
-    public static function configureSecurity(
-        ?string $integrityKey = null,
-        ?int $maxPayloadBytes = 8_388_608,
-    ): void {
-        self::$integrityKey = $integrityKey !== null && $integrityKey !== '' ? $integrityKey : null;
-        self::$maxPayloadBytes = $maxPayloadBytes === null ? null : max(1, $maxPayloadBytes);
-        self::$securityBootstrapped = true;
-    }
-
-    /**
-     * @phpstan-return array{value:mixed,expires:int|null}|null
- * @param string $blob The blob argument.
-     */
-    public static function decode(string $blob): ?array
-    {
-        self::bootstrapSecurityFromEnvironment();
-        if (self::isPayloadTooLarge($blob)) {
-            return null;
-        }
-
-        $verifiedBlob = self::verifyAndExtractSignature($blob);
-        if (!is_string($verifiedBlob)) {
-            return null;
-        }
-
-        $expanded = self::expandIfCompressed($verifiedBlob);
-        if ($expanded === null) {
-            return null;
-        }
-        if (self::isPayloadTooLarge($expanded)) {
-            return null;
-        }
-
-        $decoded = self::tryUnserialize($expanded);
-        if ($decoded === null) {
-            return null;
-        }
-
-        $fromItem = self::decodeCacheItem($decoded);
-        if ($fromItem !== null) {
-            return $fromItem;
-        }
-
-        return self::decodeArrayPayload($decoded);
-    }
-
-    public static function encode(mixed $value, ?int $expiresAt): string
-    {
-        self::bootstrapSecurityFromEnvironment();
-        $encoded = ValueSerializer::serialize([
-            '__imx_cache' => self::FORMAT,
-            'value' => $value,
-            'expires' => $expiresAt,
-        ]);
-
-        if (self::$compressionThresholdBytes === null || self::$compressionThresholdBytes < 1) {
-            return self::attachSignature($encoded);
-        }
-
-        if (strlen($encoded) < self::$compressionThresholdBytes || !function_exists('gzencode')) {
-            return self::attachSignature($encoded);
-        }
-
-        $compressed = gzencode($encoded, self::$compressionLevel);
-        if (!is_string($compressed) || strlen($compressed) >= strlen($encoded)) {
-            return self::attachSignature($encoded);
-        }
-
-        return self::attachSignature(self::COMPRESSED_PREFIX . base64_encode($compressed));
-    }
-
-    /**
-     * @phpstan-return array{ttl:int|null,expiresAt:int|null}
- * @param CacheItemInterface $item The item argument.
-     */
+    /** @return array{ttl:int|null,expiresAt:int|null} */
     public static function expirationFromItem(CacheItemInterface $item): array
     {
-        $ttl = $item instanceof AbstractCacheItem ? $item->ttlSeconds() : null;
-        $expiresAt = $ttl === null ? null : time() + $ttl;
+        $ttl = $item instanceof CacheItem ? $item->ttlSeconds() : null;
 
-        return ['ttl' => $ttl, 'expiresAt' => $expiresAt];
+        return [
+            'ttl' => $ttl,
+            'expiresAt' => $ttl === null ? null : time() + $ttl,
+        ];
     }
 
     public static function isExpired(?int $expiresAt, ?int $now = null): bool
@@ -128,179 +47,266 @@ final class CachePayloadCodec
         return $expiresAt === null ? null : (new DateTimeImmutable())->setTimestamp($expiresAt);
     }
 
-    private static function attachSignature(string $payload): string
+    public function decode(string $blob): ?CacheRecord
     {
-        if (self::$integrityKey === null) {
+        if ($this->isPayloadTooLarge($blob)) {
+            return null;
+        }
+
+        $verified = $this->verifyAndExtractSignature($blob);
+        if ($verified === null) {
+            return null;
+        }
+
+        $serialized = $this->expandPayload($verified);
+        if ($serialized === null || $this->isPayloadTooLarge($serialized)) {
+            return null;
+        }
+
+        try {
+            $decoded = $this->unserializeNative($serialized);
+        } catch (Throwable) {
+            return null;
+        }
+
+        return $this->normalizeRecord($decoded);
+    }
+
+    /**
+     * @param array<string, int> $tags
+     */
+    public function encode(
+        mixed $value,
+        ?int $expiresAt,
+        array $tags = [],
+        ?int $namespaceEpoch = null,
+    ): string {
+        [$encoding, $encodedValue] = $this->encodeValue($value);
+        $serialized = serialize([
+            'format' => 2,
+            'encoding' => $encoding,
+            'value' => $encodedValue,
+            'expires' => $expiresAt,
+            'tags' => $tags,
+            'epoch' => $namespaceEpoch,
+        ]);
+        if ($this->isPayloadTooLarge($serialized)) {
+            throw new RuntimeException('The encoded cache record exceeds the configured payload limit.');
+        }
+
+        $payload = self::PLAIN_PREFIX . $serialized;
+        $threshold = $this->options->compressionThreshold;
+        if ($threshold !== null && strlen($serialized) >= $threshold && function_exists('gzencode')) {
+            $compressed = gzencode($serialized, $this->options->compressionLevel);
+            if (is_string($compressed) && strlen($compressed) < strlen($serialized)) {
+                $payload = self::COMPRESSED_PREFIX . base64_encode($compressed);
+            }
+        }
+
+        $encoded = $this->attachSignature($payload);
+        if ($this->isPayloadTooLarge($encoded)) {
+            throw new RuntimeException('The stored cache payload exceeds the configured payload limit.');
+        }
+
+        return $encoded;
+    }
+
+    private function assertNativeValueSupported(mixed $value): void
+    {
+        if ($value instanceof Closure) {
+            throw new InvalidArgumentException('Closures must be cached as top-level values.');
+        }
+        if (is_resource($value)) {
+            throw new InvalidArgumentException('Resource cache values are not supported.');
+        }
+        if (is_object($value) && !$this->options->allowObjects) {
+            throw new InvalidArgumentException('Object cache values are disabled by security policy.');
+        }
+        if (!is_array($value)) {
+            return;
+        }
+        foreach ($value as $item) {
+            $this->assertNativeValueSupported($item);
+        }
+    }
+
+    private function attachSignature(string $payload): string
+    {
+        if ($this->options->integrityKey === null) {
             return $payload;
         }
 
-        $signature = hash_hmac('sha256', $payload, self::$integrityKey);
+        $signature = hash_hmac('sha256', $payload, $this->options->integrityKey);
 
         return self::SIGNED_PREFIX . $signature . ':' . $payload;
     }
 
-    private static function bootstrapSecurityFromEnvironment(): void
+    private function containsUnsupportedDecodedValue(mixed $value): bool
     {
-        if (self::$securityBootstrapped) {
-            return;
+        if ($value instanceof Closure || is_resource($value)) {
+            return true;
         }
-
-        $key = getenv('CACHELAYER_PAYLOAD_INTEGRITY_KEY');
-        $max = getenv('CACHELAYER_MAX_PAYLOAD_BYTES');
-
-        $integrityKey = is_string($key) && $key !== '' ? $key : null;
-        $maxBytes = null;
-        if (is_string($max) && $max !== '' && ctype_digit($max)) {
-            $maxBytes = (int) $max;
+        if (is_object($value)) {
+            return !$this->options->allowObjects;
         }
-
-        self::configureSecurity($integrityKey, $maxBytes ?? self::$maxPayloadBytes);
-    }
-
-    /**
-     * @phpstan-return array{value:mixed,expires:int|null}|null
- * @param mixed $decoded The decoded argument.
-     */
-    private static function decodeArrayPayload(mixed $decoded): ?array
-    {
-        if (!is_array($decoded)) {
-            return null;
+        if (!is_array($value)) {
+            return false;
         }
-
-        $normalized = [];
-        foreach ($decoded as $key => $value) {
-            if (is_string($key)) {
-                $normalized[$key] = $value;
+        foreach ($value as $item) {
+            if ($this->containsUnsupportedDecodedValue($item)) {
+                return true;
             }
         }
 
-        $fromFormatted = self::decodeFormattedPayload($normalized);
-        if ($fromFormatted !== null) {
-            return $fromFormatted;
-        }
-
-        if (array_key_exists('value', $decoded) && array_key_exists('expires', $decoded)) {
-            return [
-                'value' => $decoded['value'],
-                'expires' => self::normalizeExpires($decoded['expires']),
-            ];
-        }
-
-        return null;
+        return false;
     }
 
     /**
-     * @phpstan-return array{value:mixed,expires:int|null}|null
- * @param mixed $decoded The decoded argument.
+     * @param array<mixed> $record
+     * @return array{valid:bool, value:mixed}
      */
-    private static function decodeCacheItem(mixed $decoded): ?array
+    private function decodeValue(array $record): array
     {
-        if (!$decoded instanceof CacheItemInterface) {
-            return null;
+        $encoding = $record['encoding'] ?? null;
+        $value = $record['value'] ?? null;
+        if ($encoding === 'closure') {
+            if (!$this->options->allowClosures || !is_string($value)) {
+                return ['valid' => false, 'value' => null];
+            }
+
+            try {
+                return ['valid' => true, 'value' => ClosureSerializer::unserialize($value)];
+            } catch (Throwable) {
+                return ['valid' => false, 'value' => null];
+            }
+        }
+        if ($encoding !== 'native' || $this->containsUnsupportedDecodedValue($value)) {
+            return ['valid' => false, 'value' => null];
         }
 
-        return ['value' => $decoded->get(), 'expires' => null];
+        return ['valid' => true, 'value' => $value];
     }
 
-    /**
-     * @param array $decoded The decoded argument.
-     * @phpstan-param array<string, mixed> $decoded
-     * @phpstan-return array{value:mixed,expires:int|null}|null
-     */
-    private static function decodeFormattedPayload(array $decoded): ?array
+    /** @return array{0:'closure'|'native', 1:mixed} */
+    private function encodeValue(mixed $value): array
     {
-        if (($decoded['__imx_cache'] ?? null) !== self::FORMAT || !array_key_exists('value', $decoded)) {
-            return null;
+        if ($value instanceof Closure) {
+            if (!$this->options->allowClosures) {
+                throw new InvalidArgumentException('Closure cache values are disabled by security policy.');
+            }
+
+            return ['closure', ClosureSerializer::serialize($value)];
         }
 
-        return [
-            'value' => $decoded['value'],
-            'expires' => self::normalizeExpires($decoded['expires'] ?? null),
-        ];
+        $this->assertNativeValueSupported($value);
+
+        return ['native', $value];
     }
 
-    private static function expandIfCompressed(string $blob): ?string
+    private function expandPayload(string $payload): ?string
     {
-        if (!str_starts_with($blob, self::COMPRESSED_PREFIX)) {
-            return $blob;
+        if (str_starts_with($payload, self::PLAIN_PREFIX)) {
+            return substr($payload, strlen(self::PLAIN_PREFIX));
         }
-
-        $payload = substr($blob, strlen(self::COMPRESSED_PREFIX));
-        $raw = base64_decode($payload, true);
-        if ($raw === false || !function_exists('gzdecode')) {
+        if (!str_starts_with($payload, self::COMPRESSED_PREFIX)) {
             return null;
         }
 
-        $maximumLength = self::$maxPayloadBytes === null
+        $compressed = base64_decode(substr($payload, strlen(self::COMPRESSED_PREFIX)), true);
+        if (!is_string($compressed) || !function_exists('gzdecode')) {
+            return null;
+        }
+
+        $maximumLength = $this->options->maxPayloadBytes === null
             ? 0
-            : min(self::$maxPayloadBytes, PHP_INT_MAX - 1) + 1;
+            : min($this->options->maxPayloadBytes, PHP_INT_MAX - 1) + 1;
         set_error_handler(static fn(): bool => true);
 
         try {
-            $decoded = gzdecode($raw, $maximumLength);
+            $expanded = gzdecode($compressed, $maximumLength);
         } finally {
             restore_error_handler();
         }
 
-        return is_string($decoded) ? $decoded : null;
+        return is_string($expanded) ? $expanded : null;
     }
 
-    private static function isPayloadTooLarge(string $blob): bool
+    private function isPayloadTooLarge(string $payload): bool
     {
-        return self::$maxPayloadBytes !== null && strlen($blob) > self::$maxPayloadBytes;
+        return $this->options->maxPayloadBytes !== null
+            && strlen($payload) > $this->options->maxPayloadBytes;
     }
 
-    private static function normalizeExpires(mixed $expires): ?int
+    private function normalizeRecord(mixed $decoded): ?CacheRecord
     {
-        return is_int($expires) ? $expires : null;
-    }
-
-    private static function tryUnserialize(string $blob): mixed
-    {
-        try {
-            return ValueSerializer::unserialize($blob);
-        } catch (Throwable) {
+        if (!is_array($decoded) || ($decoded['format'] ?? null) !== 2 || !array_key_exists('value', $decoded)) {
             return null;
+        }
+
+        $expiresAt = $decoded['expires'] ?? null;
+        if ($expiresAt !== null && !is_int($expiresAt)) {
+            return null;
+        }
+
+        $tags = $decoded['tags'] ?? null;
+        if (!is_array($tags)) {
+            return null;
+        }
+        foreach ($tags as $tag => $version) {
+            if (!is_string($tag) || !is_int($version) || $version < 0) {
+                return null;
+            }
+        }
+
+        $epoch = $decoded['epoch'] ?? null;
+        if ($epoch !== null && (!is_int($epoch) || $epoch < 0)) {
+            return null;
+        }
+
+        $value = $this->decodeValue($decoded);
+        if (!$value['valid']) {
+            return null;
+        }
+
+        return new CacheRecord($value['value'], $expiresAt, $tags, $epoch);
+    }
+
+    private function unserializeNative(string $payload): mixed
+    {
+        set_error_handler(static fn(): bool => true);
+
+        try {
+            return unserialize($payload, [
+                'allowed_classes' => $this->options->allowObjects,
+                'max_depth' => 128,
+            ]);
+        } finally {
+            restore_error_handler();
         }
     }
 
-    private static function verifyAndExtractSignature(string $blob): ?string
+    private function verifyAndExtractSignature(string $blob): ?string
     {
         if (!str_starts_with($blob, self::SIGNED_PREFIX)) {
-            return self::$integrityKey === null ? $blob : null;
+            return $this->options->integrityKey === null ? $blob : null;
         }
-
-        if (self::$integrityKey === null) {
+        if ($this->options->integrityKey === null) {
             return null;
         }
 
-        $prefixLength = strlen(self::SIGNED_PREFIX);
-        $rest = substr($blob, $prefixLength);
-        if ($rest === '') {
+        $separator = strpos($blob, ':', strlen(self::SIGNED_PREFIX));
+        if ($separator === false) {
             return null;
         }
 
-        $separatorPos = strpos($rest, ':');
-        if ($separatorPos === false) {
+        $signature = substr($blob, strlen(self::SIGNED_PREFIX), $separator - strlen(self::SIGNED_PREFIX));
+        $payload = substr($blob, $separator + 1);
+        if (strlen($signature) !== 64 || !ctype_xdigit($signature)) {
             return null;
         }
 
-        $signature = substr($rest, 0, $separatorPos);
-        $payload = substr($rest, $separatorPos + 1);
+        $expected = hash_hmac('sha256', $payload, $this->options->integrityKey);
 
-        if (strlen($signature) !== 64) {
-            return null;
-        }
-
-        if (!ctype_xdigit($signature)) {
-            return null;
-        }
-
-        $expected = hash_hmac('sha256', $payload, self::$integrityKey);
-        if (!hash_equals($expected, strtolower($signature))) {
-            return null;
-        }
-
-        return $payload;
+        return hash_equals($expected, strtolower($signature)) ? $payload : null;
     }
 }

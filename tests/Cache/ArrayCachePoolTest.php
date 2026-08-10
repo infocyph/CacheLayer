@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Cache\Adapter\AbstractCacheAdapter;
-use Infocyph\CacheLayer\Cache\Item\GenericCacheItem;
+use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Psr\Cache\CacheItemInterface;
 
 beforeEach(function () {
@@ -18,10 +18,10 @@ test('array adapter supports basic set/get/delete', function () {
         ->and($this->cache->get('alpha'))->toBeNull();
 });
 
-test('array adapter getItem returns GenericCacheItem', function () {
+test('array adapter getItem returns the shared CacheItem', function () {
     $item = $this->cache->getItem('x');
 
-    expect($item)->toBeInstanceOf(GenericCacheItem::class)
+    expect($item)->toBeInstanceOf(CacheItem::class)
         ->and($item->isHit())->toBeFalse();
 });
 
@@ -44,11 +44,10 @@ test('array adapter supports getItems', function () {
         ->and($items['c']->isHit())->toBeFalse();
 });
 
-test('deferred commit attempts every queued item after a save failure', function () {
+test('deferred commit uses one bulk persistence call and retains failures', function () {
     $adapter = new class extends AbstractCacheAdapter
     {
-        /** @var list<string> */
-        public array $attempted = [];
+        public int $bulkCalls = 0;
 
         public function clear(): bool
         {
@@ -76,9 +75,15 @@ test('deferred commit attempts every queued item after a save failure', function
             return true;
         }
 
-        public function getItem(string $key): GenericCacheItem
+        public function getItem(string $key): CacheItem
         {
-            return new GenericCacheItem($this, $key);
+            return new CacheItem($this, $key);
+        }
+
+        /** @return array<string, CacheItem> */
+        public function multiFetch(array $keys): array
+        {
+            return array_fill_keys($keys, new CacheItem($this, 'unused'));
         }
 
         public function hasItem(string $key): bool
@@ -88,14 +93,17 @@ test('deferred commit attempts every queued item after a save failure', function
 
         public function save(CacheItemInterface $item): bool
         {
-            $this->attempted[] = $item->getKey();
+            unset($item);
 
-            return $item->getKey() !== 'first';
+            return true;
         }
 
-        protected function supportsItem(CacheItemInterface $item): bool
+        public function saveItems(array $items): bool
         {
-            return $item instanceof GenericCacheItem;
+            unset($items);
+            $this->bulkCalls++;
+
+            return $this->bulkCalls > 1;
         }
     };
 
@@ -103,6 +111,9 @@ test('deferred commit attempts every queued item after a save failure', function
     $adapter->saveDeferred($adapter->getItem('second')->set(2));
 
     expect($adapter->commit())->toBeFalse()
-        ->and($adapter->attempted)->toBe(['first', 'second'])
-        ->and($adapter->commit())->toBeTrue();
+        ->and($adapter->bulkCalls)->toBe(1)
+        ->and($adapter->commit())->toBeTrue()
+        ->and($adapter->bulkCalls)->toBe(2)
+        ->and($adapter->commit())->toBeTrue()
+        ->and($adapter->bulkCalls)->toBe(2);
 });

@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace Infocyph\CacheLayer\Cache\Adapter;
 
-use Infocyph\CacheLayer\Cache\Item\GenericCacheItem;
+use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Psr\Cache\CacheItemInterface;
 
 final class ArrayCacheAdapter extends AbstractCacheAdapter
 {
     private readonly string $ns;
+
+    /** @var array<string, int> */
+    private array $metadata = [];
 
     /** @var array<string, string> */
     private array $store = [];
@@ -22,6 +25,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter
     public function clear(): bool
     {
         $this->store = [];
+        $this->metadata = [];
         $this->deferred = [];
 
         return true;
@@ -54,12 +58,24 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter
         return true;
     }
 
-    public function getItem(string $key): GenericCacheItem
+    public function getItem(string $key): CacheItem
     {
         $mapped = $this->map($key);
         $blob = $this->store[$mapped] ?? null;
 
         return $this->genericFromBlob($key, is_string($blob) ? $blob : null);
+    }
+
+    /** @param list<string> $tags */
+    #[\Override]
+    public function getTagVersions(array $tags): array
+    {
+        $versions = [];
+        foreach ($tags as $tag) {
+            $versions[$tag] = $this->metadata[$tag] ?? 0;
+        }
+
+        return $versions;
     }
 
     public function hasItem(string $key): bool
@@ -80,16 +96,37 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter
         return true;
     }
 
+    /** @param list<string> $tags */
+    #[\Override]
+    public function incrementTagVersions(array $tags): bool
+    {
+        foreach ($tags as $tag) {
+            $this->metadata[$tag] = ($this->metadata[$tag] ?? 0) + 1;
+        }
+
+        return true;
+    }
+
     /**
      * @param array $keys The keys argument.
      * @phpstan-param list<string> $keys
-     * @phpstan-return array<string, GenericCacheItem>
+     * @phpstan-return array<string, CacheItem>
      */
     public function multiFetch(array $keys): array
     {
         $items = [];
         foreach ($keys as $key) {
-            $items[$key] = $this->getItem($key);
+            $mapped = $this->map($key);
+            $blob = $this->store[$mapped] ?? null;
+            $items[$key] = $this->genericFromBlobWithInvalidator(
+                $key,
+                is_string($blob) ? $blob : null,
+                function () use ($mapped): bool {
+                    unset($this->store[$mapped]);
+
+                    return true;
+                },
+            );
         }
 
         return $items;
@@ -98,27 +135,44 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter
     public function save(CacheItemInterface $item): bool
     {
         return $this->saveEncoded($item, function (CacheItemInterface $saveItem, array $expires): bool {
-            $this->store[$this->map($saveItem->getKey())] = CachePayloadCodec::encode($saveItem->get(), $expires['expiresAt']);
+            $this->store[$this->map($saveItem->getKey())] = $this->encodeItem($saveItem, $expires['expiresAt']);
 
             return true;
         });
     }
 
-    protected function supportsItem(CacheItemInterface $item): bool
+    /** @param array<string, CacheItemInterface> $items */
+    public function saveItems(array $items): bool
     {
-        return $item instanceof GenericCacheItem;
+        if (!$this->supportsItems($items)) {
+            return false;
+        }
+
+        $now = time();
+        foreach ($items as $item) {
+            $expiration = CachePayloadCodec::expirationFromItem($item);
+            if ($expiration['ttl'] !== null && $expiration['ttl'] <= 0) {
+                unset($this->store[$this->map($item->getKey())]);
+
+                continue;
+            }
+            $expiresAt = $expiration['ttl'] === null ? null : $now + $expiration['ttl'];
+            $this->store[$this->map($item->getKey())] = $this->encodeItem($item, $expiresAt);
+        }
+
+        return true;
     }
 
     private function map(string $key): string
     {
-        return $this->ns . ':' . $key;
+        return $this->ns . ':d:' . $key;
     }
 
     private function pruneExpired(): void
     {
         foreach ($this->store as $mapped => $blob) {
-            $record = CachePayloadCodec::decode($blob);
-            if ($record === null || CachePayloadCodec::isExpired($record['expires'])) {
+            $record = $this->decodeRecordFromBlob($blob);
+            if ($record === null) {
                 unset($this->store[$mapped]);
             }
         }

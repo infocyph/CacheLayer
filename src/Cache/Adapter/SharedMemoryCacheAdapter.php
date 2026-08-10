@@ -4,13 +4,12 @@ declare(strict_types=1);
 
 namespace Infocyph\CacheLayer\Cache\Adapter;
 
-use Infocyph\CacheLayer\Cache\Item\GenericCacheItem;
+use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Psr\Cache\CacheItemInterface;
 use RuntimeException;
 
 final class SharedMemoryCacheAdapter extends AbstractCacheAdapter
 {
-    use GenericCacheItemPoolBehavior;
     use SecuresFilesystemDirectories;
 
     private const int VAR_ID = 1;
@@ -67,8 +66,11 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter
             $count = 0;
 
             foreach ($store as $key => $blob) {
-                $record = CachePayloadCodec::decode($blob);
-                if ($record === null || CachePayloadCodec::isExpired($record['expires'])) {
+                if (!str_starts_with($key, $this->ns . ':d:') || !is_string($blob)) {
+                    continue;
+                }
+                $record = $this->decodeRecordFromBlob($blob);
+                if ($record === null) {
                     unset($store[$key]);
                     $changed = true;
 
@@ -119,11 +121,15 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter
         });
     }
 
-    public function getItem(string $key): GenericCacheItem
+    public function getItem(string $key): CacheItem
     {
         $mapped = $this->map($key);
         $blob = $this->withSharedLock(
-            fn(): ?string => $this->loadStore()[$mapped] ?? null,
+            function () use ($mapped): ?string {
+                $value = $this->loadStore()[$mapped] ?? null;
+
+                return is_string($value) ? $value : null;
+            },
         );
 
         return $this->genericFromBlobWithInvalidator(
@@ -133,11 +139,81 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter
         );
     }
 
+    /**
+     * @param list<string> $tags
+     * @return array<string, int>
+     */
+    #[\Override]
+    public function getTagVersions(array $tags): array
+    {
+        return $this->withSharedLock(function () use ($tags): array {
+            $store = $this->loadStore();
+            $versions = [];
+            foreach ($tags as $tag) {
+                $version = $store[$this->mapTag($tag)] ?? null;
+                $versions[$tag] = is_int($version) && $version >= 0 ? $version : 0;
+            }
+
+            return $versions;
+        });
+    }
+
+    public function hasItem(string $key): bool
+    {
+        return $this->getItem($key)->isHit();
+    }
+
+    /** @param list<string> $tags */
+    #[\Override]
+    public function incrementTagVersions(array $tags): bool
+    {
+        return $this->withExclusiveLock(function () use ($tags): bool {
+            $store = $this->loadStore();
+            foreach ($tags as $tag) {
+                $key = $this->mapTag($tag);
+                $version = $store[$key] ?? null;
+                $store[$key] = (is_int($version) && $version >= 0 ? $version : 0) + 1;
+            }
+
+            return $this->store($store);
+        });
+    }
+
+    /**
+     * @param list<string> $keys
+     * @return array<string, CacheItem>
+     */
+    public function multiFetch(array $keys): array
+    {
+        return $this->withExclusiveLock(function () use ($keys): array {
+            $store = $this->loadStore();
+            $items = [];
+            $changed = false;
+            foreach ($keys as $key) {
+                $mapped = $this->map($key);
+                $blob = $store[$mapped] ?? null;
+                $record = is_string($blob) ? $this->decodeRecordFromBlob($blob) : null;
+                $items[$key] = $record === null
+                    ? $this->genericMiss($key)
+                    : $this->genericItemFromRecord($key, $record);
+                if ($blob !== null && $record === null) {
+                    unset($store[$mapped]);
+                    $changed = true;
+                }
+            }
+            if ($changed) {
+                $this->store($store);
+            }
+
+            return $items;
+        });
+    }
+
     public function save(CacheItemInterface $item): bool
     {
         return $this->saveEncoded($item, function (CacheItemInterface $saveItem, array $expires): bool {
             $mapped = $this->map($saveItem->getKey());
-            $blob = CachePayloadCodec::encode($saveItem->get(), $expires['expiresAt']);
+            $blob = $this->encodeItem($saveItem, $expires['expiresAt']);
 
             return $this->withExclusiveLock(function () use ($mapped, $blob): bool {
                 $store = $this->loadStore();
@@ -145,6 +221,37 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter
 
                 return $this->store($store);
             });
+        });
+    }
+
+    /** @param array<string, CacheItemInterface> $items */
+    public function saveItems(array $items): bool
+    {
+        $records = [];
+        $expired = [];
+        foreach ($items as $item) {
+            if (!$this->supportsItem($item)) {
+                return false;
+            }
+            $expiration = CachePayloadCodec::expirationFromItem($item);
+            if ($expiration['ttl'] !== null && $expiration['ttl'] <= 0) {
+                $expired[] = $this->map($item->getKey());
+
+                continue;
+            }
+            $records[$this->map($item->getKey())] = $this->encodeItem($item, $expiration['expiresAt']);
+        }
+
+        return $this->withExclusiveLock(function () use ($records, $expired): bool {
+            $store = $this->loadStore();
+            foreach ($expired as $key) {
+                unset($store[$key]);
+            }
+            foreach ($records as $key => $blob) {
+                $store[$key] = $blob;
+            }
+
+            return $this->store($store);
         });
     }
 
@@ -193,7 +300,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @phpstan-return array<string, string>
+     * @phpstan-return array<string, string|int>
      */
     private function loadStore(): array
     {
@@ -209,7 +316,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter
 
         $out = [];
         foreach ($store as $key => $value) {
-            if (is_string($key) && is_string($value)) {
+            if (is_string($key) && (is_string($value) || is_int($value))) {
                 $out[$key] = $value;
             }
         }
@@ -219,7 +326,12 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter
 
     private function map(string $key): string
     {
-        return $this->ns . ':' . $key;
+        return $this->ns . ':d:' . $key;
+    }
+
+    private function mapTag(string $tag): string
+    {
+        return $this->ns . ':m:tag:' . $tag;
     }
 
     /** @phpstan-return resource */
@@ -249,7 +361,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter
 
     /**
      * @param array $store The store argument.
-     * @phpstan-param array<string, string> $store
+     * @phpstan-param array<string, string|int> $store
      */
     private function store(array $store): bool
     {

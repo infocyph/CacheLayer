@@ -1,12 +1,12 @@
 .. _adapters.scylladb:
 
 ==================================
-ScyllaDB Adapter (``scyllaDb``)
+ScyllaDB Adapter (``scylla``)
 ==================================
 
 Factory:
 
-``Cache::scyllaDb(string $namespace = 'default', ?object $session = null, string $keyspace = 'cachelayer', string $table = 'cachelayer_entries')``
+``Cache::scylla(string $namespace = 'default', ?object $session = null, string $keyspace = 'cachelayer', string $table = 'cachelayer_entries', int $bucketCount = 128)``
 
 Requirements:
 
@@ -15,7 +15,8 @@ Requirements:
 
 Highlights:
 
-* keyspace/table-backed cache entries with namespace partitioning
+* keyspace/table-backed cache entries with bounded partition buckets
+* bucket-grouped ``IN`` reads and bounded unlogged write batches
 * schema bootstrap with ``CREATE TABLE IF NOT EXISTS``
 * TTL stored as absolute timestamp in ``expires``
 
@@ -31,10 +32,10 @@ Example
 
    use Infocyph\CacheLayer\Cache\Cache;
 
-   $cache = Cache::scyllaDb(
+   $cache = Cache::scylla(
        namespace: 'edge',
        keyspace: 'cachelayer',
        table: 'cachelayer_entries',
    );
 
-   $cache->set('homepage:blocks', $blocks, 45);
+   $cache->set('homepage.blocks', $blocks, 45);

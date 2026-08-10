@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use Infocyph\CacheLayer\Cache\Cache;
+use Infocyph\CacheLayer\Cache\CacheOptions;
+use Infocyph\CacheLayer\Cache\Adapter\FileCacheAdapter;
 use Infocyph\CacheLayer\Cache\Lock\LockHandle;
 use Infocyph\CacheLayer\Cache\Lock\LockProviderInterface;
 use Infocyph\CacheLayer\Cache\Metrics\InMemoryCacheMetricsCollector;
@@ -74,24 +76,16 @@ test('remember caches once and supports tag invalidation', function () {
         ->and($this->cache->get('hot'))->toBeNull();
 });
 
-test('get callable path still computes once on miss', function () {
+test('get returns callable defaults without executing or caching them', function () {
     $count = 0;
-
-    $a = $this->cache->get('compute', function ($item) use (&$count) {
+    $default = function () use (&$count) {
         $count++;
-        $item->expiresAfter(30);
-
         return 99;
-    });
-    $b = $this->cache->get('compute', function () use (&$count) {
-        $count++;
+    };
 
-        return 11;
-    });
-
-    expect($a)->toBe(99)
-        ->and($b)->toBe(99)
-        ->and($count)->toBe(1);
+    expect($this->cache->get('compute', $default))->toBe($default)
+        ->and($this->cache->has('compute'))->toBeFalse()
+        ->and($count)->toBe(0);
 });
 
 test('invalidateTags removes value when duplicate tags are passed', function () {
@@ -145,6 +139,44 @@ test('tag version invalidation marks prior entries stale', function () {
     expect($this->cache->get('article'))->toBe('v2');
 });
 
+test('valid user keys cannot collide with internal tag metadata', function () {
+    $this->cache->set('tag.group', 'plain');
+    $this->cache->setTagged('tagged', 'versioned', ['group']);
+    $this->cache->invalidateTag('group');
+
+    expect($this->cache->get('tag.group'))->toBe('plain')
+        ->and($this->cache->get('tagged'))->toBeNull();
+});
+
+test('file tag increments do not lose concurrent updates', function () {
+    if (!function_exists('pcntl_fork') || !function_exists('pcntl_exec')) {
+        $this->markTestSkipped('pcntl is required for the concurrency test.');
+    }
+
+    $children = [];
+    for ($worker = 0; $worker < 4; $worker++) {
+        $pid = pcntl_fork();
+        if ($pid === 0) {
+            $adapter = new FileCacheAdapter('features', $this->cacheDir);
+            for ($increment = 0; $increment < 25; $increment++) {
+                $adapter->incrementTagVersions(['concurrent']);
+            }
+            pcntl_exec(PHP_BINARY, ['-r', '']);
+            throw new RuntimeException('Unable to terminate concurrency-test worker.');
+        }
+        if ($pid > 0) {
+            $children[] = $pid;
+        }
+    }
+    foreach ($children as $pid) {
+        pcntl_waitpid($pid, $status);
+        expect(pcntl_wexitstatus($status))->toBe(0);
+    }
+
+    $adapter = new FileCacheAdapter('features', $this->cacheDir);
+    expect($adapter->getTagVersions(['concurrent']))->toBe(['concurrent' => 100]);
+});
+
 test('remember uses configured lock provider', function () {
     $calls = ['acquire' => 0, 'release' => 0];
 
@@ -193,8 +225,8 @@ test('metrics collector exports hit and miss counters', function () {
     $metrics = $this->cache->exportMetrics();
     $adapter = 'file';
 
-    expect($metrics[$adapter]['miss'] ?? 0)->toBeGreaterThanOrEqual(1)
-        ->and($metrics[$adapter]['hit'] ?? 0)->toBeGreaterThanOrEqual(1)
+    expect($metrics[$adapter]['get_miss'] ?? 0)->toBeGreaterThanOrEqual(1)
+        ->and($metrics[$adapter]['get_hit'] ?? 0)->toBeGreaterThanOrEqual(1)
         ->and($metrics[$adapter]['set'] ?? 0)->toBeGreaterThanOrEqual(1);
 });
 
@@ -215,11 +247,12 @@ test('metrics export hook receives snapshot', function () {
 
 test('payload compression can be enabled without changing values', function () {
     $payload = str_repeat('cache-layer-payload-', 128);
+    $cache = Cache::file(
+        'compressed-features',
+        $this->cacheDir,
+        new CacheOptions(compressionThreshold: 128, compressionLevel: 6),
+    );
+    $cache->set('big', $payload);
 
-    $this->cache->configurePayloadCompression(128, 6);
-    $this->cache->set('big', $payload);
-
-    expect($this->cache->get('big'))->toBe($payload);
-
-    $this->cache->configurePayloadCompression(null);
+    expect($cache->get('big'))->toBe($payload);
 });

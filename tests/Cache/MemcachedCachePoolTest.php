@@ -3,17 +3,15 @@
 declare(strict_types=1);
 
 /**
- * tests/MemCachePoolTest.php
+ * tests/MemcachedCachePoolTest.php
  *
  * Runs only when the Memcached extension is loaded *and*
  * a Memcached daemon is reachable at 127.0.0.1:11211.
  */
 
-use Infocyph\CacheLayer\Cache\Adapter\MemCacheAdapter;
 use Infocyph\CacheLayer\Cache\Cache;
-use Infocyph\CacheLayer\Cache\Item\MemCacheItem;
+use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
-use Infocyph\CacheLayer\Serializer\ValueSerializer;
 
 /* ── Skip suite if Memcached unavailable ─────────────────────────── */
 
@@ -41,48 +39,18 @@ beforeEach(function () use ($memcachedHost, $memcachedPort) {
     $client = new Memcached;
     $client->addServer($memcachedHost, $memcachedPort);
     $client->flush();                          // fresh slate
-    ValueSerializer::clearResourceHandlers();
 
-    $this->cache = Cache::memcache(
+    $this->client = $client;
+    $this->cache = Cache::memcached(
         'tests',
         [[$memcachedHost, $memcachedPort, 0]],
         $client
     );
 
-    /* register stream handler for resource test */
-    ValueSerializer::registerResourceHandler(
-        'stream',
-        // ----- wrap ----------------------------------------------------
-        function (mixed $res): array {
-            if (! is_resource($res)) {
-                throw new InvalidArgumentException('Expected resource');
-            }
-            $meta = stream_get_meta_data($res);
-            rewind($res);
-
-            return [
-                'mode' => $meta['mode'],
-                'content' => stream_get_contents($res),
-            ];
-        },
-        // ----- restore -------------------------------------------------
-        function (array $data): mixed {
-            $s = fopen('php://memory', $data['mode']);
-            fwrite($s, $data['content']);
-            rewind($s);
-
-            return $s;                                 // <- real resource
-        }
-    );
 });
 
 afterEach(function () {
-    /** @var MemCacheAdapter $adapt */
-    $adapt = (new ReflectionObject($this->cache))
-        ->getProperty('adapter')->getValue($this->cache);
-    (new ReflectionProperty($adapt, 'mc'))
-        ->getValue($adapt)
-        ->flush();
+    $this->client->flush();
 });
 
 /* ── Convenience helpers ────────────────────────────────────────── */
@@ -99,17 +67,9 @@ test('get returns default when key missing (memcached)', function () {
     // Scalar
     expect($this->cache->get('nobody', 'dflt'))->toBe('dflt');
 
-    // Callable
-    $val = $this->cache->get('call', function (MemCacheItem $item) {
-        $item->expiresAfter(3);
-
-        return 'hello';
-    });
-    expect($val)->toBe('hello');
-    expect($this->cache->get('call'))->toBe('hello');
-
-    usleep(4_000_000);
-    expect($this->cache->get('call', 'again'))->toBe('again');
+    $default = static fn(): string => 'hello';
+    expect($this->cache->get('call', $default))->toBe($default)
+        ->and($this->cache->has('call'))->toBeFalse();
 });
 
 test('get throws for invalid key (memcached)', function () {
@@ -120,7 +80,7 @@ test('get throws for invalid key (memcached)', function () {
 /* ─── PSR-6 getItem()/save() ───────────────────────────────────── */
 test('PSR-6 getItem()/save()', function () {
     $it = $this->cache->getItem('psr');
-    expect($it)->toBeInstanceOf(MemCacheItem::class)
+    expect($it)->toBeInstanceOf(CacheItem::class)
         ->and($it->isHit())->toBeFalse();
 
     $it->set(321)->save();
@@ -135,12 +95,10 @@ test('saveDeferred() + commit()', function () {
     expect($this->cache->get('a'))->toBe('A');
 });
 
-test('ArrayAccess & magic props', function () {
+test('ArrayAccess is the only property-like access', function () {
     $this->cache['x'] = 7;
-    expect($this->cache['x'])->toBe(7);
-
-    $this->cache->alpha = 'ω';
-    expect($this->cache->alpha)->toBe('ω');
+    expect($this->cache['x'])->toBe(7)
+        ->and(method_exists($this->cache, '__get'))->toBeFalse();
 });
 
 test('TTL expiration', function () {
@@ -156,24 +114,18 @@ test('closure round-trip', function () {
     expect($g(3))->toBe(9);
 });
 
-test('stream resource round-trip', function () {
-    $s = fopen('php://memory', 'r+');
-    fwrite($s, 'data');
-    rewind($s);
-    $this->cache->getItem('stream')->set($s)->save();
-    $r = $this->cache->getItem('stream')->get();
-    expect(stream_get_contents($r))->toBe('data');
-});
-
 test('invalid key throws', function () {
     expect(fn () => $this->cache->set('bad key', 'v'))
         ->toThrow(InvalidArgumentException::class);
 });
 
-test('clear() flushes cache', function () {
+test('clear only advances this namespace epoch', function () use ($memcachedHost, $memcachedPort) {
+    $other = Cache::memcached('other', [[$memcachedHost, $memcachedPort, 0]], $this->client);
     $this->cache->set('z', 9);
+    $other->set('z', 10);
     $this->cache->clear();
-    expect($this->cache->hasItem('z'))->toBeFalse();
+    expect($this->cache->hasItem('z'))->toBeFalse()
+        ->and($other->get('z'))->toBe(10);
 });
 
 test('Memcached adapter multiFetch()', function () {

@@ -1,61 +1,33 @@
 .. _serializer:
 
 =====================
-Value Serialization
+Closure Serialization
 =====================
 
-``Infocyph\CacheLayer\Serializer\ValueSerializer`` is used by adapters to encode
-and decode cached payloads.
+CacheLayer uses native PHP serialization for ordinary cache records. The
+specialized ``ClosureSerializer`` exists only because PHP cannot serialize a
+``Closure`` directly. It does not expose a mixed-value serializer API and does
+not support resource handlers or recursively wrapped values.
 
-What it handles
+Public API
+----------
+
+* ``ClosureSerializer::serialize(Closure $closure): string``
+* ``ClosureSerializer::unserialize(string $payload): Closure``
+* ``ClosureSerializer::isSerialized(string $payload): bool``
+* ``ClosureSerializer::signed(string $key): SignedClosureSerializer``
+
+Signed Closures
 ---------------
-
-* scalar values and arrays
-* closures (via ``opis/closure``)
-* registered resource types
-
-Core Methods
-------------
-
-* ``serialize(mixed $value): string``
-* ``unserialize(string $blob): mixed``
-* ``encode(mixed $value, bool $base64 = true): string``
-* ``decode(string $payload, bool $base64 = true): mixed``
-* ``wrap(mixed $value): mixed``
-* ``unwrap(mixed $value): mixed``
-* ``registerResourceHandler(string $type, callable $wrapFn, callable $restoreFn): void``
-* ``clearResourceHandlers(): void``
-
-Resource Handler Example
-------------------------
 
 .. code-block:: php
 
-   use Infocyph\CacheLayer\Serializer\ValueSerializer;
+   use Infocyph\CacheLayer\Serializer\ClosureSerializer;
 
-   ValueSerializer::registerResourceHandler(
-       'stream',
-       function ($res): array {
-           $meta = stream_get_meta_data($res);
-           rewind($res);
+   $serializer = ClosureSerializer::signed('application-secret');
+   $payload = $serializer->serialize(static fn (int $value): int => $value * 2);
+   $closure = $serializer->unserialize($payload);
 
-           return [
-               'mode' => $meta['mode'],
-               'content' => stream_get_contents($res),
-           ];
-       },
-       function (array $data) {
-           $s = fopen('php://memory', $data['mode']);
-           fwrite($s, $data['content']);
-           rewind($s);
-
-           return $s;
-       },
-   );
-
-Notes
------
-
-* Registering the same resource type twice throws ``InvalidArgumentException``.
-* Wrapping/serializing unregistered resources throws ``InvalidArgumentException``.
-* Closure detection has an internal bounded memo cache.
+Unsigned and signed Closure payloads are separate formats. Signature failures,
+malformed payloads, and payloads that do not contain a Closure throw
+``InvalidArgumentException``.

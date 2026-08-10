@@ -9,9 +9,8 @@ declare(strict_types=1);
  */
 
 use Infocyph\CacheLayer\Cache\Cache;
-use Infocyph\CacheLayer\Cache\Item\GenericCacheItem;
+use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
-use Infocyph\CacheLayer\Serializer\ValueSerializer;
 
 /* ── Skip entire suite if SQLite missing ─────────────────────────── */
 if (! in_array('sqlite', PDO::getAvailableDrivers(), true)) {
@@ -24,33 +23,6 @@ if (! in_array('sqlite', PDO::getAvailableDrivers(), true)) {
 beforeEach(function () {
     $this->dbFile = sys_get_temp_dir().'/pest_sqlite_'.uniqid().'.sqlite';
     $this->cache = Cache::sqlite('tests', $this->dbFile);
-    ValueSerializer::clearResourceHandlers();
-
-    /* stream handler for resource test */
-    ValueSerializer::registerResourceHandler(
-        'stream',
-        // ----- wrap ----------------------------------------------------
-        function (mixed $res): array {
-            if (! is_resource($res)) {
-                throw new InvalidArgumentException('Expected resource');
-            }
-            $meta = stream_get_meta_data($res);
-            rewind($res);
-
-            return [
-                'mode' => $meta['mode'],
-                'content' => stream_get_contents($res),
-            ];
-        },
-        // ----- restore -------------------------------------------------
-        function (array $data): mixed {
-            $s = fopen('php://memory', $data['mode']);
-            fwrite($s, $data['content']);
-            rewind($s);
-
-            return $s;                                 // <- real resource
-        }
-    );
 });
 
 afterEach(function () {
@@ -73,17 +45,9 @@ test('sqlite set()/get()', function () {
 test('get returns default when key missing (sqlite)', function () {
     expect($this->cache->get('none', 'dflt'))->toBe('dflt');
 
-    $val = $this->cache->get('compute', function (GenericCacheItem $item) {
-        $item->expiresAfter(1);
-
-        return 'val';
-    });
-    expect($val)
-        ->toBe('val')
-        ->and($this->cache->get('compute'))->toBe('val');
-
-    usleep(2_000_000);
-    expect($this->cache->get('compute', 'again'))->toBe('again');
+    $default = static fn(): string => 'val';
+    expect($this->cache->get('compute', $default))->toBe($default)
+        ->and($this->cache->has('compute'))->toBeFalse();
 });
 
 test('get throws for invalid key (sqlite)', function () {
@@ -94,7 +58,7 @@ test('get throws for invalid key (sqlite)', function () {
 /* ── 2. PSR-6 behaviour ─────────────────────────────────────────── */
 test('getItem()/save() (sqlite)', function () {
     $item = $this->cache->getItem('psr');
-    expect($item)->toBeInstanceOf(GenericCacheItem::class)
+    expect($item)->toBeInstanceOf(CacheItem::class)
         ->and($item->isHit())->toBeFalse();
 
     $item->set(42)->save();
@@ -110,13 +74,11 @@ test('saveDeferred() & commit() (sqlite)', function () {
     expect($this->cache->get('a'))->toBe('A');
 });
 
-/* ── 4. ArrayAccess & magic props ───────────────────────────────── */
-test('ArrayAccess & magic (sqlite)', function () {
+/* ── 4. ArrayAccess ─────────────────────────────────────────────── */
+test('ArrayAccess (sqlite)', function () {
     $this->cache['x'] = 5;
-    expect($this->cache['x'])->toBe(5);
-
-    $this->cache->alpha = 'ω';
-    expect($this->cache->alpha)->toBe('ω');
+    expect($this->cache['x'])->toBe(5)
+        ->and(method_exists($this->cache, '__get'))->toBeFalse();
 });
 
 /* ── 6. TTL expiration ─────────────────────────────────────────── */
@@ -131,16 +93,6 @@ test('closure survives sqlite', function () {
     $fn = fn ($n) => $n + 3;
     $this->cache->getItem('cb')->set($fn)->save();
     expect(($this->cache->getItem('cb')->get())(4))->toBe(7);
-});
-
-/* ── 8. stream resource round-trip ─────────────────────────────── */
-test('stream resource round-trip (sqlite)', function () {
-    $s = fopen('php://memory', 'r+');
-    fwrite($s, 'hello');
-    rewind($s);
-    $this->cache->getItem('stream')->set($s)->save();
-    $rest = $this->cache->getItem('stream')->get();
-    expect(stream_get_contents($rest))->toBe('hello');
 });
 
 /* ── 9. invalid key guard ───────────────────────────────────────── */

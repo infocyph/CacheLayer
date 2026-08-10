@@ -11,12 +11,14 @@ Factory:
 Requirements:
 
 * RedisCluster support via ``ext-redis``, or
-* injected client exposing expected methods (``get``, ``set``, ``setex``, ``del``, ``exists``, ``sAdd``, ``sRem``, ``sCard``, ``sMembers``)
+* injected client exposing ``get``, ``set``, ``setex``, ``del``, ``exists``,
+  ``incr``, ``mget``, and ``mset``
 
 Highlights:
 
-* cluster-aware storage
-* tracks namespace key membership through an index set (``<ns>:__keys``) for clear/count operations
+* 128 fixed hash-tag buckets for cross-slot-safe grouped operations
+* namespace clear advances each bucket epoch
+* no permanent key index, stale membership, or cluster-wide scan
 
 Useful when using Redis Cluster topology.
 
@@ -32,4 +34,4 @@ Example
        ['10.0.0.11:6379', '10.0.0.12:6379', '10.0.0.13:6379'],
    );
 
-   $cache->set('cart:token:abc', ['items' => 3], 1200);
+   $cache->set('cart.token.abc', ['items' => 3], 1200);
