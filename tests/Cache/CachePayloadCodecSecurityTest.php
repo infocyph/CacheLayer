@@ -3,50 +3,83 @@
 declare(strict_types=1);
 
 use Infocyph\CacheLayer\Cache\Adapter\CachePayloadCodec;
+use Infocyph\CacheLayer\Cache\Cache;
+use Infocyph\CacheLayer\Cache\CacheOptions;
 
-beforeEach(function () {
-    CachePayloadCodec::configureSecurity(null, 8_388_608);
-});
+test('payload codec signs and verifies CacheLayer v2 records', function () {
+    $codec = new CachePayloadCodec(new CacheOptions(integrityKey: 'secret-key-123'));
 
-afterEach(function () {
-    CachePayloadCodec::configureSecurity(null, 8_388_608);
-});
+    $blob = $codec->encode(['k' => 'v'], null, ['group' => 2]);
+    expect(str_starts_with($blob, 'cl2-sig:'))->toBeTrue();
 
-test('payload codec signs and verifies payload integrity when key is configured', function () {
-    CachePayloadCodec::configureSecurity('secret-key-123', 8_388_608);
-
-    $blob = CachePayloadCodec::encode(['k' => 'v'], null);
-    expect(str_starts_with($blob, 'imx-sig-v1:'))->toBeTrue();
-
-    $decoded = CachePayloadCodec::decode($blob);
-    expect($decoded)->toBeArray()
-        ->and($decoded['value'])->toBe(['k' => 'v']);
+    $record = $codec->decode($blob);
+    expect($record?->value)->toBe(['k' => 'v'])
+        ->and($record?->tags)->toBe(['group' => 2]);
 });
 
 test('payload codec rejects tampered signed payload', function () {
-    CachePayloadCodec::configureSecurity('secret-key-123', 8_388_608);
+    $codec = new CachePayloadCodec(new CacheOptions(integrityKey: 'secret-key-123'));
+    $blob = $codec->encode('value', null);
 
-    $blob = CachePayloadCodec::encode('value', null);
-    $tampered = $blob.'x';
-
-    expect(CachePayloadCodec::decode($tampered))->toBeNull();
+    expect($codec->decode($blob . 'x'))->toBeNull();
 });
 
-test('payload codec rejects unsigned payload when integrity key is configured', function () {
-    $unsigned = CachePayloadCodec::encode('legacy', null);
+test('payload codec policies are isolated between instances', function () {
+    $unsigned = new CachePayloadCodec();
+    $signed = new CachePayloadCodec(new CacheOptions(integrityKey: 'secret-key-123'));
+    $blob = $unsigned->encode('value', null);
 
-    CachePayloadCodec::configureSecurity('secret-key-123', 8_388_608);
-    expect(CachePayloadCodec::decode($unsigned))->toBeNull();
+    expect($unsigned->decode($blob)?->value)->toBe('value')
+        ->and($signed->decode($blob))->toBeNull()
+        ->and($unsigned->decode($blob)?->value)->toBe('value');
+});
+
+test('long-running cache instances do not leak serialization policy', function () {
+    $strict = Cache::memory('strict-worker', new CacheOptions(allowObjects: false));
+    $permissive = Cache::memory('permissive-worker', new CacheOptions(allowObjects: true));
+
+    expect($strict->set('object', new stdClass()))->toBeFalse()
+        ->and($permissive->set('object', new stdClass()))->toBeTrue()
+        ->and($permissive->get('object'))->toBeInstanceOf(stdClass::class)
+        ->and($strict->set('scalar', 'still-valid'))->toBeTrue()
+        ->and($strict->get('scalar'))->toBe('still-valid');
+});
+
+test('payload codec delegates only top-level closures to special serialization', function () {
+    $codec = new CachePayloadCodec();
+    $blob = $codec->encode(static fn(int $value): int => $value + 1, null);
+    $closure = $codec->decode($blob)?->value;
+    $resource = fopen('php://memory', 'r+');
+
+    expect($closure)->toBeInstanceOf(Closure::class)
+        ->and($closure(4))->toBe(5)
+        ->and(fn() => $codec->encode(['nested' => static fn(): int => 1], null))
+        ->toThrow(InvalidArgumentException::class)
+        ->and(fn() => $codec->encode($resource, null))
+        ->toThrow(InvalidArgumentException::class);
+
+    fclose($resource);
+});
+
+test('payload codec can disable closure serialization per cache instance', function () {
+    $codec = new CachePayloadCodec(new CacheOptions(allowClosures: false));
+
+    expect(fn() => $codec->encode(static fn(): int => 1, null))
+        ->toThrow(InvalidArgumentException::class);
 });
 
 test('payload codec bounds decompressed payload size', function () {
-    CachePayloadCodec::configureCompression(1, 9);
-    CachePayloadCodec::configureSecurity(null, null);
-    $compressed = CachePayloadCodec::encode(str_repeat('A', 8_192), null);
+    $writer = new CachePayloadCodec(new CacheOptions(compressionThreshold: 1, compressionLevel: 9));
+    $compressed = $writer->encode(str_repeat('A', 8_192), null);
+    $reader = new CachePayloadCodec(new CacheOptions(maxPayloadBytes: 512, compressionThreshold: 1));
 
-    CachePayloadCodec::configureSecurity(null, 512);
+    expect(str_starts_with($compressed, 'cl2-gz:'))->toBeTrue()
+        ->and($reader->decode($compressed))->toBeNull();
+});
 
-    expect(CachePayloadCodec::decode($compressed))->toBeNull();
+test('payload codec does not decode legacy payload markers', function () {
+    $codec = new CachePayloadCodec();
 
-    CachePayloadCodec::configureCompression(null);
+    expect($codec->decode('imx-gz:payload'))->toBeNull()
+        ->and($codec->decode('imx-sig-v1:payload'))->toBeNull();
 });

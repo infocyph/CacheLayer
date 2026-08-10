@@ -42,4 +42,4 @@ Example
        uri: 'mongodb://127.0.0.1:27017',
    );
 
-   $cache->set('dashboard:kpi', ['orders' => 120, 'refunds' => 4], 120);
+   $cache->set('dashboard.kpi', ['orders' => 120, 'refunds' => 4], 120);

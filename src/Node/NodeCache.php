@@ -6,6 +6,7 @@ namespace Infocyph\CacheLayer\Node;
 
 use Infocyph\CacheLayer\Cache\Adapter\ApcuCacheAdapter;
 use Infocyph\CacheLayer\Cache\Cache;
+use Infocyph\CacheLayer\Cache\CacheOptions;
 use Infocyph\CacheLayer\Cache\Lock\FileLockProvider;
 use Infocyph\CacheLayer\Cache\Metrics\InMemoryCacheMetricsCollector;
 use Infocyph\CacheLayer\Node\Adapter\NodeCacheAdapter;
@@ -31,6 +32,7 @@ final class NodeCache
             $adapter,
             $config->lockProvider ?? new FileLockProvider($config->lockDirectory),
             $metrics,
+            new CacheOptions(failOpen: $config->failOpen),
         );
     }
 

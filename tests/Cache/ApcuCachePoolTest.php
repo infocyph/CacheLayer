@@ -11,9 +11,8 @@ declare(strict_types=1);
  */
 
 use Infocyph\CacheLayer\Cache\Cache;
-use Infocyph\CacheLayer\Cache\Item\ApcuCacheItem;
+use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
-use Infocyph\CacheLayer\Serializer\ValueSerializer;
 
 /* ── skip entirely if APCu unavailable ─────────────────────────────── */
 if (! extension_loaded('apcu')) {
@@ -32,33 +31,6 @@ if (! apcu_enabled()) {
 beforeEach(function () {
     apcu_clear_cache();                           // fresh memory
     $this->cache = Cache::apcu('tests');          // APCu-backed pool
-    ValueSerializer::clearResourceHandlers();
-
-    /* register stream handler for resource tests */
-    ValueSerializer::registerResourceHandler(
-        'stream',
-        // ----- wrap ----------------------------------------------------
-        function (mixed $res): array {
-            if (! is_resource($res)) {
-                throw new InvalidArgumentException('Expected resource');
-            }
-            $meta = stream_get_meta_data($res);
-            rewind($res);
-
-            return [
-                'mode' => $meta['mode'],
-                'content' => stream_get_contents($res),
-            ];
-        },
-        // ----- restore -------------------------------------------------
-        function (array $data): mixed {
-            $s = fopen('php://memory', $data['mode']);
-            fwrite($s, $data['content']);
-            rewind($s);
-
-            return $s;                                 // <- real resource
-        }
-    );
 });
 
 afterEach(function () {
@@ -77,20 +49,9 @@ test('get returns default when key missing (apcu)', function () {
     // Scalar default
     expect($this->cache->get('missing', 'default'))->toBe('default');
 
-    // Callable default without prior set
-    $computed = $this->cache->get('dyn', function (ApcuCacheItem $item) {
-        $item->expiresAfter(1);
-
-        return 'computed';
-    });
-    expect($computed)->toBe('computed');
-
-    // Now that it’s been set, get() returns the cached value
-    expect($this->cache->get('dyn'))->toBe('computed');
-
-    // After expiry, returns the new default again
-    usleep(2_000_000);
-    expect($this->cache->get('dyn', 'fallback'))->toBe('fallback');
+    $default = static fn(): string => 'computed';
+    expect($this->cache->get('dyn', $default))->toBe($default)
+        ->and($this->cache->has('dyn'))->toBeFalse();
 });
 
 test('get throws for invalid key (apcu)', function () {
@@ -101,7 +62,7 @@ test('get throws for invalid key (apcu)', function () {
 /* ─── PSR-6 behaviour ─────────────────────────────────────────────── */
 test('PSR-6 getItem()/save() (apcu)', function () {
     $item = $this->cache->getItem('psr');
-    expect($item)->toBeInstanceOf(ApcuCacheItem::class)
+    expect($item)->toBeInstanceOf(CacheItem::class)
         ->and($item->isHit())->toBeFalse();
 
     $item->set(99)->expiresAfter(null)->save();
@@ -117,13 +78,11 @@ test('saveDeferred() and commit() (apcu)', function () {
     expect($this->cache->get('x'))->toBe('X');
 });
 
-/* ─── ArrayAccess / magic props ───────────────────────────────────── */
-test('ArrayAccess & magic props (apcu)', function () {
+/* ─── ArrayAccess ─────────────────────────────────────────────────── */
+test('ArrayAccess (apcu)', function () {
     $this->cache['k'] = 11;
-    expect($this->cache['k'])->toBe(11);
-
-    $this->cache->alpha = 'β';
-    expect($this->cache->alpha)->toBe('β');
+    expect($this->cache['k'])->toBe(11)
+        ->and(method_exists($this->cache, '__get'))->toBeFalse();
 });
 
 /* ─── TTL / expiration ───────────────────────────────────────────── */
@@ -139,17 +98,6 @@ test('closure value survives APCu', function () {
     $this->cache->getItem('cb')->set($fn)->save();
     $g = $this->cache->getItem('cb')->get();
     expect($g(10))->toBe(15);
-});
-
-/* ─── stream resource round-trip ──────────────────────────────────── */
-test('stream resource round-trip (apcu)', function () {
-    $s = fopen('php://memory', 'r+');
-    fwrite($s, 'stream');
-    rewind($s);
-
-    $this->cache->getItem('stream')->set($s)->save();
-    $restored = $this->cache->getItem('stream')->get();
-    expect(stream_get_contents($restored))->toBe('stream');
 });
 
 /* ─── invalid key triggers exception ─────────────────────────────── */

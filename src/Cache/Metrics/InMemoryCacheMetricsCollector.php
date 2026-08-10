@@ -16,8 +16,8 @@ final class InMemoryCacheMetricsCollector implements CacheMetricsCollectorInterf
         return $this->counters;
     }
 
-    public function increment(string $adapterClass, string $metric): void
+    public function increment(string $adapterClass, string $metric, int $amount = 1): void
     {
-        $this->counters[$adapterClass][$metric] = ($this->counters[$adapterClass][$metric] ?? 0) + 1;
+        $this->counters[$adapterClass][$metric] = ($this->counters[$adapterClass][$metric] ?? 0) + $amount;
     }
 }

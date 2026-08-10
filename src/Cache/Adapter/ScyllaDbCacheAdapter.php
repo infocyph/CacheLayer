@@ -6,7 +6,7 @@ namespace Infocyph\CacheLayer\Cache\Adapter;
 
 use Cassandra\ExecutionOptions;
 use Cassandra\SimpleStatement;
-use Infocyph\CacheLayer\Cache\Item\GenericCacheItem;
+use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Psr\Cache\CacheItemInterface;
 use RuntimeException;
 use Throwable;
@@ -14,6 +14,10 @@ use Traversable;
 
 final class ScyllaDbCacheAdapter extends AbstractCacheAdapter
 {
+    private const int WRITE_BATCH_SIZE = 50;
+
+    private readonly string $metadataTable;
+
     private readonly string $ns;
 
     private readonly string $qualifiedTable;
@@ -26,6 +30,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter
         string $keyspace = 'cachelayer',
         string $table = 'cachelayer_entries',
         string $namespace = 'default',
+        private readonly int $bucketCount = 128,
     ) {
         if (!$this->supportsSessionMethod('execute')) {
             throw new RuntimeException('ScyllaDbCacheAdapter requires session method `execute()`.');
@@ -35,16 +40,26 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter
         $resolvedTable = self::validateIdentifier($table, 'table');
         $resolvedKeyspace = self::validateIdentifier($keyspace, 'keyspace');
         $this->qualifiedTable = $resolvedKeyspace . '.' . $resolvedTable;
+        $this->metadataTable = $this->qualifiedTable . '_metadata';
+        if ($bucketCount < 1 || $bucketCount > 1024) {
+            throw new RuntimeException('ScyllaDB bucket count must be between 1 and 1024.');
+        }
 
         $this->createSchemaIfMissing();
     }
 
     public function clear(): bool
     {
-        $this->executeCql(
-            "DELETE FROM {$this->qualifiedTable} WHERE ns = ?",
-            [$this->ns],
-        );
+        for ($bucket = 0; $bucket < $this->bucketCount; $bucket++) {
+            $this->executeCql(
+                "DELETE FROM {$this->qualifiedTable} WHERE ns = ? AND bucket = ?",
+                [$this->ns, $bucket],
+            );
+            $this->executeCql(
+                "DELETE FROM {$this->metadataTable} WHERE ns = ? AND bucket = ?",
+                [$this->ns, $bucket],
+            );
+        }
         $this->deferred = [];
 
         return true;
@@ -52,17 +67,18 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter
 
     public function count(): int
     {
-        $rows = $this->queryRows(
-            "SELECT expires FROM {$this->qualifiedTable} WHERE ns = ?",
-            [$this->ns],
-        );
         $now = time();
         $count = 0;
-
-        foreach ($rows as $row) {
-            $expiresAt = $this->normalizeExpiry($row['expires'] ?? null);
-            if ($expiresAt === null || $expiresAt > $now) {
-                $count++;
+        for ($bucket = 0; $bucket < $this->bucketCount; $bucket++) {
+            $rows = $this->queryRows(
+                "SELECT expires FROM {$this->qualifiedTable} WHERE ns = ? AND bucket = ?",
+                [$this->ns, $bucket],
+            );
+            foreach ($rows as $row) {
+                $expiresAt = $this->normalizeExpiry($row['expires'] ?? null);
+                if ($expiresAt === null || $expiresAt > $now) {
+                    $count++;
+                }
             }
         }
 
@@ -72,8 +88,8 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter
     public function deleteItem(string $key): bool
     {
         $this->executeCql(
-            "DELETE FROM {$this->qualifiedTable} WHERE ns = ? AND ckey = ?",
-            [$this->ns, $key],
+            "DELETE FROM {$this->qualifiedTable} WHERE ns = ? AND bucket = ? AND ckey = ?",
+            [$this->ns, $this->bucket($key), $this->mapData($key)],
         );
 
         return true;
@@ -85,18 +101,22 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter
      */
     public function deleteItems(array $keys): bool
     {
-        foreach ($keys as $key) {
-            $this->deleteItem((string) $key);
+        foreach ($this->groupByBucket($keys) as $bucket => $group) {
+            $marks = implode(',', array_fill(0, count($group), '?'));
+            $this->executeCql(
+                "DELETE FROM {$this->qualifiedTable} WHERE ns = ? AND bucket = ? AND ckey IN ({$marks})",
+                [$this->ns, $bucket, ...array_map($this->mapData(...), $group)],
+            );
         }
 
         return true;
     }
 
-    public function getItem(string $key): GenericCacheItem
+    public function getItem(string $key): CacheItem
     {
         $row = $this->firstRow(
-            "SELECT payload, expires FROM {$this->qualifiedTable} WHERE ns = ? AND ckey = ? LIMIT 1",
-            [$this->ns, $key],
+            "SELECT payload, expires FROM {$this->qualifiedTable} WHERE ns = ? AND bucket = ? AND ckey = ? LIMIT 1",
+            [$this->ns, $this->bucket($key), $this->mapData($key)],
         );
 
         if ($row === null) {
@@ -113,30 +133,94 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter
         return $this->genericFromBase64($key, $payload);
     }
 
+    /**
+     * @param list<string> $tags
+     * @return array<string, int>
+     */
+    #[\Override]
+    public function getTagVersions(array $tags): array
+    {
+        $versions = array_fill_keys($tags, 0);
+        foreach ($this->groupByBucket($tags) as $bucket => $group) {
+            $marks = implode(',', array_fill(0, count($group), '?'));
+            $rows = $this->queryRows(
+                "SELECT tag, version FROM {$this->metadataTable} "
+                . "WHERE ns = ? AND bucket = ? AND tag IN ({$marks})",
+                [$this->ns, $bucket, ...$group],
+            );
+            foreach ($rows as $row) {
+                $tag = $this->normalizeString($row['tag'] ?? null);
+                $version = $row['version'] ?? null;
+                if ($tag !== null && is_numeric($version)) {
+                    $versions[$tag] = max(0, (int) $version);
+                }
+            }
+        }
+
+        return $versions;
+    }
+
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
     }
 
+    /** @param list<string> $tags */
+    #[\Override]
+    public function incrementTagVersions(array $tags): bool
+    {
+        foreach ($tags as $tag) {
+            $this->executeCql(
+                "UPDATE {$this->metadataTable} SET version = version + 1 WHERE ns = ? AND bucket = ? AND tag = ?",
+                [$this->ns, $this->bucket($tag), $tag],
+            );
+        }
+
+        return true;
+    }
+
     /**
      * @param array $keys The keys argument.
      * @phpstan-param list<string> $keys
-     * @phpstan-return array<string, GenericCacheItem>
+     * @phpstan-return array<string, CacheItem>
      */
     public function multiFetch(array $keys): array
     {
-        return $this->multiFetchItems($keys, $this->getItem(...));
+        $items = [];
+        foreach ($this->groupByBucket($keys) as $bucket => $group) {
+            $marks = implode(',', array_fill(0, count($group), '?'));
+            $rows = $this->queryRows(
+                "SELECT ckey, payload, expires FROM {$this->qualifiedTable} "
+                . "WHERE ns = ? AND bucket = ? AND ckey IN ({$marks})",
+                [$this->ns, $bucket, ...array_map($this->mapData(...), $group)],
+            );
+            $byKey = [];
+            foreach ($rows as $row) {
+                $physical = $this->normalizeString($row['ckey'] ?? null);
+                if ($physical !== null) {
+                    $byKey[$physical] = $row;
+                }
+            }
+            foreach ($group as $key) {
+                $row = $byKey[$this->mapData($key)] ?? null;
+                $payload = is_array($row) ? $this->normalizeString($row['payload'] ?? null) : null;
+                $items[$key] = $this->genericFromBase64($key, $payload);
+            }
+        }
+
+        return $items;
     }
 
     public function save(CacheItemInterface $item): bool
     {
         return $this->saveEncoded($item, function (CacheItemInterface $saveItem, array $expires): bool {
             $this->executeCql(
-                "INSERT INTO {$this->qualifiedTable} (ns, ckey, payload, expires) VALUES (?, ?, ?, ?)",
+                "INSERT INTO {$this->qualifiedTable} (ns, bucket, ckey, payload, expires) VALUES (?, ?, ?, ?, ?)",
                 [
                     $this->ns,
-                    $saveItem->getKey(),
-                    base64_encode(CachePayloadCodec::encode($saveItem->get(), $expires['expiresAt'])),
+                    $this->bucket($saveItem->getKey()),
+                    $this->mapData($saveItem->getKey()),
+                    base64_encode($this->encodeItem($saveItem, $expires['expiresAt'])),
                     $expires['expiresAt'],
                 ],
             );
@@ -145,9 +229,33 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter
         });
     }
 
-    protected function supportsItem(CacheItemInterface $item): bool
+    /** @param array<string, CacheItemInterface> $items */
+    public function saveItems(array $items): bool
     {
-        return $item instanceof GenericCacheItem;
+        $active = [];
+        $expired = [];
+        foreach ($items as $item) {
+            if (!$this->supportsItem($item)) {
+                return false;
+            }
+            $expiration = CachePayloadCodec::expirationFromItem($item);
+            if ($expiration['ttl'] !== null && $expiration['ttl'] <= 0) {
+                $expired[] = $item->getKey();
+
+                continue;
+            }
+            $active[$this->bucket($item->getKey())][] = [$item, $expiration['expiresAt']];
+        }
+        if (!$this->deleteItems($expired)) {
+            return false;
+        }
+        foreach ($active as $bucket => $group) {
+            foreach (array_chunk($group, self::WRITE_BATCH_SIZE) as $chunk) {
+                $this->saveBucket($bucket, $chunk);
+            }
+        }
+
+        return true;
     }
 
     private static function validateIdentifier(string $value, string $label): string
@@ -157,6 +265,11 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter
         }
 
         return $value;
+    }
+
+    private function bucket(string $key): int
+    {
+        return hexdec(substr(hash('xxh3', $key), 0, 8)) % $this->bucketCount;
     }
 
     /**
@@ -181,10 +294,20 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter
         $this->executeCql(
             "CREATE TABLE IF NOT EXISTS {$this->qualifiedTable} (
                 ns text,
+                bucket int,
                 ckey text,
                 payload text,
                 expires bigint,
-                PRIMARY KEY (ns, ckey)
+                PRIMARY KEY ((ns, bucket), ckey)
+            )",
+        );
+        $this->executeCql(
+            "CREATE TABLE IF NOT EXISTS {$this->metadataTable} (
+                ns text,
+                bucket int,
+                tag text,
+                version counter,
+                PRIMARY KEY ((ns, bucket), tag)
             )",
         );
     }
@@ -233,6 +356,25 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter
         }
 
         return null;
+    }
+
+    /**
+     * @param list<string> $keys
+     * @return array<int, list<string>>
+     */
+    private function groupByBucket(array $keys): array
+    {
+        $groups = [];
+        foreach ($keys as $key) {
+            $groups[$this->bucket($key)][] = $key;
+        }
+
+        return $groups;
+    }
+
+    private function mapData(string $key): string
+    {
+        return 'd:' . $key;
     }
 
     private function normalizeExpiry(mixed $value): ?int
@@ -311,6 +453,26 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter
         }
 
         return [];
+    }
+
+    /** @param list<array{0:CacheItemInterface, 1:int|null}> $items */
+    private function saveBucket(int $bucket, array $items): void
+    {
+        $inserts = [];
+        $arguments = [];
+        foreach ($items as [$item, $expiresAt]) {
+            $inserts[] = "INSERT INTO {$this->qualifiedTable} "
+                . '(ns, bucket, ckey, payload, expires) VALUES (?, ?, ?, ?, ?);';
+            array_push(
+                $arguments,
+                $this->ns,
+                $bucket,
+                $this->mapData($item->getKey()),
+                base64_encode($this->encodeItem($item, $expiresAt)),
+                $expiresAt,
+            );
+        }
+        $this->executeCql('BEGIN UNLOGGED BATCH ' . implode(' ', $inserts) . ' APPLY BATCH', $arguments);
     }
 
     private function statementFor(string $cql): mixed

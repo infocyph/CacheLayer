@@ -40,4 +40,15 @@ final class MemoizeBench
 
         return $sum;
     }
+
+    #[Bench\BeforeMethods(['setUp'])]
+    public function benchOnceCallSiteLookup(): int
+    {
+        $sum = 0;
+        for ($index = 0; $index < 100; $index++) {
+            $sum += once(static fn(): int => 21);
+        }
+
+        return $sum;
+    }
 }

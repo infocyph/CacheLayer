@@ -5,18 +5,18 @@ declare(strict_types=1);
 namespace Infocyph\CacheLayer\Node\Adapter;
 
 use Infocyph\CacheLayer\Cache\Adapter\AbstractCacheAdapter;
-use Infocyph\CacheLayer\Cache\Adapter\CachePayloadCodec;
-use Infocyph\CacheLayer\Cache\Item\GenericCacheItem;
+use Infocyph\CacheLayer\Cache\Adapter\InternalCachePoolInterface;
+use Infocyph\CacheLayer\Cache\CacheOptions;
+use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Cache\Metrics\CacheMetricsCollectorInterface;
 use Infocyph\CacheLayer\Cache\Metrics\InMemoryCacheMetricsCollector;
 use Psr\Cache\CacheItemInterface;
-use Psr\Cache\CacheItemPoolInterface;
 use Throwable;
 
 final class NodeCacheAdapter extends AbstractCacheAdapter
 {
     public function __construct(
-        private readonly ?CacheItemPoolInterface $l1,
+        private readonly ?InternalCachePoolInterface $l1,
         private readonly NodeSqliteCacheAdapter $l2,
         private readonly bool $failOpen = true,
         private readonly CacheMetricsCollectorInterface $metrics = new InMemoryCacheMetricsCollector(),
@@ -24,105 +24,74 @@ final class NodeCacheAdapter extends AbstractCacheAdapter
 
     public function clear(): bool
     {
-        return $this->runAcrossLayers(static fn(CacheItemPoolInterface $pool): bool => $pool->clear());
+        $l2 = $this->attempt(fn(): bool => $this->l2->clear(), false, 'l2_failure');
+        $l1 = $this->l1 === null || $this->attempt(fn(): bool => $this->l1->clear(), false, 'l1_failure');
+        $this->deferred = [];
+
+        return $l2 && $l1;
     }
 
     #[\Override]
-    public function commit(): bool
+    public function configureOptions(CacheOptions $options): void
     {
-        $items = array_values($this->deferred);
-        if ($items === []) {
-            return true;
-        }
-
-        try {
-            $stored = $this->l2->saveMany($items);
-        } catch (Throwable $exception) {
-            if (!$this->failOpen) {
-                throw $exception;
-            }
-
-            if (!$this->saveAllToL1($items)) {
-                return false;
-            }
-
-            $this->deferred = [];
-
-            return true;
-        }
-
-        if (!$stored) {
-            return false;
-        }
-
-        $this->deferred = [];
-        if ($this->l1 === null) {
-            return true;
-        }
-
-        $this->saveAllToL1($items);
-
-        return true;
-    }
-
-    public function count(): int
-    {
-        try {
-            return count($this->l2);
-        } catch (Throwable $exception) {
-            if (!$this->failOpen) {
-                throw $exception;
-            }
-
-            $this->metric('sqlite_failure');
-
-            return 0;
+        parent::configureOptions($options);
+        $this->l2->configureOptions($options);
+        if ($this->l1 instanceof AbstractCacheAdapter) {
+            $this->l1->configureOptions($options);
         }
     }
 
     public function deleteItem(string $key): bool
     {
-        return $this->runAcrossLayers(static fn(CacheItemPoolInterface $pool): bool => $pool->deleteItem($key));
+        $l2 = $this->attempt(fn(): bool => $this->l2->deleteItem($key), false, 'l2_failure');
+        $l1 = $this->l1 === null
+            || $this->attempt(fn(): bool => $this->l1->deleteItem($key), false, 'l1_failure');
+
+        return $l2 && $l1;
+    }
+
+    /** @param list<string> $keys */
+    public function deleteItems(array $keys): bool
+    {
+        $l2 = $this->attempt(fn(): bool => $this->l2->deleteItems($keys), false, 'l2_failure');
+        $l1 = $this->l1 === null
+            || $this->attempt(fn(): bool => $this->l1->deleteItems($keys), false, 'l1_failure');
+
+        return $l2 && $l1;
+    }
+
+    public function getItem(string $key): CacheItem
+    {
+        if ($this->l1 !== null) {
+            $l1 = $this->attempt(fn(): CacheItemInterface => $this->l1->getItem($key), $this->genericMiss($key), 'l1_failure');
+            if ($l1->isHit()) {
+                return $this->nodeItem($l1);
+            }
+        }
+        $l2 = $this->attempt(fn(): CacheItemInterface => $this->l2->getItem($key), $this->genericMiss($key), 'l2_failure');
+        if (!$l2->isHit()) {
+            return $this->genericMiss($key);
+        }
+        $item = $this->nodeItem($l2);
+        if ($this->l1 !== null) {
+            $this->saveOneInto($this->l1, $item, 'l1_failure');
+        }
+
+        return $item;
     }
 
     /**
-     * @param array $keys The keys argument.
-     * @phpstan-param list<string> $keys
+     * @param list<string> $tags
+     * @return array<string, int>
      */
-    public function deleteItems(array $keys): bool
+    #[\Override]
+    public function getTagVersions(array $tags): array
     {
-        return $this->runAcrossLayers(static fn(CacheItemPoolInterface $pool): bool => $pool->deleteItems($keys));
-    }
-
-    public function getItem(string $key): GenericCacheItem
-    {
-        $l1Item = $this->itemFromL1($key);
-        if ($l1Item !== null) {
-            return $l1Item;
-        }
-
-        try {
-            $l2Item = $this->l2->getItem($key);
-        } catch (Throwable $exception) {
-            if (!$this->failOpen) {
-                throw $exception;
-            }
-
-            $this->metric('sqlite_failure');
-
-            return new GenericCacheItem($this, $key);
-        }
-
-        if (!$l2Item->isHit()) {
-            $this->metric('sqlite_miss');
-
-            return new GenericCacheItem($this, $key);
-        }
-
-        $this->metric('sqlite_hit');
-        $this->saveToL1($l2Item);
-
-        return $this->nodeItem($l2Item);
+        return $this->attempt(
+            fn(): array => $this->l2->getTagVersions($tags),
+            array_fill_keys($tags, 0),
+            'l2_failure',
+        );
     }
 
     public function hasItem(string $key): bool
@@ -130,14 +99,37 @@ final class NodeCacheAdapter extends AbstractCacheAdapter
         return $this->getItem($key)->isHit();
     }
 
+    /** @param list<string> $tags */
+    #[\Override]
+    public function incrementTagVersions(array $tags): bool
+    {
+        $l2 = $this->attempt(fn(): bool => $this->l2->incrementTagVersions($tags), false, 'l2_failure');
+        $l1 = $this->l1 === null
+            || $this->attempt(fn(): bool => $this->l1->incrementTagVersions($tags), false, 'l1_failure');
+
+        return $l2 && $l1;
+    }
+
     /**
-     * @param array $keys The keys argument.
-     * @phpstan-param list<string> $keys
-     * @phpstan-return array<string, GenericCacheItem>
+     * @param list<string> $keys
+     * @return array<string, CacheItem>
      */
     public function multiFetch(array $keys): array
     {
-        return $this->multiFetchItems($keys, $this->getItem(...));
+        [$results, $misses] = $this->readL1($keys);
+        $promote = $this->readL2($misses, $results);
+
+        if ($promote !== [] && $this->l1 !== null) {
+            $this->saveInto($this->l1, $promote, 'l1_failure');
+            $this->metric('l2_batch_promote', count($promote));
+        }
+
+        $ordered = [];
+        foreach ($keys as $key) {
+            $ordered[$key] = $results[$key] ?? $this->genericMiss($key);
+        }
+
+        return $ordered;
     }
 
     public function save(CacheItemInterface $item): bool
@@ -145,143 +137,178 @@ final class NodeCacheAdapter extends AbstractCacheAdapter
         if (!$this->supportsItem($item)) {
             return false;
         }
-
-        try {
-            $stored = $this->l2->save($item);
-        } catch (Throwable $exception) {
-            if (!$this->failOpen) {
-                throw $exception;
-            }
-
-            $this->metric('sqlite_failure');
-
-            return $this->saveToL1($item);
-        }
-
-        if (!$stored) {
-            $this->metric('write_failure');
-
+        $stored = $this->saveOneInto($this->l2, $item, 'l2_failure');
+        if (!$stored && !$this->failOpen) {
             return false;
         }
-
-        $this->metric('write_success');
-        $this->saveToL1($item);
-
-        return true;
-    }
-
-    protected function supportsItem(CacheItemInterface $item): bool
-    {
-        return $item instanceof GenericCacheItem;
-    }
-
-    private function itemFromL1(string $key): ?GenericCacheItem
-    {
         if ($this->l1 === null) {
-            return null;
+            return $stored;
         }
 
-        try {
-            $item = $this->l1->getItem($key);
-        } catch (Throwable $exception) {
-            if (!$this->failOpen) {
-                throw $exception;
-            }
-
-            $this->metric('apcu_failure');
-
-            return null;
-        }
-
-        if (!$item->isHit()) {
-            $this->metric('apcu_miss');
-
-            return null;
-        }
-
-        $this->metric('apcu_hit');
-
-        return $this->nodeItem($item);
+        return $this->saveOneInto($this->l1, $item, 'l1_failure') || $stored;
     }
 
-    private function metric(string $name): void
+    /** @param array<string, CacheItemInterface> $items */
+    public function saveItems(array $items): bool
     {
-        $this->metrics->increment(self::class, $name);
-    }
-
-    private function nodeItem(CacheItemInterface $item): GenericCacheItem
-    {
-        $nodeItem = new GenericCacheItem($this, $item->getKey(), $item->get(), true);
-        $expires = CachePayloadCodec::expirationFromItem($item);
-        if ($expires['ttl'] !== null) {
-            $nodeItem->expiresAfter($expires['ttl']);
-        }
-
-        return $nodeItem;
-    }
-
-    private function runAcrossLayers(callable $operation): bool
-    {
-        $success = false;
-        $failure = null;
-
-        foreach ([$this->l2, $this->l1] as $pool) {
-            if (!$pool instanceof CacheItemPoolInterface) {
-                continue;
-            }
-
-            try {
-                $success = $operation($pool) || $success;
-            } catch (Throwable $exception) {
-                $failure ??= $exception;
+        foreach ($items as $item) {
+            if (!$this->supportsItem($item)) {
+                return false;
             }
         }
 
-        if ($failure !== null && !$this->failOpen) {
-            throw $failure;
+        $stored = $this->saveInto($this->l2, $items, 'l2_failure');
+        if (!$stored && !$this->failOpen) {
+            return false;
+        }
+        if ($this->l1 !== null) {
+            $l1Stored = $this->saveInto($this->l1, $items, 'l1_failure');
+
+            return $stored || $l1Stored;
         }
 
-        return $success;
+        return $stored;
     }
 
     /**
-     * @param array $items The items argument.
-     * @phpstan-param list<CacheItemInterface> $items
+     * @template T
+     * @param callable(): T $operation
+     * @param T $fallback
+     * @return T
      */
-    private function saveAllToL1(array $items): bool
+    private function attempt(callable $operation, mixed $fallback, string $failureMetric): mixed
     {
-        $success = true;
-        foreach ($items as $item) {
-            $success = $this->saveToL1($item) && $success;
-        }
-
-        return $success;
-    }
-
-    private function saveToL1(CacheItemInterface $item): bool
-    {
-        if ($this->l1 === null) {
-            return true;
-        }
-
         try {
-            $target = $this->l1->getItem($item->getKey());
-            $target->set($item->get());
-            $expires = CachePayloadCodec::expirationFromItem($item);
-            $target->expiresAfter($expires['ttl']);
-            $stored = $this->l1->save($target);
-        } catch (Throwable $exception) {
+            return $operation();
+        } catch (Throwable $failure) {
+            $this->metric($failureMetric);
             if (!$this->failOpen) {
-                throw $exception;
+                throw $failure;
             }
 
-            $this->metric('apcu_failure');
+            return $fallback;
+        }
+    }
 
-            return false;
+    private function metric(string $name, int $amount = 1): void
+    {
+        if ($amount > 0) {
+            $this->metrics->increment(self::class, $name, $amount);
+        }
+    }
+
+    private function nodeItem(CacheItemInterface $item): CacheItem
+    {
+        $ttl = $item instanceof CacheItem ? $item->ttlSeconds() : null;
+        $tags = $item instanceof CacheItem ? $item->getTagVersions() : [];
+
+        return (new CacheItem($this, $item->getKey(), $item->get(), true))
+            ->expiresAfter($ttl)
+            ->setTagVersions($tags);
+    }
+
+    /**
+     * @param list<string> $keys
+     * @return array{array<string, CacheItem>, list<string>}
+     */
+    private function readL1(array $keys): array
+    {
+        if ($this->l1 === null || $keys === []) {
+            return [[], $keys];
         }
 
-        $this->metric($stored ? 'promotion_success' : 'promotion_failure');
+        $l1Items = $this->attempt(fn(): array => $this->readPool($this->l1, $keys), [], 'l1_failure');
+        $results = [];
+        $misses = [];
+        foreach ($keys as $key) {
+            $item = $l1Items[$key] ?? null;
+            if ($item instanceof CacheItemInterface && $item->isHit()) {
+                $results[$key] = $this->nodeItem($item);
+            } else {
+                $misses[] = $key;
+            }
+        }
+        $this->metric('l1_batch_hit', count($keys) - count($misses));
+        $this->metric('l1_batch_miss', count($misses));
 
-        return $stored;
+        return [$results, $misses];
+    }
+
+    /**
+     * @param list<string> $keys
+     * @param array<string, CacheItem> $results
+     * @return array<string, CacheItem>
+     */
+    private function readL2(array $keys, array &$results): array
+    {
+        if ($keys === []) {
+            return [];
+        }
+        $items = $this->attempt(fn(): array => $this->l2->multiFetch($keys), [], 'l2_failure');
+        $hits = [];
+        foreach ($keys as $key) {
+            $item = $items[$key] ?? null;
+            if ($item instanceof CacheItemInterface && $item->isHit()) {
+                $hits[$key] = $this->nodeItem($item);
+                $results[$key] = $hits[$key];
+            }
+        }
+        $this->metric('l2_batch_hit', count($hits));
+        $this->metric('l2_batch_miss', count($keys) - count($hits));
+
+        return $hits;
+    }
+
+    /**
+     * @param list<string> $keys
+     * @return array<string, CacheItemInterface>
+     */
+    private function readPool(InternalCachePoolInterface $pool, array $keys): array
+    {
+        $items = [];
+        foreach ($pool->getItems($keys) as $key => $item) {
+            if (is_string($key) && $item instanceof CacheItemInterface) {
+                $items[$key] = $item;
+            }
+        }
+
+        return $items;
+    }
+
+    /** @param array<string, CacheItemInterface> $items */
+    private function saveInto(
+        InternalCachePoolInterface $pool,
+        array $items,
+        string $failureMetric,
+    ): bool {
+        $targets = [];
+        foreach ($items as $key => $item) {
+            $target = $pool->createItem($key)->set($item->get());
+            if ($item instanceof CacheItem) {
+                $target->expiresAfter($item->ttlSeconds());
+                if ($target instanceof CacheItem) {
+                    $target->setTagVersions($item->getTagVersions());
+                }
+            }
+            $targets[$key] = $target;
+        }
+
+        return $this->attempt(fn(): bool => $pool->saveItems($targets), false, $failureMetric);
+    }
+
+    private function saveOneInto(
+        InternalCachePoolInterface $pool,
+        CacheItemInterface $item,
+        string $failureMetric,
+    ): bool {
+        $target = $pool->createItem($item->getKey())->set($item->get());
+        if ($item instanceof CacheItem) {
+            $target->expiresAfter($item->ttlSeconds());
+            if ($target instanceof CacheItem) {
+                $target->setTagVersions($item->getTagVersions());
+            }
+        }
+
+        return $this->attempt(fn(): bool => $pool->save($target), false, $failureMetric);
     }
 }

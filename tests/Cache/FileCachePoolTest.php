@@ -5,43 +5,15 @@ declare(strict_types=1);
 /**  tests/FileCachePoolTest.php  */
 
 use Infocyph\CacheLayer\Cache\Cache;
-use Infocyph\CacheLayer\Cache\Item\FileCacheItem;
+use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
-use Infocyph\CacheLayer\Serializer\ValueSerializer;
 
 beforeEach(function () {
-    ValueSerializer::clearResourceHandlers();
-
     /* fresh temp directory for each run */
     $this->cacheDir = sys_get_temp_dir().'/pest_cache_'.uniqid();
 
     /* build a file-backed cachepool via static factory */
     $this->cache = Cache::file('tests', $this->cacheDir);
-    /* register stream handler only for the test run */
-    ValueSerializer::registerResourceHandler(
-        'stream',
-        // ----- wrap ----------------------------------------------------
-        function (mixed $res): array {
-            if (! is_resource($res)) {
-                throw new InvalidArgumentException('Expected resource');
-            }
-            $meta = stream_get_meta_data($res);
-            rewind($res);
-
-            return [
-                'mode' => $meta['mode'],
-                'content' => stream_get_contents($res),
-            ];
-        },
-        // ----- restore -------------------------------------------------
-        function (array $data): mixed {
-            $s = fopen('php://memory', $data['mode']);
-            fwrite($s, $data['content']);
-            rewind($s);
-
-            return $s;                                 // <- real resource
-        }
-    );
 });
 
 afterEach(function () {
@@ -73,18 +45,9 @@ test('get returns default when key missing (file)', function () {
     // Scalar default
     expect($this->cache->get('missing', 'def'))->toBe('def');
 
-    // Callable default
-    $computed = $this->cache->get('x', function (FileCacheItem $item) {
-        $item->expiresAfter(1);
-
-        return 'xyz';
-    });
-    expect($computed)->toBe('xyz');
-    expect($this->cache->get('x'))->toBe('xyz');
-
-    // After TTL expires, fallback
-    usleep(2_000_000);
-    expect($this->cache->get('x', 'fallback'))->toBe('fallback');
+    $default = static fn(): string => 'xyz';
+    expect($this->cache->get('x', $default))->toBe($default)
+        ->and($this->cache->has('x'))->toBeFalse();
 });
 
 test('get throws for invalid key (file)', function () {
@@ -96,7 +59,7 @@ test('get throws for invalid key (file)', function () {
 test('PSR-6 getItem()/save()', function () {
     $item = $this->cache->getItem('psr');
 
-    expect($item)->toBeInstanceOf(FileCacheItem::class)
+    expect($item)->toBeInstanceOf(CacheItem::class)
         ->and($item->isHit())->toBeFalse();
 
     $item->set(123)->expiresAfter(null)->save();
@@ -130,40 +93,9 @@ test('ArrayAccess support', function () {
     expect(isset($this->cache['x']))->toBeFalse();
 });
 
-test('magic __get/__set/__isset/__unset', function () {
-    $this->cache->alpha = 'beta';
-
-    expect(isset($this->cache->alpha))->toBeTrue()
-        ->and($this->cache->alpha)->toBe('beta');
-
-    unset($this->cache->alpha);
-    expect(isset($this->cache->alpha))->toBeFalse();
-});
-test('runtime re-namespace and directory swap', function () {
-    $newDir = sys_get_temp_dir().'/pest_cache_new_'.uniqid();
-
-    $this->cache->setNamespaceAndDirectory('newns', $newDir);
-
-    expect($this->cache->set('foo', 'bar'))->toBeTrue()
-        ->and($this->cache->get('foo'))->toBe('bar');
-
-    $namespaceDir = $newDir.'/cache_newns';
-    expect(is_dir($namespaceDir))
-        ->toBeTrue()
-        ->and(glob($namespaceDir.'/*.cache'))->not->toBeEmpty();
-
-    /* manual clean-up of this secondary dir (afterEach cleans only first dir) */
-    foreach (glob($namespaceDir.'/*') as $f) {
-        if (is_file($f)) {
-            unlink($f);
-        }
-    }
-    if (is_dir($namespaceDir)) {
-        rmdir($namespaceDir);
-    }
-    if (is_dir($newDir)) {
-        rmdir($newDir);
-    }
+test('runtime storage configuration is immutable', function () {
+    expect(method_exists($this->cache, '__get'))->toBeFalse()
+        ->and(method_exists($this->cache, 'setNamespaceAndDirectory'))->toBeFalse();
 });
 
 test('expiration honours TTL', function () {
@@ -172,41 +104,11 @@ test('expiration honours TTL', function () {
     expect($this->cache->getItem('ttl')->isHit())->toBeFalse();
 });
 
-test('closure round-trips via ValueSerializer', function () {
+test('closure round-trips via ClosureSerializer', function () {
     $double = fn (int $n) => $n * 2;
     $this->cache->getItem('cb')->set($double)->save();
     $restored = $this->cache->getItem('cb')->get();
     expect($restored(7))->toBe(14);
-});
-
-test('stream resource round-trip', function () {
-
-    $s = fopen('php://memory', 'r+');
-    fwrite($s, 'hello');
-    rewind($s);
-    $this->cache->getItem('stream')->set($s)->save();
-    $r = $this->cache->getItem('stream')->get();
-    expect(stream_get_contents($r))->toBe('hello');
-});
-
-test('custom resource handler works', function () {
-    $dirPath = __DIR__;                // path we will open/restore
-    $dirRes = opendir($dirPath);
-    $resType = get_resource_type($dirRes);   // "stream"
-    ValueSerializer::clearResourceHandlers();
-
-    // register handler *capturing* $dirPath
-    ValueSerializer::registerResourceHandler(
-        $resType,
-        fn ($r) => ['path' => is_resource($r) ? $dirPath : $dirPath],          // wrap
-        fn (array $data) => opendir($data['path'])         // restore
-    );
-
-    $this->cache->getItem('dirRes')->set($dirRes)->save();
-
-    $restored = $this->cache->getItem('dirRes')->get();
-    expect(is_resource($restored))->toBeTrue()
-        ->and(get_resource_type($restored))->toBe($resType);
 });
 
 test('invalid cache key throws', function () {

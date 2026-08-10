@@ -17,7 +17,7 @@ Highlights:
 
 * unified SQL adapter for MySQL, MariaDB, PostgreSQL, and other PDO drivers
 * defaults to SQLite when no DSN/PDO is provided
-* namespace-prefixed row keys (``<ns>:<key>``)
+* physically separated data and metadata rows (``<ns>:d:<key>`` and ``<ns>:m:<name>``)
 * automatic table/index initialization
 * driver-aware upsert strategy:
   - PostgreSQL/SQLite: native ``ON CONFLICT``
@@ -28,6 +28,12 @@ Highlights:
 * PostgreSQL locking uses the two-key advisory-lock form
 * SQLite and other PDO drivers without advisory locks use an injected
   ``FileLockProvider`` fallback
+
+Schema creation can be separated from runtime access. Run
+``PdoCacheSchema::install($pdo, 'cachelayer_entries')`` during deployment,
+then construct ``PdoCacheAdapter`` with ``initializeSchema: false`` when the
+application connection does not have DDL privileges. The convenience factory
+keeps automatic initialization enabled.
 
 PDO advisory locks remain owned by their creating connection until explicit
 release or connection loss. ``refresh()`` verifies local token ownership and
@@ -66,7 +72,7 @@ Typical Usage
 
    $cache = Cache::pdo('orders');
 
-   $summary = $cache->remember('orders:summary:today', function ($item) {
+   $summary = $cache->remember('orders.summary.today', function ($item) {
        $item->expiresAfter(60);
        return loadOrderSummary();
    }, tags: ['orders']);

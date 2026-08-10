@@ -5,15 +5,15 @@ declare(strict_types=1);
 namespace Infocyph\CacheLayer\Cache\Tiering;
 
 use Infocyph\CacheLayer\Cache\Adapter;
+use Infocyph\CacheLayer\Cache\Adapter\InternalCachePoolInterface;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
-use Psr\Cache\CacheItemPoolInterface;
 
 final class TieredPoolFactory
 {
     /**
      * @param array $tiers The tiers argument.
      * @phpstan-param array<int, mixed> $tiers
-     * @phpstan-return array<int, CacheItemPoolInterface>
+     * @phpstan-return list<InternalCachePoolInterface>
      */
     public static function fromArray(array $tiers): array
     {
@@ -64,7 +64,7 @@ final class TieredPoolFactory
      * @param int|string $index The index argument.
      * @phpstan-param array<string, mixed> $descriptor
      */
-    private static function descriptorToPool(array $descriptor, int|string $index): CacheItemPoolInterface
+    private static function descriptorToPool(array $descriptor, int|string $index): InternalCachePoolInterface
     {
         $driverValue = $descriptor['driver'] ?? $descriptor['type'] ?? null;
         if (!is_string($driverValue) || $driverValue === '') {
@@ -84,7 +84,7 @@ final class TieredPoolFactory
             'array', 'memory' => new Adapter\ArrayCacheAdapter($namespace),
             'file' => new Adapter\FileCacheAdapter($namespace, self::nullableString($descriptor, 'dir', 'base_dir')),
             'php_files' => new Adapter\PhpFilesCacheAdapter($namespace, self::nullableString($descriptor, 'dir', 'base_dir')),
-            'memcache', 'memcached' => new Adapter\MemCacheAdapter(
+            'memcached' => new Adapter\MemcachedCacheAdapter(
                 $namespace,
                 self::servers($descriptor['servers'] ?? null),
                 self::memcachedClient($client, $index),
@@ -129,6 +129,7 @@ final class TieredPoolFactory
                 self::string($descriptor, 'keyspace', 'cachelayer'),
                 self::string($descriptor, 'table', 'cachelayer_entries'),
                 $namespace,
+                self::int($descriptor, 'bucket_count', 128),
             ),
             'shared_memory' => new Adapter\SharedMemoryCacheAdapter(
                 $namespace,
@@ -204,7 +205,7 @@ final class TieredPoolFactory
      * @param int|string $index The index argument.
      * @phpstan-param array<string, mixed> $descriptor
      */
-    private static function mongoPool(array $descriptor, string $namespace, mixed $client, int|string $index): CacheItemPoolInterface
+    private static function mongoPool(array $descriptor, string $namespace, mixed $client, int|string $index): InternalCachePoolInterface
     {
         $collection = $descriptor['collection'] ?? null;
         if (is_object($collection)) {
@@ -312,16 +313,16 @@ final class TieredPoolFactory
         return $client;
     }
 
-    private static function resolvePool(mixed $tier, int|string $index): CacheItemPoolInterface
+    private static function resolvePool(mixed $tier, int|string $index): InternalCachePoolInterface
     {
-        if ($tier instanceof CacheItemPoolInterface) {
+        if ($tier instanceof InternalCachePoolInterface) {
             return $tier;
         }
 
         if (!is_array($tier)) {
             throw new CacheInvalidArgumentException(
                 sprintf(
-                    "Invalid tier at index '%s': expected CacheItemPoolInterface or descriptor array, got %s.",
+                    "Invalid tier at index '%s': expected a CacheLayer adapter or descriptor array, got %s.",
                     (string) $index,
                     get_debug_type($tier),
                 ),
@@ -332,8 +333,7 @@ final class TieredPoolFactory
     }
 
     /**
-     * @phpstan-return array<int, string>
- * @param mixed $value The value argument.
+     * @return list<string>
      */
     private static function seeds(mixed $value): array
     {
@@ -364,8 +364,7 @@ final class TieredPoolFactory
     }
 
     /**
-     * @phpstan-return array<int, array{0:string,1:int,2:int}>
- * @param mixed $value The value argument.
+     * @return list<array{0:string, 1:int, 2:int}>
      */
     private static function servers(mixed $value): array
     {

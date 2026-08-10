@@ -1,18 +1,18 @@
-.. _adapters.chain:
+.. _adapters.tiered:
 
 =========================
-Chain Adapter (``chain``)
+Tiered Adapter (``tiered``)
 =========================
 
-Factory: ``Cache::chain(array $pools)``
+Factory: ``Cache::tiered(array $pools, bool $writeToL1 = true)``
 
 Composes multiple PSR-6 pools into a tiered cache.
 
 Behavior:
 
 * writes are propagated to all tiers
-* reads search from first tier to last tier
-* hit in lower tier is promoted upward
+* reads send only remaining misses to each later tier
+* lower-tier hits are promoted upward in a batch
 
 Typical layout:
 
@@ -26,7 +26,7 @@ Example:
    use Infocyph\CacheLayer\Cache\Adapter\ArrayCacheAdapter;
    use Infocyph\CacheLayer\Cache\Adapter\RedisCacheAdapter;
 
-   $cache = Cache::chain([
+   $cache = Cache::tiered([
        new ArrayCacheAdapter('l1'),
        new RedisCacheAdapter('l2'),
    ]);

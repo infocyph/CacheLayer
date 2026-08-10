@@ -12,9 +12,8 @@ declare(strict_types=1);
  */
 
 use Infocyph\CacheLayer\Cache\Cache;
-use Infocyph\CacheLayer\Cache\Item\RedisCacheItem;
+use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
-use Infocyph\CacheLayer\Serializer\ValueSerializer;
 
 /* ── skip whole file when Redis unavailable ───────────────────────── */
 if (! class_exists(Redis::class)) {
@@ -57,7 +56,6 @@ beforeEach(function () use ($redisHost, $redisPort, $redisPassword) {
         $client->auth($redisPassword);
     }
     $client->flushDB();                               // fresh DB 0
-    ValueSerializer::clearResourceHandlers();
 
     $this->cache = Cache::redis(
         'tests',
@@ -65,30 +63,6 @@ beforeEach(function () use ($redisHost, $redisPort, $redisPassword) {
         $client
     );
 
-    ValueSerializer::registerResourceHandler(
-        'stream',
-        // ----- wrap ----------------------------------------------------
-        function (mixed $res): array {
-            if (! is_resource($res)) {
-                throw new InvalidArgumentException('Expected resource');
-            }
-            $meta = stream_get_meta_data($res);
-            rewind($res);
-
-            return [
-                'mode' => $meta['mode'],
-                'content' => stream_get_contents($res),
-            ];
-        },
-        // ----- restore -------------------------------------------------
-        function (array $data): mixed {
-            $s = fopen('php://memory', $data['mode']);
-            fwrite($s, $data['content']);
-            rewind($s);
-
-            return $s;                                 // <- real resource
-        }
-    );
 });
 
 afterEach(function () {
@@ -106,16 +80,9 @@ test('Redis set()/get()', function () {
 test('get returns default when key missing (redis)', function () {
     expect($this->cache->get('nobody', 'dflt'))->toBe('dflt');
 
-    $val = $this->cache->get('dynamic', function (RedisCacheItem $item) {
-        $item->expiresAfter(1);
-
-        return 'xyz';
-    });
-    expect($val)->toBe('xyz');
-    expect($this->cache->get('dynamic'))->toBe('xyz');
-
-    usleep(2_000_000);
-    expect($this->cache->get('dynamic', 'again'))->toBe('again');
+    $default = static fn(): string => 'xyz';
+    expect($this->cache->get('dynamic', $default))->toBe($default)
+        ->and($this->cache->has('dynamic'))->toBeFalse();
 });
 
 test('get throws for invalid key (redis)', function () {
@@ -126,7 +93,7 @@ test('get throws for invalid key (redis)', function () {
 /* ── 2. PSR-6 behaviour ─────────────────────────────────────────── */
 test('getItem()/save() (redis)', function () {
     $it = $this->cache->getItem('psr');
-    expect($it)->toBeInstanceOf(RedisCacheItem::class)
+    expect($it)->toBeInstanceOf(CacheItem::class)
         ->and($it->isHit())->toBeFalse();
 
     $it->set(777)->save();
@@ -142,13 +109,11 @@ test('saveDeferred() & commit() (redis)', function () {
     expect($this->cache->get('a'))->toBe('A');
 });
 
-/* ── 4. ArrayAccess & magic props ───────────────────────────────── */
-test('ArrayAccess & magic (redis)', function () {
+/* ── 4. ArrayAccess ─────────────────────────────────────────────── */
+test('ArrayAccess (redis)', function () {
     $this->cache['k'] = 12;
-    expect($this->cache['k'])->toBe(12);
-
-    $this->cache->alpha = 'ζ';
-    expect($this->cache->alpha)->toBe('ζ');
+    expect($this->cache['k'])->toBe(12)
+        ->and(method_exists($this->cache, '__get'))->toBeFalse();
 });
 
 /* ── 6. TTL expiration ─────────────────────────────────────────── */
@@ -164,16 +129,6 @@ test('closure persists in redis', function () {
     $this->cache->getItem('cb')->set($double)->save();
     $fn = $this->cache->getItem('cb')->get();
     expect($fn(5))->toBe(10);
-});
-
-/* ── 8. stream resource round-trip ─────────────────────────────── */
-test('stream resource round-trip (redis)', function () {
-    $s = fopen('php://memory', 'r+');
-    fwrite($s, 'blob');
-    rewind($s);
-    $this->cache->getItem('stream')->set($s)->save();
-    $rest = $this->cache->getItem('stream')->get();
-    expect(stream_get_contents($rest))->toBe('blob');
 });
 
 /* ── 9. invalid key guard ───────────────────────────────────────── */

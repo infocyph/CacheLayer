@@ -9,8 +9,12 @@ use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 beforeEach(function () {
     $this->session = new class
     {
-        /** @var array<string, array<string, array{payload:string,expires:int|null}>> */
+        /** @var array<string, array{ckey:string,payload:string,expires:int|null}> */
         private array $rows = [];
+
+        public int $bucketReads = 0;
+
+        public int $writeBatches = 0;
 
         public function prepare(string $cql): string
         {
@@ -30,47 +34,77 @@ beforeEach(function () {
             }
 
             if (str_starts_with($cql, 'DELETE FROM') && str_contains($cql, 'AND ckey = ?')) {
+                unset($this->rows[$this->rowKey($args)]);
+
+                return [];
+            }
+
+            if (str_starts_with($cql, 'DELETE FROM') && str_contains($cql, 'ckey IN')) {
                 $ns = (string) ($args[0] ?? '');
-                $key = (string) ($args[1] ?? '');
-                unset($this->rows[$ns][$key]);
+                $bucket = (int) ($args[1] ?? 0);
+                foreach (array_slice($args, 2) as $key) {
+                    unset($this->rows[$ns . ':' . $bucket . ':' . $key]);
+                }
 
                 return [];
             }
 
             if (str_starts_with($cql, 'DELETE FROM')) {
-                $ns = (string) ($args[0] ?? '');
-                unset($this->rows[$ns]);
+                $prefix = (string) ($args[0] ?? '') . ':' . (int) ($args[1] ?? 0) . ':';
+                foreach (array_keys($this->rows) as $key) {
+                    if (str_starts_with($key, $prefix)) {
+                        unset($this->rows[$key]);
+                    }
+                }
 
                 return [];
             }
 
             if (str_starts_with($cql, 'SELECT expires')) {
                 $ns = (string) ($args[0] ?? '');
+                $bucket = (int) ($args[1] ?? 0);
+                $matching = [];
+                foreach ($this->rows as $key => $row) {
+                    if (str_starts_with($key, $ns . ':' . $bucket . ':')) {
+                        $matching[] = $row;
+                    }
+                }
 
                 return array_map(
                     static fn (array $row): array => ['expires' => $row['expires']],
-                    array_values($this->rows[$ns] ?? []),
+                    $matching,
                 );
             }
 
             if (str_starts_with($cql, 'SELECT payload, expires')) {
-                $ns = (string) ($args[0] ?? '');
-                $key = (string) ($args[1] ?? '');
-                $row = $this->rows[$ns][$key] ?? null;
+                $row = $this->rows[$this->rowKey($args)] ?? null;
 
                 return is_array($row) ? [$row] : [];
             }
 
-            if (str_starts_with($cql, 'INSERT INTO')) {
+            if (str_starts_with($cql, 'SELECT ckey, payload, expires')) {
+                $this->bucketReads++;
                 $ns = (string) ($args[0] ?? '');
-                $key = (string) ($args[1] ?? '');
-                $payload = (string) ($args[2] ?? '');
-                $expires = $args[3] ?? null;
+                $bucket = (int) ($args[1] ?? 0);
+                $keys = array_map('strval', array_slice($args, 2));
 
-                $this->rows[$ns][$key] = [
-                    'payload' => $payload,
-                    'expires' => is_numeric($expires) ? (int) $expires : null,
-                ];
+                return array_values(array_filter(
+                    $this->rows,
+                    static fn(array $row): bool => in_array($row['ckey'], $keys, true),
+                ));
+            }
+
+            if (str_starts_with($cql, 'BEGIN UNLOGGED BATCH')) {
+                $this->writeBatches++;
+                foreach (array_chunk($args, 5) as $row) {
+                    $this->store($row);
+                }
+
+                return [];
+            }
+
+            if (str_starts_with($cql, 'INSERT INTO')) {
+                $this->store($args);
 
                 return [];
             }
@@ -89,6 +123,23 @@ beforeEach(function () {
 
             return [];
         }
+
+        /** @param array<int, mixed> $row */
+        private function rowKey(array $row): string
+        {
+            return (string) ($row[0] ?? '') . ':' . (int) ($row[1] ?? 0) . ':' . (string) ($row[2] ?? '');
+        }
+
+        /** @param array<int, mixed> $row */
+        private function store(array $row): void
+        {
+            $key = $this->rowKey($row);
+            $this->rows[$key] = [
+                'ckey' => (string) ($row[2] ?? ''),
+                'payload' => (string) ($row[3] ?? ''),
+                'expires' => is_numeric($row[4] ?? null) ? (int) $row[4] : null,
+            ];
+        }
     };
 
     $this->cache = new Cache(new ScyllaDbCacheAdapter(
@@ -102,8 +153,7 @@ beforeEach(function () {
 test('scylladb adapter stores and retrieves values', function () {
     $this->cache->set('k', 'value');
 
-    expect($this->cache->get('k'))->toBe('value')
-        ->and($this->cache->count())->toBe(1);
+    expect($this->cache->get('k'))->toBe('value');
 });
 
 test('scylladb adapter clears namespace entries', function () {
@@ -112,11 +162,11 @@ test('scylladb adapter clears namespace entries', function () {
 
     $this->cache->clear();
 
-    expect($this->cache->count())->toBe(0);
+    expect($this->cache->getMultiple(['a', 'b']))->toBe(['a' => null, 'b' => null]);
 });
 
 test('scylladb cache factory accepts injected session', function () {
-    $cache = Cache::scyllaDb('scylla-tests', $this->session, 'cachelayer', 'cachelayer_entries');
+    $cache = Cache::scylla('scylla-tests', $this->session, 'cachelayer', 'cachelayer_entries');
     $cache->set('x', 'X');
 
     expect($cache->get('x'))->toBe('X');
@@ -127,8 +177,19 @@ test('scylladb cache factory requires extension when session is missing', functi
         $this->markTestSkipped('Cassandra extension loaded in this environment.');
     }
 
-    expect(fn () => Cache::scyllaDb('scylla-tests'))
+    expect(fn () => Cache::scylla('scylla-tests'))
         ->toThrow(CacheInvalidArgumentException::class);
+});
+
+test('scylladb groups bulk reads and writes by configured bucket', function () {
+    $cache = Cache::scylla('bucket-tests', $this->session, 'cachelayer', 'cachelayer_entries', 1);
+    $cache->setMultiple(['a' => 1, 'b' => 2, 'c' => 3]);
+    $reads = $this->session->bucketReads;
+
+    expect($cache->getMultiple(['c', 'missing', 'a']))
+        ->toBe(['c' => 3, 'missing' => null, 'a' => 1])
+        ->and($this->session->writeBatches)->toBeGreaterThanOrEqual(1)
+        ->and($this->session->bucketReads)->toBe($reads + 1);
 });
 
 /**

@@ -6,6 +6,7 @@ use Infocyph\CacheLayer\Cache\Adapter\ArrayCacheAdapter;
 use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Cache\Lock\LockHandle;
 use Infocyph\CacheLayer\Cache\Lock\LockProviderInterface;
+use Infocyph\CacheLayer\Cache\Metrics\InMemoryCacheMetricsCollector;
 use Infocyph\CacheLayer\Node\Adapter\NodeCacheAdapter;
 use Infocyph\CacheLayer\Node\Adapter\NodeSqliteCacheAdapter;
 use Infocyph\CacheLayer\Node\Connection\NodeSqliteConnection;
@@ -119,6 +120,26 @@ test('SQLite hits promote into an L1 cache without returning the child item', fu
     $item->set('changed');
     expect($cache->save($item))->toBeTrue()
         ->and($l2->getItem('promoted')->get())->toBe('changed');
+});
+
+test('node bulk reads fetch only L1 misses from SQLite and promote as one batch', function () {
+    $connection = NodeSqliteConnection::create($this->nodeConfig);
+    $l1 = new ArrayCacheAdapter($this->nodeConfig->namespace);
+    $l2 = new NodeSqliteCacheAdapter($connection, $this->nodeConfig->namespace);
+    $metrics = new InMemoryCacheMetricsCollector();
+    $cache = new Cache(new NodeCacheAdapter($l1, $l2, false, $metrics), metrics: $metrics);
+    $cache->setMultiple(['hot' => 1, 'cold.a' => 2, 'cold.b' => 3]);
+    $l1->deleteItems(['cold.a', 'cold.b']);
+    $before = $metrics->export()[NodeCacheAdapter::class] ?? [];
+
+    expect($cache->getMultiple(['hot', 'cold.a', 'missing', 'cold.b']))
+        ->toBe(['hot' => 1, 'cold.a' => 2, 'missing' => null, 'cold.b' => 3]);
+
+    $after = $metrics->export()[NodeCacheAdapter::class] ?? [];
+    expect(($after['l1_batch_hit'] ?? 0) - ($before['l1_batch_hit'] ?? 0))->toBe(1)
+        ->and(($after['l1_batch_miss'] ?? 0) - ($before['l1_batch_miss'] ?? 0))->toBe(3)
+        ->and(($after['l2_batch_hit'] ?? 0) - ($before['l2_batch_hit'] ?? 0))->toBe(2)
+        ->and(($after['l2_batch_promote'] ?? 0) - ($before['l2_batch_promote'] ?? 0))->toBe(2);
 });
 
 test('expired rows remain outside the read path until bounded pruning', function () {

@@ -27,29 +27,31 @@ Implemented Hardening
 * When an integrity key is configured, unsigned payloads are rejected.
 * Maximum payload size can be enforced at decode time.
 * Compressed payload expansion is capped before deserialization.
-* ``ValueSerializer`` supports strict mode:
+* Per-cache codec policy can:
 
-  * block closure payloads
-  * block object payloads
+  * block top-level Closure payloads
+  * block native object payloads
 
-* Native scalar/array serialization paths now decode with
-  ``allowed_classes => false``.
+* Native payload decoding uses ``allowed_classes => false`` when objects are
+  disabled.
+* ``ClosureSerializer`` accepts only ``Closure`` and
+  ``SignedClosureSerializer`` verifies HMAC-SHA256 before decoding.
 
-Runtime API:
+Per-instance construction API:
 
 .. code-block:: php
 
-   $cache
-       ->configurePayloadSecurity(
-           integrityKey: 'replace-with-strong-secret',
-           maxPayloadBytes: 8_388_608,
-       )
-       ->configureSerializationSecurity(
-           allowClosurePayloads: false,
-           allowObjectPayloads: false,
-       );
+   use Infocyph\CacheLayer\Cache\Cache;
+   use Infocyph\CacheLayer\Cache\CacheOptions;
 
-Environment Variables:
+   $cache = Cache::redis('app', options: new CacheOptions(
+       integrityKey: 'replace-with-strong-secret',
+       maxPayloadBytes: 8_388_608,
+       allowClosures: false,
+       allowObjects: false,
+   ));
+
+``CacheOptions::fromEnvironment()`` explicitly reads:
 
 * ``CACHELAYER_PAYLOAD_INTEGRITY_KEY``
 * ``CACHELAYER_MAX_PAYLOAD_BYTES``

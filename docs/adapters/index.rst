@@ -11,8 +11,8 @@ Choosing quickly:
 
 * Start with ``file`` or ``pdo`` for most applications.
 * Use ``memory``/``apcu`` for fastest local access.
-* Use ``redis``/``valkey``/``memcache`` for distributed deployments.
-* Use cloud adapters (``mongodb``, ``scyllaDb``) when cache must live outside app hosts.
+* Use ``redis``/``valkey``/``memcached`` for distributed deployments.
+* Use ``mongodb``/``scylla`` when cache must live outside application hosts.
 
 .. toctree::
    :maxdepth: 1
@@ -20,7 +20,7 @@ Choosing quickly:
    array-memory
    weak-map
    null-store
-   chain
+   tiered
    file
    php-files
    apcu

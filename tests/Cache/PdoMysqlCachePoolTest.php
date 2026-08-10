@@ -48,14 +48,11 @@ test('pdo adapter ttl expiry on mysql', function () {
     expect($this->cache->get('ttl'))->toBeNull();
 });
 
-test('pdo adapter delete and count on mysql', function () {
+test('pdo adapter bulk delete on mysql', function () {
     $this->cache->set('a', 'A');
     $this->cache->set('b', 'B');
 
-    expect($this->cache->count())->toBe(2);
-
-    $this->cache->delete('a');
-    expect($this->cache->count())->toBe(1)
-        ->and($this->cache->get('a'))->toBeNull()
+    $this->cache->deleteMultiple(['a']);
+    expect($this->cache->get('a'))->toBeNull()
         ->and($this->cache->get('b'))->toBe('B');
 });

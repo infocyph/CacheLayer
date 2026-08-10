@@ -11,7 +11,7 @@ No-op adapter that never persists values.
 Behavior:
 
 * ``set()`` returns true
-* ``get()`` always misses unless default/callable path is used
+* ``get()`` always misses and returns the supplied default unchanged
 * ``remember()`` recomputes every call
 
 Useful for disabling caching without changing calling code.

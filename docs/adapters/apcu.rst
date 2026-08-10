@@ -15,10 +15,8 @@ Requirements:
 Highlights:
 
 * in-memory shared cache in the PHP runtime environment
-* namespace-prefixed keys (``<ns>:<key>``)
+* physically separated data and metadata keys (``<ns>:d:<key>`` and ``<ns>:m:<name>``)
 * efficient bulk fetch through APCu array fetch path
-
-``Cache::local()`` will choose APCu automatically when available.
 
 Use When
 --------
@@ -34,8 +32,8 @@ Example
    use Infocyph\CacheLayer\Cache\Cache;
 
    $cache = Cache::apcu('app');
-   $cache->set('feature_flag:new_checkout', true, 60);
+   $cache->set('feature_flag.new_checkout', true, 60);
 
-   if ($cache->has('feature_flag:new_checkout')) {
+   if ($cache->has('feature_flag.new_checkout')) {
        // fast local hit
    }

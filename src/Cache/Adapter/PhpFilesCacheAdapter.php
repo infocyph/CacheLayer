@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Infocyph\CacheLayer\Cache\Adapter;
 
-use Infocyph\CacheLayer\Cache\Item\GenericCacheItem;
+use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Psr\Cache\CacheItemInterface;
 use RuntimeException;
 
@@ -14,7 +14,9 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
 
     private const string DEFAULT_BASE_DIR = 'cachelayer/phpfiles';
 
-    private string $dir;
+    private string $dataDirectory;
+
+    private string $metadataDirectory;
 
     public function __construct(string $namespace = 'default', ?string $baseDir = null)
     {
@@ -24,9 +26,12 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
     public function clear(): bool
     {
         $ok = true;
-        foreach (glob($this->dir . '*.php') ?: [] as $file) {
+        foreach (glob($this->dataDirectory . '*.php') ?: [] as $file) {
             $ok = (!is_file($file) || unlink($file)) && $ok;
             $this->invalidateOpcache($file);
+        }
+        foreach (glob($this->metadataDirectory . '*') ?: [] as $file) {
+            $ok = (!is_file($file) || unlink($file)) && $ok;
         }
 
         $this->deferred = [];
@@ -37,7 +42,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
     public function count(): int
     {
         $count = 0;
-        foreach (glob($this->dir . '*.php') ?: [] as $file) {
+        foreach (glob($this->dataDirectory . '*.php') ?: [] as $file) {
             $row = require $file;
             if (!is_array($row) || !isset($row['p']) || !is_string($row['p'])) {
                 continue;
@@ -48,8 +53,8 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
                 continue;
             }
 
-            $record = CachePayloadCodec::decode($blob);
-            if ($record !== null && !CachePayloadCodec::isExpired($record['expires'])) {
+            $record = $this->decodeRecordFromBlob($blob);
+            if ($record !== null) {
                 $count++;
             }
         }
@@ -80,7 +85,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
         return $ok;
     }
 
-    public function getItem(string $key): GenericCacheItem
+    public function getItem(string $key): CacheItem
     {
         $file = $this->fileFor($key);
         if (!is_file($file)) {
@@ -102,21 +107,80 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
         );
     }
 
+    /** @param list<string> $tags */
+    #[\Override]
+    public function getTagVersions(array $tags): array
+    {
+        $versions = [];
+        foreach ($tags as $tag) {
+            $path = $this->metadataFileFor($tag);
+            $value = is_file($path) ? file_get_contents($path) : false;
+            $versions[$tag] = is_string($value) && ctype_digit($value) ? (int) $value : 0;
+        }
+
+        return $versions;
+    }
+
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
     }
 
+    /** @param list<string> $tags */
+    #[\Override]
+    public function incrementTagVersions(array $tags): bool
+    {
+        foreach ($tags as $tag) {
+            $handle = fopen($this->metadataFileFor($tag), 'c+');
+            if (!is_resource($handle) || !flock($handle, LOCK_EX)) {
+                if (is_resource($handle)) {
+                    fclose($handle);
+                }
+
+                return false;
+            }
+            $raw = stream_get_contents($handle);
+            $version = is_string($raw) && ctype_digit($raw) ? (int) $raw : 0;
+            rewind($handle);
+            ftruncate($handle, 0);
+            $written = fwrite($handle, (string) ($version + 1));
+            fflush($handle);
+            flock($handle, LOCK_UN);
+            fclose($handle);
+            if ($written === false) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     /**
      * @param array $keys The keys argument.
      * @phpstan-param list<string> $keys
-     * @phpstan-return array<string, GenericCacheItem>
+     * @phpstan-return array<string, CacheItem>
      */
     public function multiFetch(array $keys): array
     {
         $items = [];
+        $stale = [];
         foreach ($keys as $key) {
-            $items[$key] = $this->getItem($key);
+            $file = $this->fileFor($key);
+            if (!is_file($file)) {
+                $items[$key] = $this->genericMiss($key);
+
+                continue;
+            }
+            $row = require $file;
+            $payload = is_array($row) && is_string($row['p'] ?? null) ? $row['p'] : null;
+            $item = $this->genericFromBase64WithInvalidator($key, $payload, static fn(): bool => true);
+            if (!$item->isHit()) {
+                $stale[] = $key;
+            }
+            $items[$key] = $item;
+        }
+        if ($stale !== []) {
+            $this->deleteItems($stale);
         }
 
         return $items;
@@ -128,17 +192,100 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
             return false;
         }
 
+        return $this->persistItem($item);
+    }
+
+    /** @param array<string, CacheItemInterface> $items */
+    public function saveItems(array $items): bool
+    {
+        if (!$this->supportsItems($items)) {
+            return false;
+        }
+
+        $ok = true;
+        foreach ($items as $item) {
+            $ok = $this->persistItem($item) && $ok;
+        }
+
+        return $ok;
+    }
+
+    private function createDirectory(string $ns, ?string $baseDir): void
+    {
+        $baseDir = rtrim($baseDir ?? $this->defaultBaseDirectory(), DIRECTORY_SEPARATOR);
+        $ns = sanitize_cache_ns($ns);
+        $root = $baseDir . DIRECTORY_SEPARATOR . 'cache_' . $ns . DIRECTORY_SEPARATOR;
+        $this->dataDirectory = $root . 'data' . DIRECTORY_SEPARATOR;
+        $this->metadataDirectory = $root . 'meta' . DIRECTORY_SEPARATOR;
+
+        $this->assertPathNotSymlink($baseDir, 'PHP cache base directory');
+        $this->assertPathNotSymlink($this->dataDirectory, 'PHP cache data directory');
+        $this->assertPathNotSymlink($this->metadataDirectory, 'PHP cache metadata directory');
+
+        if (!is_dir($baseDir) && !mkdir($baseDir, 0700, true) && !is_dir($baseDir)) {
+            throw new RuntimeException("Unable to create PHP cache base directory: {$baseDir}");
+        }
+
+        if (!is_dir($this->dataDirectory)
+            && !mkdir($this->dataDirectory, 0700, true)
+            && !is_dir($this->dataDirectory)) {
+            throw new RuntimeException("Unable to create PHP cache data directory: {$this->dataDirectory}");
+        }
+        if (!is_dir($this->metadataDirectory)
+            && !mkdir($this->metadataDirectory, 0700, true)
+            && !is_dir($this->metadataDirectory)) {
+            throw new RuntimeException("Unable to create PHP cache metadata directory: {$this->metadataDirectory}");
+        }
+
+        $this->assertSecureDirectory($baseDir, 'PHP cache base directory');
+        if (!is_writable($this->dataDirectory) || !is_writable($this->metadataDirectory)) {
+            throw new RuntimeException('PHP cache directories are not writable.');
+        }
+
+        $this->assertSecureDirectory($this->dataDirectory, 'PHP cache data directory');
+        $this->assertSecureDirectory($this->metadataDirectory, 'PHP cache metadata directory');
+    }
+
+    private function defaultBaseDirectory(): string
+    {
+        return rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR)
+            . DIRECTORY_SEPARATOR
+            . str_replace('/', DIRECTORY_SEPARATOR, self::DEFAULT_BASE_DIR);
+    }
+
+    private function fileFor(string $key): string
+    {
+        return $this->dataDirectory . hash('xxh128', $key) . '.php';
+    }
+
+    private function invalidateOpcache(string $file): void
+    {
+        if (function_exists('opcache_invalidate')) {
+            if (is_file($file)) {
+                opcache_invalidate($file, true);
+            }
+        }
+    }
+
+    private function metadataFileFor(string $tag): string
+    {
+        return $this->metadataDirectory . hash('xxh128', $tag) . '.version';
+    }
+
+    private function persistItem(CacheItemInterface $item): bool
+    {
+
         $expires = CachePayloadCodec::expirationFromItem($item);
-        if ($expires['ttl'] === 0) {
+        if ($expires['ttl'] !== null && $expires['ttl'] <= 0) {
             return $this->deleteItem($item->getKey());
         }
 
-        $blob = CachePayloadCodec::encode($item->get(), $expires['expiresAt']);
+        $blob = $this->encodeItem($item, $expires['expiresAt']);
         $payload = var_export(base64_encode($blob), true);
         $code = "<?php\n\nreturn ['p' => {$payload}];\n";
 
         $file = $this->fileFor($item->getKey());
-        $tmp = tempnam($this->dir, 'pc_');
+        $tmp = tempnam($this->dataDirectory, 'pc_');
         if ($tmp === false) {
             return false;
         }
@@ -162,62 +309,5 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
         $this->invalidateOpcache($file);
 
         return true;
-    }
-
-    public function setNamespaceAndDirectory(string $namespace, ?string $baseDir = null): void
-    {
-        $this->createDirectory($namespace, $baseDir);
-        $this->deferred = [];
-    }
-
-    protected function supportsItem(CacheItemInterface $item): bool
-    {
-        return $item instanceof GenericCacheItem;
-    }
-
-    private function createDirectory(string $ns, ?string $baseDir): void
-    {
-        $baseDir = rtrim($baseDir ?? $this->defaultBaseDirectory(), DIRECTORY_SEPARATOR);
-        $ns = sanitize_cache_ns($ns);
-        $this->dir = $baseDir . DIRECTORY_SEPARATOR . 'phpcache_' . $ns . DIRECTORY_SEPARATOR;
-
-        $this->assertPathNotSymlink($baseDir, 'PHP cache base directory');
-        $this->assertPathNotSymlink($this->dir, 'PHP cache directory');
-
-        if (!is_dir($baseDir) && !mkdir($baseDir, 0700, true) && !is_dir($baseDir)) {
-            throw new RuntimeException("Unable to create PHP cache base directory: {$baseDir}");
-        }
-
-        if (!is_dir($this->dir) && !mkdir($this->dir, 0700, true) && !is_dir($this->dir)) {
-            throw new RuntimeException("Unable to create PHP cache directory: {$this->dir}");
-        }
-
-        $this->assertSecureDirectory($baseDir, 'PHP cache base directory');
-        if (!is_writable($this->dir)) {
-            throw new RuntimeException("PHP cache directory is not writable: {$this->dir}");
-        }
-
-        $this->assertSecureDirectory($this->dir, 'PHP cache directory');
-    }
-
-    private function defaultBaseDirectory(): string
-    {
-        return rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR)
-            . DIRECTORY_SEPARATOR
-            . str_replace('/', DIRECTORY_SEPARATOR, self::DEFAULT_BASE_DIR);
-    }
-
-    private function fileFor(string $key): string
-    {
-        return $this->dir . hash('xxh128', $key) . '.php';
-    }
-
-    private function invalidateOpcache(string $file): void
-    {
-        if (function_exists('opcache_invalidate')) {
-            if (is_file($file)) {
-                opcache_invalidate($file, true);
-            }
-        }
     }
 }

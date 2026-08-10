@@ -12,6 +12,7 @@ Path layout:
 
 * base dir: provided ``$dir`` or ``sys_get_temp_dir() . '/cachelayer/files'``
 * namespace dir: ``cache_<sanitized-namespace>``
+* separate ``data`` and ``meta`` subdirectories
 * file name: ``hash('xxh128', $key) . '.cache'``
 
 Highlights:
@@ -19,7 +20,7 @@ Highlights:
 * zero service dependencies
 * persists across process restarts
 * atomic write flow (``tempnam`` + ``rename``)
-* ``setNamespaceAndDirectory()`` supported
+* immutable namespace and directory configuration
 
 Best for local/single-host environments.
 
@@ -32,8 +33,8 @@ Example
 
    $cache = Cache::file('catalog', __DIR__ . '/storage/cache');
 
-   $cache->setTagged('category:shoes', ['count' => 120], ['catalog'], 300);
-   $payload = $cache->get('category:shoes');
+   $cache->setTagged('category.shoes', ['count' => 120], ['catalog'], 300);
+   $payload = $cache->get('category.shoes');
 
    // Flush all catalog-tagged entries after product import.
    $cache->invalidateTag('catalog');
