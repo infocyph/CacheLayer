@@ -54,12 +54,11 @@ test('valkey adapter stores and retrieves values', function () {
 test('valkey adapter supports remember lock path', function () {
     $runs = 0;
 
-    $v1 = $this->cache->remember('once', function ($item) use (&$runs) {
-        $runs++;
-        $item->expiresAfter(30);
+    $v1 = $this->cache->remember('once', function () use (&$runs) {
+        ++$runs;
 
         return 'value';
-    });
+    }, 30);
     $v2 = $this->cache->remember('once', fn () => 'new-value');
 
     expect($v1)->toBe('value')
