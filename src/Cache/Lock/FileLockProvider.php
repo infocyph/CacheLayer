@@ -30,15 +30,14 @@ final readonly class FileLockProvider implements LockProviderInterface
         }
 
         $activeLocks = &self::activeRegistry();
-        if (isset($activeLocks[$key])) {
-            return null;
-        }
-
-        if (!is_dir($this->directory) && !mkdir($this->directory, 0770, true) && !is_dir($this->directory)) {
+        if (!$this->prepareDirectory()) {
             return null;
         }
 
         $path = $this->directory . DIRECTORY_SEPARATOR . self::digestLockKey($key) . '.lock';
+        if (isset($activeLocks[$path])) {
+            return null;
+        }
         $handle = $this->openLockFile($path);
         if (!is_resource($handle)) {
             return null;
@@ -62,9 +61,9 @@ final readonly class FileLockProvider implements LockProviderInterface
 
             return null;
         }
-        $activeLocks[$key] = true;
+        $activeLocks[$path] = true;
 
-        return new LockHandle($key, $token, $handle, $leaseSeconds);
+        return new LockHandle($path, $token, $handle, $leaseSeconds);
     }
 
     public function refresh(?LockHandle $handle, float $leaseSeconds): bool
@@ -116,5 +115,21 @@ final readonly class FileLockProvider implements LockProviderInterface
         } finally {
             restore_error_handler();
         }
+    }
+
+    private function prepareDirectory(): bool
+    {
+        if (is_link($this->directory)) {
+            return false;
+        }
+        if (!is_dir($this->directory)
+            && !mkdir($this->directory, 0700, true)
+            && !is_dir($this->directory)) {
+            return false;
+        }
+        $permissions = fileperms($this->directory);
+
+        return is_writable($this->directory)
+            && ($permissions === false || ($permissions & 0x0002) !== 0x0002);
     }
 }

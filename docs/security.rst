@@ -36,6 +36,9 @@ Implemented Hardening
   disabled.
 * ``ClosureSerializer`` accepts only ``Closure`` and
   ``SignedClosureSerializer`` verifies HMAC-SHA256 before decoding.
+* Closure payloads remain executable and may retain captured objects or request
+  state. Signing proves integrity, not that captures are safe for another
+  process or request.
 
 Per-instance construction API:
 
@@ -77,7 +80,9 @@ subdirectories:
 * php-files adapter default base: ``sys_get_temp_dir()/cachelayer/phpfiles``
 * PDO SQLite default: ``sys_get_temp_dir()/cachelayer/pdo/cache_<ns>.sqlite``
 
-These paths are created with restrictive permissions and world-writable checks.
+Filesystem adapters create private directories and reject symlinked or
+world-writable cache directories. Network/database adapters rely on the
+deployment's service permissions rather than local directory checks.
 
 The shared-memory adapter also stores its ``ftok`` token in a private
 ``cachelayer/shared-memory`` directory, creates the segment for the current

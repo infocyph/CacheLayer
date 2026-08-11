@@ -17,7 +17,7 @@ Requirements:
 Highlights:
 
 * 128 fixed hash-tag buckets for cross-slot-safe grouped operations
-* namespace clear advances each bucket epoch
+* namespace clear replaces each opaque bucket generation
 * no permanent key index, stale membership, or cluster-wide scan
 
 Useful when using Redis Cluster topology.

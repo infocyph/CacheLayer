@@ -4,7 +4,7 @@ Cache facade
 ============
 
 ``Infocyph\CacheLayer\Cache\Cache`` implements PSR-6, PSR-16, and
-``ArrayAccess``. It adds versioned tags, native bulk operations, bounded
+``ArrayAccess``. It adds generation-tagged records, native bulk operations, bounded
 stampede protection, tiering, metrics, and per-instance payload policy.
 
 Factories
@@ -21,14 +21,15 @@ Configuration is fixed when the cache is constructed.
 Keys, tags, and TTL
 -------------------
 
-Keys and tags are 1--64 characters from ``A-Z``, ``a-z``, ``0-9``, ``_``,
-``.``, and ``-``. Bulk input is completely validated before mutation. Zero or
-negative TTL deletes the entry.
+Keys, tags, and namespaces are 1--64 characters from ``A-Z``, ``a-z``, ``0-9``,
+``_``, ``.``, and ``-``. Namespaces are validated without normalization, so
+distinct inputs can never collapse into one cache. Bulk input is completely
+validated before mutation. Zero or negative TTL deletes the entry.
 
-Tags are stored as a version snapshot inside each record. Missing tag metadata
-means version zero. Invalidation atomically increments tag versions; a read
-fetches all required versions in one batch and rejects the whole record on any
-mismatch.
+Tags are stored as opaque 128-bit generation snapshots inside each record.
+Invalidation replaces generations; a read fetches all required generations in
+one batch and rejects the whole record on a missing or mismatched generation.
+Consequently, evicted metadata cannot make an old tagged record valid again.
 
 Bulk behavior
 -------------
@@ -85,6 +86,10 @@ Construction and configuration failures throw. With the default
 ``failOpen=true``, runtime read failures become misses and write/delete failures
 return ``false`` while incrementing ``backend_failure``. Set ``failOpen=false``
 to propagate the backend exception.
+
+Adapters can be used directly as PSR-6 pools, but CacheLayer's tagging,
+stampede protection, metrics, and fail-open policy live in the ``Cache``
+facade. Prefer the facade unless the narrower adapter behavior is intentional.
 
 Tiering
 -------

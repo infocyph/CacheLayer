@@ -6,13 +6,15 @@ namespace Infocyph\CacheLayer\Node\Adapter;
 
 use Infocyph\CacheLayer\Cache\Adapter\AbstractCacheAdapter;
 use Infocyph\CacheLayer\Cache\Adapter\CachePayloadCodec;
+use Infocyph\CacheLayer\Cache\Adapter\TagGenerationCacheInterface;
+use Infocyph\CacheLayer\Cache\CacheInput;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Node\Exception\NodeCacheStorageException;
 use PDO;
 use PDOException;
 use Psr\Cache\CacheItemInterface;
 
-final class NodeSqliteCacheAdapter extends AbstractCacheAdapter
+final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGenerationCacheInterface
 {
     private const string TABLE = 'cachelayer_node_entries';
 
@@ -20,12 +22,15 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter
 
     private readonly \PDOStatement $lookupStatement;
 
+    private readonly string $namespace;
+
     private readonly \PDOStatement $upsertStatement;
 
     public function __construct(
         private readonly PDO $connection,
-        private readonly string $namespace,
+        string $namespace,
     ) {
+        $this->namespace = CacheInput::namespace($namespace);
         $this->createSchemaIfMissing();
         $this->deleteStatement = $connection->prepare(
             'DELETE FROM ' . self::TABLE . ' WHERE namespace = :namespace AND cache_key = :cache_key',
@@ -71,22 +76,6 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter
     public function connection(): PDO
     {
         return $this->connection;
-    }
-
-    public function count(): int
-    {
-        try {
-            $statement = $this->connection->prepare(
-                'SELECT COUNT(*) FROM ' . self::TABLE . ' WHERE namespace = :namespace '
-                . 'AND (expires_at IS NULL OR expires_at > :current_time)',
-            );
-            $statement->execute([':namespace' => $this->namespace, ':current_time' => time()]);
-            $count = $statement->fetchColumn();
-
-            return is_numeric($count) ? max(0, (int) $count) : 0;
-        } catch (PDOException $exception) {
-            throw $this->storageException('Unable to count node SQLite cache entries.', $exception);
-        }
     }
 
     public function deleteItem(string $key): bool
@@ -153,57 +142,28 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter
 
     /**
      * @param list<string> $tags
-     * @return array<string, int>
+     * @return array<string, string>
      */
     #[\Override]
-    public function getTagVersions(array $tags): array
+    public function getTagGenerations(array $tags): array
     {
-        if ($tags === []) {
-            return [];
-        }
-        $keys = array_map($this->mapTag(...), $tags);
-        $marks = implode(',', array_fill(0, count($keys), '?'));
-        $statement = $this->connection->prepare(
-            'SELECT cache_key, payload FROM ' . self::TABLE
-            . " WHERE namespace = ? AND cache_key IN ({$marks})",
-        );
-        $statement->execute([$this->namespace, ...$keys]);
-        $stored = [];
-        foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
-            if (is_array($row) && is_string($row['cache_key'] ?? null)) {
-                $stored[$row['cache_key']] = $row['payload'] ?? null;
+        $generations = $this->readTagGenerations($tags);
+        $missing = [];
+        foreach ($tags as $tag) {
+            if (!isset($generations[$tag])) {
+                $missing[$tag] = self::newGeneration();
             }
         }
-        $versions = [];
-        foreach ($tags as $tag) {
-            $value = $stored[$this->mapTag($tag)] ?? null;
-            $versions[$tag] = is_string($value) && ctype_digit($value) ? (int) $value : 0;
+        if ($missing !== [] && !$this->storeTagGenerations($missing)) {
+            throw new NodeCacheStorageException('Unable to initialize node SQLite tag generations.');
         }
 
-        return $versions;
+        return $generations + $missing;
     }
 
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
-    }
-
-    /** @param list<string> $tags */
-    #[\Override]
-    public function incrementTagVersions(array $tags): bool
-    {
-        $statement = $this->connection->prepare(
-            'INSERT INTO ' . self::TABLE . ' (namespace, cache_key, payload, expires_at) '
-            . "VALUES (?, ?, '1', NULL) ON CONFLICT(namespace, cache_key) "
-            . 'DO UPDATE SET payload = CAST(payload AS INTEGER) + 1',
-        );
-        foreach ($tags as $tag) {
-            if (!$statement->execute([$this->namespace, $this->mapTag($tag)])) {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     /**
@@ -231,14 +191,72 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter
             }
         }
         $items = [];
+        $invalid = [];
         foreach ($keys as $key) {
             $payload = $rows[$this->mapData($key)] ?? null;
-            $items[$key] = is_string($payload)
-                ? $this->genericFromBlob($key, $payload)
-                : $this->genericMiss($key);
+            if (!is_string($payload)) {
+                $items[$key] = $this->genericMiss($key);
+
+                continue;
+            }
+            $record = $this->decodeRecordFromBlob($payload);
+            if ($record === null) {
+                $invalid[] = $key;
+                $items[$key] = $this->genericMiss($key);
+
+                continue;
+            }
+            $items[$key] = $this->genericItemFromRecord($key, $record);
+        }
+        if ($invalid !== []) {
+            $this->deleteItems($invalid);
         }
 
         return $items;
+    }
+
+    /** @param list<string> $tags */
+    #[\Override]
+    public function readTagGenerations(array $tags): array
+    {
+        if ($tags === []) {
+            return [];
+        }
+        $keys = array_map($this->mapTag(...), $tags);
+        $marks = implode(',', array_fill(0, count($keys), '?'));
+        $statement = $this->connection->prepare(
+            'SELECT cache_key, payload FROM ' . self::TABLE
+            . " WHERE namespace = ? AND cache_key IN ({$marks})",
+        );
+        $statement->execute([$this->namespace, ...$keys]);
+        $stored = [];
+        foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $generation = is_array($row) ? self::normalizeGeneration($row['payload'] ?? null) : null;
+            if (is_array($row) && is_string($row['cache_key'] ?? null) && $generation !== null) {
+                $stored[$row['cache_key']] = $generation;
+            }
+        }
+        $generations = [];
+        foreach ($tags as $tag) {
+            $generation = $stored[$this->mapTag($tag)] ?? null;
+            if (is_string($generation)) {
+                $generations[$tag] = $generation;
+            }
+        }
+
+        return $generations;
+    }
+
+    /** @param list<string> $tags */
+    #[\Override]
+    public function rotateTagGenerations(array $tags): bool
+    {
+        $generations = [];
+        foreach ($tags as $tag) {
+            $generations[$tag] = self::newGeneration();
+        }
+
+        return $this->storeTagGenerations($generations);
     }
 
     public function save(CacheItemInterface $item): bool
@@ -326,6 +344,21 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter
 
             throw $this->storageException('Unable to store node SQLite cache entries.', $exception);
         }
+    }
+
+    /** @param array<string, string> $generations */
+    #[\Override]
+    public function storeTagGenerations(array $generations): bool
+    {
+        $rows = [];
+        foreach ($generations as $tag => $generation) {
+            if (!self::isGeneration($generation)) {
+                return false;
+            }
+            $rows[] = [$this->namespace, $this->mapTag($tag), strtolower($generation), null];
+        }
+
+        return $this->upsertRows($rows);
     }
 
     private function createSchemaIfMissing(): void

@@ -74,11 +74,13 @@ Cluster identity, nodes, and namespaces
 ``cluster``
    A non-empty logical stream name. ``production``, ``staging``, and
    ``tenant-a`` can use the same transport without consuming each other's
-   events. There is no fixed CacheLayer limit on cluster names; transport
-   capacity and retention determine the practical limit.
+   events. It is validated as 1--128 characters from
+   ``[A-Za-z0-9_.-]``; transport capacity and retention determine the
+   practical number of clusters.
 
 ``nodeId``
-   A non-empty identity for this running node. It must be unique among nodes in
+   A 1--255 character identity from ``[A-Za-z0-9_.-]`` for this running node.
+   It must be unique among nodes in
    the same cluster. The producer's own events are not applied a second time,
    but their cursor still advances. A stable hostname is suitable for long-lived
    hosts; use a unique instance/pod identity for ephemeral infrastructure.
@@ -126,12 +128,12 @@ PDO transport
 ~~~~~~~~~~~~~
 
 ``PdoInvalidationTransport`` is included for a supplied PostgreSQL or MySQL
-PDO connection. It creates a shared ``cachelayer_invalidation_events`` table
-and index when constructed. The connection account therefore needs the required
-DDL and read/write rights when the transport is initialized.
+PDO connection. Automatic schema initialization is convenient in development.
+In production, install it separately and construct the transport without DDL:
 
 .. code-block:: php
 
+   use Infocyph\CacheLayer\Cluster\Transport\Pdo\PdoInvalidationSchema;
    use Infocyph\CacheLayer\Cluster\Transport\Pdo\PdoInvalidationTransport;
 
    $pdo = new PDO(
@@ -141,7 +143,8 @@ DDL and read/write rights when the transport is initialized.
        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
    );
 
-   $transport = new PdoInvalidationTransport($pdo);
+   PdoInvalidationSchema::install($pdo); // deployment/bootstrap connection
+   $transport = new PdoInvalidationTransport($pdo, initializeSchema: false);
 
 SQLite support in this class is useful for a local test only. Do **not** use a
 SQLite database as a shared multi-node event transport in production.
@@ -298,11 +301,8 @@ of the event-store availability.
    // Node-local read through APCu then SQLite; no transport call.
    $product = $runtime->cache()->remember(
        'product.42',
-       function ($item) use ($products) {
-           $item->expiresAfter(300);
-
-           return $products->find(42);
-       },
+       fn () => $products->find(42),
+       ttl: 300,
        tags: ['products', 'product.42'],
    );
 
@@ -335,6 +335,10 @@ Use a key when one cached representation changed:
    $runtime->invalidateKey('product.42');
 
 This deletes ``product.42`` locally and publishes a key event for other nodes.
+Deletion cannot fence a resolver that was already reading older source data.
+For mutable read-through data where ordering matters, also tag the record and
+invalidate that tag; the generation check prevents an in-flight old result
+from being stored as current.
 
 Tag invalidation
 ~~~~~~~~~~~~~~~~
@@ -397,14 +401,13 @@ Delete a product
 2. Invalidate the direct representation and any affected list/search tags.
 3. Allow consumers to propagate the same invalidation to other nodes.
 
-There is no ``ClusterRuntime::invalidateTags()`` method. Publish one event per
-tag instead:
+Invalidate several tags with one runtime call; it publishes one event per
+unique tag:
 
 .. code-block:: php
 
    $runtime->invalidateKey('product.42');
-   $runtime->invalidateTag('products');
-   $runtime->invalidateTag('search-results');
+   $runtime->invalidateTags(['products', 'search-results']);
 
 Do not call ``$runtime->cache()->invalidateTags()`` for distributed work; that
 would only invalidate the initiating node.
@@ -419,7 +422,14 @@ Each application node needs a consumer. ``consume()`` performs these steps:
 3. Fetch up to the requested number of events after the current cursor.
 4. Ignore events emitted by this same node (they were already applied locally).
 5. Apply matching-namespace events from other nodes.
-6. Advance the local SQLite cursor after every event, including ignored events.
+6. Advance the local SQLite cursor only after successful application (or after
+   intentionally ignoring an origin/other-namespace event).
+
+If a local invalidation returns ``false`` or throws, consumption stops and the
+cursor remains before that event so a later run retries it. A permanent poison
+event is never skipped silently. After inspecting and quarantining the cause,
+an operator may call ``skipEventAfterClear($eventId)``; this explicitly clears
+the local namespace before advancing the cursor.
 
 ``consume()`` returns the number of events *read*, not the number applied. It
 returns zero when no events are available or when passed a limit below one.
@@ -556,12 +566,16 @@ cursor predates the oldest available event, it cannot know every invalidation it
 missed. Before normal consumption, Cluster Cache therefore:
 
 1. clears that node's entire local namespace;
-2. resets its cursor to the oldest retained event ID;
+2. advances its cursor only after that clear succeeds;
 3. resumes consumption on subsequent reads of the event stream.
 
 ``recoverIfRequired()`` exposes this check directly and returns ``true`` when
 a clear/recovery occurred. Calling ``consume()`` already calls it, so direct
 calls are mainly useful for health checks or explicit startup handling.
+
+If the clear returns ``false`` or throws, recovery fails and preserves the old
+cursor. The node therefore cannot acknowledge a retention gap while stale
+local data remains.
 
 This safe reset is why event retention is an availability and cache-warmth
 decision rather than a correctness shortcut. Short retention causes more full

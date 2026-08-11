@@ -14,8 +14,10 @@ use Infocyph\CacheLayer\Cache\Lock\MemcachedLockProvider;
 use Infocyph\CacheLayer\Cache\Lock\PdoLockProvider;
 use Infocyph\CacheLayer\Cache\Lock\RedisLockProvider;
 use Infocyph\CacheLayer\Cache\Metrics\CacheMetricsCollectorInterface;
+use Infocyph\CacheLayer\Cache\Metrics\CacheMetricsSnapshot;
 use Infocyph\CacheLayer\Cache\Metrics\InMemoryCacheMetricsCollector;
 use Infocyph\CacheLayer\Cache\Tiering\TieredPoolFactory;
+use Infocyph\CacheLayer\Exceptions\CacheBackendException;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 use MongoDB\Client;
 use Psr\Cache\CacheItemInterface;
@@ -38,7 +40,9 @@ final class Cache implements CacheInterface
         private LockProviderInterface $lockProvider = new FileLockProvider(),
         private CacheMetricsCollectorInterface $metrics = new InMemoryCacheMetricsCollector(),
         ?CacheOptions $options = null,
+        private readonly string $namespace = 'default',
     ) {
+        CacheInput::namespace($namespace);
         $this->options = $options ?? new CacheOptions();
         if ($adapter instanceof AbstractCacheAdapter) {
             $adapter->configureOptions($this->options);
@@ -47,7 +51,7 @@ final class Cache implements CacheInterface
 
     public static function apcu(string $namespace = 'default', ?CacheOptions $options = null): self
     {
-        return new self(new Adapter\ApcuCacheAdapter($namespace), options: $options);
+        return new self(new Adapter\ApcuCacheAdapter($namespace), options: $options, namespace: $namespace);
     }
 
     public static function file(
@@ -55,7 +59,7 @@ final class Cache implements CacheInterface
         ?string $dir = null,
         ?CacheOptions $options = null,
     ): self {
-        return new self(new Adapter\FileCacheAdapter($namespace, $dir), options: $options);
+        return new self(new Adapter\FileCacheAdapter($namespace, $dir), options: $options, namespace: $namespace);
     }
 
     /** @param list<array{0:string, 1:int, 2:int}> $servers */
@@ -71,12 +75,13 @@ final class Cache implements CacheInterface
             $adapter,
             new MemcachedLockProvider($adapter->getClient()),
             options: $options,
+            namespace: $namespace,
         );
     }
 
     public static function memory(string $namespace = 'default', ?CacheOptions $options = null): self
     {
-        return new self(new Adapter\ArrayCacheAdapter($namespace), options: $options);
+        return new self(new Adapter\ArrayCacheAdapter($namespace), options: $options, namespace: $namespace);
     }
 
     public static function mongodb(
@@ -89,7 +94,11 @@ final class Cache implements CacheInterface
         ?CacheOptions $options = null,
     ): self {
         if ($collection !== null) {
-            return new self(new Adapter\MongoDbCacheAdapter($collection, $namespace), options: $options);
+            return new self(
+                new Adapter\MongoDbCacheAdapter($collection, $namespace),
+                options: $options,
+                namespace: $namespace,
+            );
         }
         if ($client === null) {
             if (!class_exists(Client::class)) {
@@ -103,12 +112,13 @@ final class Cache implements CacheInterface
         return new self(
             Adapter\MongoDbCacheAdapter::fromClient($client, $database, $collectionName, $namespace),
             options: $options,
+            namespace: $namespace,
         );
     }
 
     public static function nullStore(?CacheOptions $options = null): self
     {
-        return new self(new Adapter\NullCacheAdapter(), options: $options);
+        return new self(new Adapter\NullCacheAdapter(), options: $options, namespace: 'null');
     }
 
     public static function pdo(
@@ -122,7 +132,12 @@ final class Cache implements CacheInterface
     ): self {
         $adapter = new Adapter\PdoCacheAdapter($namespace, $dsn, $username, $password, $pdo, $table);
 
-        return new self($adapter, new PdoLockProvider($adapter->getClient()), options: $options);
+        return new self(
+            $adapter,
+            new PdoLockProvider($adapter->getClient()),
+            options: $options,
+            namespace: $namespace,
+        );
     }
 
     public static function phpFiles(
@@ -130,7 +145,7 @@ final class Cache implements CacheInterface
         ?string $dir = null,
         ?CacheOptions $options = null,
     ): self {
-        return new self(new Adapter\PhpFilesCacheAdapter($namespace, $dir), options: $options);
+        return new self(new Adapter\PhpFilesCacheAdapter($namespace, $dir), options: $options, namespace: $namespace);
     }
 
     public static function redis(
@@ -141,7 +156,12 @@ final class Cache implements CacheInterface
     ): self {
         $adapter = new Adapter\RedisCacheAdapter($namespace, $dsn, $client);
 
-        return new self($adapter, new RedisLockProvider($adapter->getClient()), options: $options);
+        return new self(
+            $adapter,
+            new RedisLockProvider($adapter->getClient()),
+            options: $options,
+            namespace: $namespace,
+        );
     }
 
     /** @param list<string> $seeds */
@@ -164,6 +184,7 @@ final class Cache implements CacheInterface
                 $client,
             ),
             options: $options,
+            namespace: $namespace,
         );
     }
 
@@ -187,6 +208,7 @@ final class Cache implements CacheInterface
         return new self(
             new Adapter\ScyllaDbCacheAdapter($session, $keyspace, $table, $namespace, $bucketCount),
             options: $options,
+            namespace: $namespace,
         );
     }
 
@@ -195,7 +217,11 @@ final class Cache implements CacheInterface
         int $segmentSize = 16_777_216,
         ?CacheOptions $options = null,
     ): self {
-        return new self(new Adapter\SharedMemoryCacheAdapter($namespace, $segmentSize), options: $options);
+        return new self(
+            new Adapter\SharedMemoryCacheAdapter($namespace, $segmentSize),
+            options: $options,
+            namespace: $namespace,
+        );
     }
 
     public static function sqlite(
@@ -213,13 +239,15 @@ final class Cache implements CacheInterface
         array $tiers,
         bool $writeToL1 = true,
         ?CacheOptions $options = null,
+        string $namespace = 'tiered',
     ): self {
         $metrics = new InMemoryCacheMetricsCollector();
 
         return new self(
-            new Adapter\ChainCacheAdapter(TieredPoolFactory::fromArray($tiers), $writeToL1, $metrics),
+            new Adapter\TieredCacheAdapter(TieredPoolFactory::fromArray($tiers), $writeToL1, $metrics),
             metrics: $metrics,
             options: $options,
+            namespace: $namespace,
         );
     }
 
@@ -231,12 +259,17 @@ final class Cache implements CacheInterface
     ): self {
         $adapter = new Adapter\ValkeyCacheAdapter($namespace, $dsn, $client);
 
-        return new self($adapter, new RedisLockProvider($adapter->getClient()), options: $options);
+        return new self(
+            $adapter,
+            new RedisLockProvider($adapter->getClient()),
+            options: $options,
+            namespace: $namespace,
+        );
     }
 
     public static function weakMap(string $namespace = 'default', ?CacheOptions $options = null): self
     {
-        return new self(new Adapter\WeakMapCacheAdapter($namespace), options: $options);
+        return new self(new Adapter\WeakMapCacheAdapter($namespace), options: $options, namespace: $namespace);
     }
 
     public function clear(): bool
@@ -372,7 +405,7 @@ final class Cache implements CacheInterface
     public function invalidateTags(array $tags): bool
     {
         $tags = CacheInput::tags($tags);
-        $invalidated = $this->backendBool(fn(): bool => $this->adapter->incrementTagVersions($tags));
+        $invalidated = $this->backendBool(fn(): bool => $this->adapter->rotateTagGenerations($tags));
         $this->metric(count($tags) === 1 ? 'tag_invalidate' : 'tag_invalidate_batch');
 
         return $invalidated;
@@ -398,6 +431,7 @@ final class Cache implements CacheInterface
         $this->delete($this->requireStringOffset($offset));
     }
 
+    /** @param callable(): mixed $resolver */
     public function remember(
         string $key,
         callable $resolver,
@@ -426,9 +460,21 @@ final class Cache implements CacheInterface
         );
         if ($lock === null) {
             $this->metric('lock_timeout');
+            $item = $this->getItem($key);
+            if ($item->isHit()) {
+                $this->metric('remember_hit');
+
+                return $item->get();
+            }
+
+            $generations = $this->captureTagGenerations($tags);
             $this->metric('remember_unlocked_compute');
-            $value = $resolver($item);
-            $this->storeResolved($key, $value, $ttl, $tags);
+            $value = $resolver();
+            if ($generations !== null && $this->tagGenerationsUnchanged($generations)) {
+                $this->storeResolved($key, $value, $ttl, $generations);
+            } elseif ($tags !== []) {
+                $this->metric('remember_discarded_after_tag_change');
+            }
 
             return $value;
         }
@@ -442,14 +488,25 @@ final class Cache implements CacheInterface
                 return $item->get();
             }
 
-            $value = $resolver($item);
+            $generations = $this->captureTagGenerations($tags);
+            $value = $resolver();
             if (!$this->backend(
                 fn(): bool => $this->lockProvider->refresh($lock, self::LOCK_LEASE_SECONDS),
                 false,
             )) {
                 $this->metric('lock_refresh_failure');
+                $this->metric('remember_discarded_after_lock_loss');
+
+                return $value;
             }
-            $this->storeResolved($key, $value, $ttl, $tags);
+            if ($generations === null || !$this->tagGenerationsUnchanged($generations)) {
+                if ($tags !== []) {
+                    $this->metric('remember_discarded_after_tag_change');
+                }
+
+                return $value;
+            }
+            $this->storeResolved($key, $value, $ttl, $generations);
 
             return $value;
         } finally {
@@ -543,27 +600,12 @@ final class Cache implements CacheInterface
             return $this->delete($key);
         }
 
-        $versions = $this->backend(
-            fn(): array => $this->adapter->getTagVersions($tags),
-            null,
-        );
-        if (!is_array($versions)) {
+        $generations = $this->captureTagGenerations($tags);
+        if ($generations === null) {
             return false;
         }
-        $snapshot = [];
-        foreach ($tags as $tag) {
-            $version = $versions[$tag] ?? null;
-            $snapshot[$tag] = is_int($version) && $version >= 0 ? $version : 0;
-        }
-        $item = $this->adapter->createItem($key);
-        if (!$item instanceof CacheItem) {
-            throw new CacheInvalidArgumentException('Tagged caching requires CacheLayer cache items.');
-        }
-        $item->set($value)->setTagVersions($snapshot)->expiresAfter($ttlSeconds);
-        $saved = $this->save($item);
-        $this->metric('set_tagged');
 
-        return $saved;
+        return $this->setTaggedWithGenerations($key, $value, $generations, $ttlSeconds);
     }
 
     public function useMemcachedLock(?\Memcached $client = null, string $prefix = 'cachelayer:lock:'): self
@@ -602,7 +644,9 @@ final class Cache implements CacheInterface
         } catch (Throwable $failure) {
             $this->metric('backend_failure');
             if (!$this->options->failOpen) {
-                throw $failure;
+                throw $failure instanceof CacheBackendException
+                    ? $failure
+                    : new CacheBackendException('Cache backend operation failed.', 0, $failure);
             }
 
             return $fallback;
@@ -622,11 +666,43 @@ final class Cache implements CacheInterface
         } catch (Throwable $failure) {
             $this->metric('backend_failure');
             if (!$this->options->failOpen) {
-                throw $failure;
+                throw $failure instanceof CacheBackendException
+                    ? $failure
+                    : new CacheBackendException('Cache backend operation failed.', 0, $failure);
             }
 
             return false;
         }
+    }
+
+    /**
+     * @param list<string> $tags
+     * @return array<string, string>|null
+     */
+    private function captureTagGenerations(array $tags): ?array
+    {
+        if ($tags === []) {
+            return [];
+        }
+
+        $stored = $this->backend(
+            fn(): array => $this->adapter->getTagGenerations($tags),
+            null,
+        );
+        if (!is_array($stored)) {
+            return null;
+        }
+
+        $generations = [];
+        foreach ($tags as $tag) {
+            $generation = $stored[$tag] ?? null;
+            if (!is_string($generation) || strlen($generation) !== 32 || !ctype_xdigit($generation)) {
+                return null;
+            }
+            $generations[$tag] = strtolower($generation);
+        }
+
+        return $generations;
     }
 
     /**
@@ -635,14 +711,7 @@ final class Cache implements CacheInterface
      */
     private function fetchItems(array $keys): array
     {
-        $items = [];
-        foreach ($this->adapter->getItems($keys) as $key => $item) {
-            if (is_string($key) && $item instanceof CacheItemInterface) {
-                $items[$key] = $item;
-            }
-        }
-
-        return $items;
+        return $this->adapter->multiFetch($keys);
     }
 
     private function jitteredTtl(?int $ttl): ?int
@@ -672,16 +741,7 @@ final class Cache implements CacheInterface
      */
     private function readableMetricsSnapshot(array $snapshot): array
     {
-        $readable = [];
-        foreach ($snapshot as $adapterClass => $counters) {
-            $separator = strrpos($adapterClass, '\\');
-            $short = $separator === false ? $adapterClass : substr($adapterClass, $separator + 1);
-            $short = preg_replace('/CacheAdapter$/', '', $short) ?? $short;
-            $name = strtolower(preg_replace('/(?<!^)[A-Z]/', '_$0', $short) ?? $short);
-            $readable[$name] = $counters;
-        }
-
-        return $readable;
+        return CacheMetricsSnapshot::readable($snapshot);
     }
 
     private function requireStringOffset(mixed $offset): string
@@ -693,44 +753,73 @@ final class Cache implements CacheInterface
         return $offset;
     }
 
-    private function stampedeLockKey(string $key): string
-    {
-        return 'cachelayer:lock:' . hash('xxh128', $key);
+    /** @param array<string, string> $generations */
+    private function setTaggedWithGenerations(
+        string $key,
+        mixed $value,
+        array $generations,
+        ?int $ttlSeconds,
+    ): bool {
+        $item = $this->adapter->createItem($key);
+        if (!$item instanceof CacheItem) {
+            throw new CacheInvalidArgumentException('Tagged caching requires CacheLayer cache items.');
+        }
+        $item->set($value)->setTagGenerations($generations)->expiresAfter($ttlSeconds);
+        $saved = $this->save($item);
+        $this->metric('set_tagged');
+
+        return $saved;
     }
 
-    /** @param list<string> $tags */
-    private function storeResolved(string $key, mixed $value, mixed $ttl, array $tags): void
+    private function stampedeLockKey(string $key): string
     {
-        $ttlSeconds = CacheInput::ttl($ttl);
-        if ($ttlSeconds !== null && $ttlSeconds <= 0) {
+        return 'cachelayer:remember:' . hash('xxh128', $this->namespace . "\0" . $key);
+    }
+
+    /** @param array<string, string> $generations */
+    private function storeResolved(string $key, mixed $value, ?int $ttl, array $generations): void
+    {
+        if ($ttl !== null && $ttl <= 0) {
             $this->delete($key);
 
             return;
         }
-        $ttlSeconds = $this->jitteredTtl($ttlSeconds);
-        if ($tags === []) {
+        $ttlSeconds = $this->jitteredTtl($ttl);
+        if ($generations === []) {
             $this->set($key, $value, $ttlSeconds);
 
             return;
         }
-        $this->setTagged($key, $value, $tags, $ttlSeconds);
+        $this->setTaggedWithGenerations($key, $value, $generations, $ttlSeconds);
+    }
+
+    /** @param array<string, string> $expected */
+    private function tagGenerationsUnchanged(array $expected): bool
+    {
+        if ($expected === []) {
+            return true;
+        }
+
+        $current = $this->captureTagGenerations(array_keys($expected));
+
+        return $current !== null && $current === $expected;
     }
 
     private function validateTagSnapshot(CacheItemInterface $item): CacheItemInterface
     {
-        if (!$item instanceof CacheItem || !$item->isHit() || $item->getTagVersions() === []) {
+        if (!$item instanceof CacheItem || !$item->isHit() || $item->getTagGenerations() === []) {
             return $item;
         }
-        $tags = array_keys($item->getTagVersions());
-        $versions = $this->backend(
-            fn(): array => $this->adapter->getTagVersions($tags),
+        $tags = array_keys($item->getTagGenerations());
+        $generations = $this->backend(
+            fn(): array => $this->adapter->getTagGenerations($tags),
             null,
         );
-        $this->metric('tag_version_fetch_batch');
-        if (!is_array($versions)) {
+        $this->metric('tag_generation_fetch_batch');
+        if (!is_array($generations)) {
             return $this->miss($item->getKey());
         }
-        if (CacheTagSnapshots::isCurrent($item, $versions)) {
+        if (CacheTagSnapshots::isCurrent($item, $generations)) {
             return $item;
         }
         $this->backendBool(fn(): bool => $this->adapter->deleteItem($item->getKey()));
@@ -749,15 +838,15 @@ final class Cache implements CacheInterface
             return $items;
         }
 
-        $versions = $this->backend(
-            fn(): array => $this->adapter->getTagVersions($tags),
+        $generations = $this->backend(
+            fn(): array => $this->adapter->getTagGenerations($tags),
             null,
         );
-        $this->metric('tag_version_fetch_batch');
-        if (!is_array($versions)) {
+        $this->metric('tag_generation_fetch_batch');
+        if (!is_array($generations)) {
             return CacheTagSnapshots::missTagged($items, $this->miss(...));
         }
-        $validated = CacheTagSnapshots::rejectStale($items, $versions, $this->miss(...));
+        $validated = CacheTagSnapshots::rejectStale($items, $generations, $this->miss(...));
         $stale = $validated['stale'];
         if ($stale !== []) {
             $this->backendBool(fn(): bool => $this->adapter->deleteItems($stale));

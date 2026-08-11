@@ -17,15 +17,19 @@ Requirements:
 Highlights:
 
 * namespace-scoped document storage
-* base64-encoded payload persistence
-* TTL-aware read-time pruning
+* BSON binary payload persistence without Base64 expansion
+* TTL-aware read-time pruning; production deployments should also install a
+  TTL index on the expiration field for background cleanup
+* native ``$in`` reads and ``bulkWrite()`` mutations
 
 Supported injected collection methods:
 
 * ``findOne``
+* ``find``
 * ``updateOne``
 * ``deleteOne``
 * ``deleteMany``
+* ``bulkWrite``
 * ``countDocuments``
 
 Example

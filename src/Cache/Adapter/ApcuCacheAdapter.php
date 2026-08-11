@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Infocyph\CacheLayer\Cache\Adapter;
 
+use Infocyph\CacheLayer\Cache\CacheInput;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 use Psr\Cache\CacheItemInterface;
@@ -19,7 +20,7 @@ use RuntimeException;
  * This This adapter requires the APCu extension to be installed and enabled.
      * @param string $namespace A namespace prefix to avoid key collisions.
  */
-class ApcuCacheAdapter extends AbstractCacheAdapter
+class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCacheInterface
 {
     private readonly string $ns;
 
@@ -35,7 +36,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter
         if (!extension_loaded('apcu') || !apcu_enabled()) {
             throw new RuntimeException('APCu extension is not enabled');
         }
-        $this->ns = sanitize_cache_ns($namespace);
+        $this->ns = CacheInput::namespace($namespace);
     }
 
     public function clear(): bool
@@ -46,11 +47,6 @@ class ApcuCacheAdapter extends AbstractCacheAdapter
         $this->deferred = [];
 
         return true;
-    }
-
-    public function count(): int
-    {
-        return count($this->listKeys('d:'));
     }
 
     public function deleteItem(string $key): bool
@@ -96,39 +92,33 @@ class ApcuCacheAdapter extends AbstractCacheAdapter
 
     /** @param list<string> $tags */
     #[\Override]
-    public function getTagVersions(array $tags): array
+    public function getTagGenerations(array $tags): array
     {
         if ($tags === []) {
             return [];
         }
         $raw = apcu_fetch(array_map($this->mapTag(...), $tags));
-        $versions = [];
+        $generations = [];
         foreach ($tags as $tag) {
-            $value = is_array($raw) ? ($raw[$this->mapTag($tag)] ?? null) : null;
-            $versions[$tag] = is_int($value) && $value >= 0 ? $value : 0;
+            $key = $this->mapTag($tag);
+            $generation = self::normalizeGeneration(is_array($raw) ? ($raw[$key] ?? null) : null);
+            if ($generation === null) {
+                $candidate = self::newGeneration();
+                $generation = self::normalizeGeneration(apcu_add($key, $candidate) ? $candidate : apcu_fetch($key));
+                if ($generation === null) {
+                    $generation = self::newGeneration();
+                    apcu_store($key, $generation);
+                }
+            }
+            $generations[$tag] = $generation;
         }
 
-        return $versions;
+        return $generations;
     }
 
     public function hasItem(string $key): bool
     {
         return apcu_exists($this->map($key));
-    }
-
-    /** @param list<string> $tags */
-    #[\Override]
-    public function incrementTagVersions(array $tags): bool
-    {
-        foreach ($tags as $tag) {
-            $key = $this->mapTag($tag);
-            apcu_add($key, 0);
-            if (apcu_inc($key) === false) {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     /**
@@ -163,6 +153,36 @@ class ApcuCacheAdapter extends AbstractCacheAdapter
         }
 
         return $items;
+    }
+
+    /** @param list<string> $tags */
+    #[\Override]
+    public function readTagGenerations(array $tags): array
+    {
+        $raw = apcu_fetch(array_map($this->mapTag(...), $tags));
+        $generations = [];
+        foreach ($tags as $tag) {
+            $generation = self::normalizeGeneration(
+                is_array($raw) ? ($raw[$this->mapTag($tag)] ?? null) : null,
+            );
+            if ($generation !== null) {
+                $generations[$tag] = $generation;
+            }
+        }
+
+        return $generations;
+    }
+
+    /** @param list<string> $tags */
+    #[\Override]
+    public function rotateTagGenerations(array $tags): bool
+    {
+        $generations = [];
+        foreach ($tags as $tag) {
+            $generations[$this->mapTag($tag)] = self::newGeneration();
+        }
+
+        return $generations === [] || apcu_store($generations) === [];
     }
 
     public function save(CacheItemInterface $item): bool
@@ -214,6 +234,21 @@ class ApcuCacheAdapter extends AbstractCacheAdapter
         }
 
         return true;
+    }
+
+    /** @param array<string, string> $generations */
+    #[\Override]
+    public function storeTagGenerations(array $generations): bool
+    {
+        $mapped = [];
+        foreach ($generations as $tag => $generation) {
+            if (!self::isGeneration($generation)) {
+                return false;
+            }
+            $mapped[$this->mapTag($tag)] = strtolower($generation);
+        }
+
+        return $mapped === [] || apcu_store($mapped) === [];
     }
 
     /**

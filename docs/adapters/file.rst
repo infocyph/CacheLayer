@@ -11,7 +11,7 @@ Stores one cache payload per file under a namespace directory.
 Path layout:
 
 * base dir: provided ``$dir`` or ``sys_get_temp_dir() . '/cachelayer/files'``
-* namespace dir: ``cache_<sanitized-namespace>``
+* namespace dir: ``cache_<validated-namespace>``
 * separate ``data`` and ``meta`` subdirectories
 * file name: ``hash('xxh128', $key) . '.cache'``
 
@@ -20,7 +20,12 @@ Highlights:
 * zero service dependencies
 * persists across process restarts
 * atomic write flow (``tempnam`` + ``rename``)
+* restrictive directory validation and atomic metadata replacement
 * immutable namespace and directory configuration
+
+Expired files are removed lazily when encountered; applications with very
+large, low-read keysets should periodically clear or rotate their cache
+directory as an operational maintenance policy.
 
 Best for local/single-host environments.
 

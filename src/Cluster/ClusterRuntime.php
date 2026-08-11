@@ -114,6 +114,15 @@ final readonly class ClusterRuntime
         return $recovered;
     }
 
+    public function skipEventAfterClear(string $eventId): void
+    {
+        ClusterInput::eventId($eventId);
+        if (!$this->cache->clear()) {
+            throw new ClusterCacheException('Unable to clear the local cache before skipping a cluster event.');
+        }
+        $this->cursorStore->advance($eventId);
+    }
+
     public function status(): ClusterStatus
     {
         $cursor = $this->cursorStore->current();

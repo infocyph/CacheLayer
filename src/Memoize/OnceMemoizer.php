@@ -16,9 +16,6 @@ final class OnceMemoizer
     /** @var array<string, mixed> */
     private array $cache = [];
 
-    /** @var array<string, string> */
-    private array $closureSourceMemo = [];
-
     /** @var list<string> */
     private array $order = [];
 
@@ -33,12 +30,12 @@ final class OnceMemoizer
     {
         $this->cache = [];
         $this->order = [];
-        $this->closureSourceMemo = [];
+        CallableFingerprint::flush();
     }
 
-    public function once(callable $callback): mixed
+    public function once(callable $callback, int $callerOffset = 0): mixed
     {
-        $key = $this->cacheKey($callback);
+        $key = $this->cacheKey($callback, $callerOffset);
         if (array_key_exists($key, $this->cache)) {
             return $this->cache[$key];
         }
@@ -50,60 +47,38 @@ final class OnceMemoizer
         return $value;
     }
 
-    private function cacheKey(callable $callback): string
+    private function cacheKey(callable $callback, int $callerOffset): string
     {
-        $bt = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3);
-        $caller = $bt[2] ?? $bt[1] ?? [];
+        $bt = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 4 + $callerOffset);
+        $location = $bt[1 + $callerOffset] ?? [];
+        $caller = $bt[2 + $callerOffset] ?? $location;
+        $callerObject = $caller['object'] ?? null;
 
-        return ($caller['file'] ?? '(unknown)')
+        return ($location['file'] ?? '(unknown)')
+            . ':' . ($location['line'] ?? 0)
             . ':' . ($caller['class'] ?? '')
             . ':' . $this->normalizeCallerFunction($caller['function'] ?? '(unknown)')
+            . ':' . (is_object($callerObject) ? spl_object_id($callerObject) : '')
             . ':' . $this->callbackFingerprint($callback);
     }
 
     private function callbackFingerprint(callable $callback): string
     {
-        return match (true) {
-            $callback instanceof Closure => $this->closureFingerprint($callback),
-            is_string($callback) => 'string:' . $callback,
-            is_array($callback) => 'array:' . (is_object($callback[0]) ? $callback[0]::class : $callback[0]) . '::' . $callback[1],
-            is_object($callback) => 'invokable:' . $callback::class,
-            default => 'callable:' . get_debug_type($callback),
-        };
-    }
+        if ($callback instanceof Closure) {
+            $reflection = new ReflectionFunction($callback);
+            $bound = $reflection->getClosureThis();
 
-    private function closureFingerprint(Closure $closure): string
-    {
-        $rf = new ReflectionFunction($closure);
-        $file = $rf->getFileName();
-        $start = $rf->getStartLine();
-        $end = $rf->getEndLine();
-        $lineFingerprint = 'closure-lines:' . ($file ?: 'internal') . ':' . $start . '-' . $end;
-
-        if (!is_string($file) || $file === '') {
-            return $lineFingerprint;
-        }
-        if (!is_readable($file)) {
-            return $lineFingerprint;
+            return implode(':', [
+                'closure',
+                $reflection->getFileName() ?: 'internal',
+                $reflection->getStartLine(),
+                $reflection->getEndLine(),
+                $reflection->getClosureScopeClass()?->getName() ?? '',
+                $bound === null ? '' : $bound::class . '#' . spl_object_id($bound),
+            ]);
         }
 
-        $sourceKey = $file . ':' . $start . '-' . $end;
-        $cached = $this->closureSourceMemo[$sourceKey] ?? null;
-        if (is_string($cached)) {
-            return $cached;
-        }
-
-        $lines = file($file, FILE_IGNORE_NEW_LINES);
-        if (!is_array($lines)) {
-            return $lineFingerprint;
-        }
-
-        $snippet = implode("\n", array_slice($lines, $start - 1, $end - $start + 1));
-        $normalized = preg_replace('/\s+/', '', $snippet) ?? $snippet;
-        $fingerprint = 'closure-src:' . hash('xxh128', $normalized);
-        $this->closureSourceMemo[$sourceKey] = $fingerprint;
-
-        return $fingerprint;
+        return CallableFingerprint::callable($callback);
     }
 
     private function normalizeCallerFunction(string $callerFunction): string

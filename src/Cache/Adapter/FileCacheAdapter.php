@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Infocyph\CacheLayer\Cache\Adapter;
 
+use Infocyph\CacheLayer\Cache\CacheInput;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 use Psr\Cache\CacheItemInterface;
@@ -55,11 +56,6 @@ class FileCacheAdapter extends AbstractCacheAdapter
         return $ok;
     }
 
-    public function count(): int
-    {
-        return iterator_count(new \FilesystemIterator($this->dataDirectory, \FilesystemIterator::SKIP_DOTS));
-    }
-
     public function deleteItem(string $key): bool
     {
         $file = $this->fileFor($key);
@@ -101,51 +97,27 @@ class FileCacheAdapter extends AbstractCacheAdapter
 
     /** @param list<string> $tags */
     #[\Override]
-    public function getTagVersions(array $tags): array
+    public function getTagGenerations(array $tags): array
     {
-        $versions = [];
+        $generations = [];
         foreach ($tags as $tag) {
             $path = $this->metadataFileFor($tag);
             $value = is_file($path) ? file_get_contents($path) : false;
-            $versions[$tag] = is_string($value) && ctype_digit($value) ? (int) $value : 0;
+            if (!self::isGeneration($value)) {
+                $value = self::newGeneration();
+                if (!$this->atomicReplace($path, $value)) {
+                    throw new RuntimeException('Unable to initialize file tag generation.');
+                }
+            }
+            $generations[$tag] = strtolower((string) $value);
         }
 
-        return $versions;
+        return $generations;
     }
 
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
-    }
-
-    /** @param list<string> $tags */
-    #[\Override]
-    public function incrementTagVersions(array $tags): bool
-    {
-        foreach ($tags as $tag) {
-            $path = $this->metadataFileFor($tag);
-            $handle = fopen($path, 'c+');
-            if (!is_resource($handle) || !flock($handle, LOCK_EX)) {
-                if (is_resource($handle)) {
-                    fclose($handle);
-                }
-
-                return false;
-            }
-            $raw = stream_get_contents($handle);
-            $version = is_string($raw) && ctype_digit($raw) ? (int) $raw : 0;
-            rewind($handle);
-            ftruncate($handle, 0);
-            $written = fwrite($handle, (string) ($version + 1));
-            fflush($handle);
-            flock($handle, LOCK_UN);
-            fclose($handle);
-            if ($written === false) {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     /**
@@ -182,6 +154,20 @@ class FileCacheAdapter extends AbstractCacheAdapter
         return $items;
     }
 
+    /** @param list<string> $tags */
+    #[\Override]
+    public function rotateTagGenerations(array $tags): bool
+    {
+        foreach ($tags as $tag) {
+            $path = $this->metadataFileFor($tag);
+            if (!$this->atomicReplace($path, self::newGeneration())) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     public function save(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
@@ -206,24 +192,18 @@ class FileCacheAdapter extends AbstractCacheAdapter
         return $ok;
     }
 
-    private function assertWritableDirectory(string $path, string $message): void
-    {
-        if (!is_writable($path)) {
-            throw new RuntimeException($message);
-        }
-    }
-
     private function createDirectory(string $ns, ?string $baseDir): void
     {
         $baseDir = rtrim($baseDir ?? $this->defaultBaseDirectory(), DIRECTORY_SEPARATOR);
-        $ns = sanitize_cache_ns($ns);
+        $ns = CacheInput::namespace($ns);
         $root = $baseDir . DIRECTORY_SEPARATOR . 'cache_' . $ns . DIRECTORY_SEPARATOR;
         $this->dataDirectory = $root . 'data' . DIRECTORY_SEPARATOR;
         $this->metadataDirectory = $root . 'meta' . DIRECTORY_SEPARATOR;
 
         if (is_dir($this->dataDirectory) && is_dir($this->metadataDirectory)) {
-            $this->assertWritableDirectory($this->dataDirectory, 'Cache data directory is not writable');
-            $this->assertWritableDirectory($this->metadataDirectory, 'Cache metadata directory is not writable');
+            $this->assertSecureDirectory($baseDir, 'Cache base directory');
+            $this->assertSecureDirectory($this->dataDirectory, 'Cache data directory');
+            $this->assertSecureDirectory($this->metadataDirectory, 'Cache metadata directory');
 
             return;
         }
@@ -281,7 +261,7 @@ class FileCacheAdapter extends AbstractCacheAdapter
 
     private function metadataFileFor(string $tag): string
     {
-        return $this->metadataDirectory . hash('xxh128', $tag) . '.version';
+        return $this->metadataDirectory . hash('xxh128', $tag) . '.generation';
     }
 
     private function persistItem(CacheItemInterface $item): bool

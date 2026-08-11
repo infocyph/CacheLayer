@@ -12,7 +12,7 @@ CacheLayer is a PHP 8.3+ caching toolkit built around four deliberately separate
 CacheLayer
 ├── Cache
 │   ├── PSR-6 and PSR-16
-│   ├── versioned tags
+│   ├── generation-tagged records
 │   ├── bounded stampede protection
 │   └── tiering
 ├── Node Cache
@@ -71,9 +71,9 @@ $cache->setTagged('article.7', $article, ['articles', 'author.12'], 600);
 $cache->invalidateTags(['articles', 'author.12']);
 ```
 
-Each record embeds its complete tag-version snapshot. Tag versions begin at zero, invalidation increments them atomically, and reads fetch all required versions in a batch. A mismatch makes the complete record stale; there are no per-entry reverse tag indexes or partially tagged writes.
+Each tagged record embeds its complete snapshot of opaque 128-bit tag generations. Invalidation replaces each generation, and reads fetch all required generations in a batch. A missing or mismatched generation makes the complete record stale, so lost metadata cannot resurrect an older record. There are no per-entry reverse tag indexes or partially tagged writes.
 
-Zero and negative PSR-16 TTLs delete the key. Missing tag metadata means version zero.
+Zero and negative PSR-16 TTLs delete the key. Namespaces are validated—not normalized—and must be 1–64 characters matching `[A-Za-z0-9_.-]+`.
 
 ## Native bulk paths
 
@@ -94,7 +94,7 @@ Bulk methods validate once and call the adapter’s native bulk contract. Deferr
 | File / PHP files | optimized sequential filesystem access |
 | Redis Cluster | fixed hash buckets and same-slot grouped operations |
 
-Redis Cluster uses 128 stable bucket hash tags. Memcached and Redis Cluster clear a namespace by advancing epochs, so they do not scan, flush other namespaces, or maintain a permanent key membership index.
+Redis Cluster uses 128 stable bucket hash tags. Memcached and Redis Cluster clear a namespace by replacing opaque namespace/bucket generations, so they do not scan, flush other namespaces, or maintain a permanent key membership index.
 
 ## Adapters
 
@@ -109,7 +109,7 @@ Cache::sqlite();       Cache::mongodb();      Cache::scylla();
 Cache::tiered([...]);
 ```
 
-Data and internal metadata use physically separate key spaces. SQL-like stores can install schema explicitly with `PdoCacheSchema::install()` and pass `initializeSchema: false` to `PdoCacheAdapter` in deployment-controlled environments.
+Data and internal metadata use physically separate key spaces. Adapters are public for PSR-6 use, but tagging, stampede protection, policy-aware error handling, and metrics are facade responsibilities; use `Cache` for consistent CacheLayer semantics. SQL-like stores can install schema explicitly with `PdoCacheSchema::install()` and pass `initializeSchema: false` to `PdoCacheAdapter` in deployment-controlled environments.
 
 `phpFiles` creates executable PHP files and is only appropriate for a trusted directory and trusted payloads. Never point SQLite at NFS, SMB, or another shared network filesystem.
 
@@ -169,21 +169,21 @@ Cluster Cache adds durable invalidation around independent Node Caches. It keeps
 ```php
 $runtime->invalidateKey('product.42');
 $runtime->invalidateTags(['products', 'catalog']);
-$runtime->invalidateNamespace();
+$runtime->clearNamespace();
 $runtime->consume();
 ```
 
-It does not replicate values and is not a distributed lock, session store, or counter system.
+Failed local invalidation stops consumption without advancing the cursor; operators can repair the cause and retry. A poison event can only be skipped explicitly with `skipEventAfterClear()`, which clears the local namespace before advancing. Plain key invalidation cannot fence an in-flight resolver, so mutable read-through data that requires ordering should also use a tag generation. It does not replicate values and is not a distributed lock, session store, or counter system.
 
 ## Atomic counters and memoization
 
 `AtomicCounters` uses an `AtomicCounterStoreInterface`; Redis/Valkey is the distributed implementation. Counters are never emulated with cache `get()` plus `set()`.
 
-The `memoize()`, `remember(object: ...)`, and `once()` helpers plus `MemoizeTrait` provide bounded process-local memoization. They are independent of persistent backend caching.
+The `memoize()`, `remember(object: ...)`, and `once()` helpers plus `MemoizeTrait` provide bounded process-local memoization. Their state survives requests in persistent workers until evicted or reset with `flush_memoizers()`; call that reset at request boundaries when cross-request reuse is not intended. They are independent of persistent backend caching.
 
 ## Metrics and benchmarks
 
-Metrics distinguish calls from key volume: `get_batch`, `get_batch_keys`, hits/misses, set/delete batch counts, tag-version fetches, promotions, lock outcomes, and backend failures. `exportMetrics()` returns a snapshot and can invoke an export hook.
+Metrics distinguish calls from key volume: `get_batch`, `get_batch_keys`, hits/misses, set/delete batch counts, tag-generation fetches, promotions, lock outcomes, and backend failures. `exportMetrics()` returns a snapshot and can invoke an export hook.
 
 PHPBench scenarios in `benchmarks/` cover single operations, 10/100/1000-key bulk operations, tagged/plain records, tier and Node promotion, codec security/compression, and remember paths. Backend-focused tests separately verify operation counts for native bulk calls. These are microbenchmarks, not production throughput claims.
 

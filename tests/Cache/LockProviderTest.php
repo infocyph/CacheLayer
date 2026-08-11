@@ -45,6 +45,33 @@ test('lock providers reject non-positive lease durations', function (): void {
         ->toThrow(InvalidArgumentException::class);
 });
 
+test('file lock registry keeps identical keys in different directories independent', function (): void {
+    $firstDirectory = sys_get_temp_dir() . '/cachelayer-lock-a-' . bin2hex(random_bytes(5));
+    $secondDirectory = sys_get_temp_dir() . '/cachelayer-lock-b-' . bin2hex(random_bytes(5));
+    $first = new FileLockProvider($firstDirectory);
+    $second = new FileLockProvider($secondDirectory);
+
+    try {
+        $firstHandle = $first->acquire('shared-key', 0.0, 1.0);
+        $secondHandle = $second->acquire('shared-key', 0.0, 1.0);
+
+        expect($firstHandle)->not->toBeNull()
+            ->and($secondHandle)->not->toBeNull();
+
+        $first->release($firstHandle);
+        $second->release($secondHandle);
+    } finally {
+        foreach ([$firstDirectory, $secondDirectory] as $directory) {
+            foreach (glob($directory . '/*.lock') ?: [] as $file) {
+                unlink($file);
+            }
+            if (is_dir($directory)) {
+                rmdir($directory);
+            }
+        }
+    }
+});
+
 test('sqlite PDO locks use the shared file-lock fallback', function (): void {
     if (!extension_loaded('pdo_sqlite')) {
         test()->markTestSkipped('pdo_sqlite is not available.');

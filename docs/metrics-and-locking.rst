@@ -111,7 +111,8 @@ Provider semantics:
   release.
 * MySQL/MariaDB and PostgreSQL use connection-scoped advisory locks. Renewal
   verifies ownership and connection health; the lock remains held until
-  release or connection loss.
+  release or connection loss. These are not timed server-side leases, so the
+  handle's lease duration does not force expiry.
 * File locks retain an open ``flock`` until release. Renewal verifies that the
   owned file resource is still open.
 * SQLite and PDO drivers without native advisory locks use the file provider

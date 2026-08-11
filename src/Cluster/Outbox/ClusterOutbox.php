@@ -80,7 +80,7 @@ final class ClusterOutbox
 
     private function outboxOrigin(): string
     {
-        return $this->nodeId . ':outbox';
+        return $this->nodeId . '.outbox';
     }
 
     private function publish(InvalidationEvent $event): void

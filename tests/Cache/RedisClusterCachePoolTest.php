@@ -12,6 +12,17 @@ beforeEach(function () {
 
         public int $mgetCalls = 0;
 
+        public int $pipelineCalls = 0;
+
+        public int $setexCalls = 0;
+
+        public bool $failPipelineCommand = false;
+
+        private bool $pipelined = false;
+
+        /** @var list<bool> */
+        private array $pipelineResults = [];
+
         public function del(string|array $keys): int
         {
             $deleted = 0;
@@ -63,8 +74,21 @@ beforeEach(function () {
             return true;
         }
 
-        public function set(string $key, string $value): bool
+        public function multi(int $mode): self
         {
+            $this->pipelineCalls++;
+            $this->pipelined = $mode > 0;
+            $this->pipelineResults = [];
+
+            return $this;
+        }
+
+        /** @param list<string> $options */
+        public function set(string $key, string $value, array $options = []): bool
+        {
+            if (in_array('nx', $options, true) && isset($this->values[$key])) {
+                return false;
+            }
             $this->values[$key] = ['value' => $value, 'expires' => null];
 
             return true;
@@ -72,15 +96,38 @@ beforeEach(function () {
 
         public function setex(string $key, int $ttl, string $value): bool
         {
+            $this->setexCalls++;
             $this->values[$key] = ['value' => $value, 'expires' => time() + max(1, $ttl)];
+            if ($this->pipelined) {
+                $this->pipelineResults[] = !$this->failPipelineCommand;
+            }
 
             return true;
+        }
+
+        /** @return list<bool> */
+        public function exec(): array
+        {
+            $this->pipelined = false;
+
+            return $this->pipelineResults;
         }
 
         /** @return list<string> */
         public function keys(): array
         {
             return array_keys($this->values);
+        }
+
+        public function dropGenerationFor(string $logicalKey): void
+        {
+            foreach (array_keys($this->values) as $physicalKey) {
+                if (!str_ends_with($physicalKey, ':d:' . $logicalKey)) {
+                    continue;
+                }
+                $prefix = substr($physicalKey, 0, -strlen(':d:' . $logicalKey));
+                unset($this->values[$prefix . ':m:generation']);
+            }
         }
 
         private function prune(string $key): void
@@ -118,10 +165,38 @@ test('redis cluster adapter honors ttl', function () {
     expect($this->cache->get('ttl'))->toBeNull();
 });
 
-test('redis cluster clear uses bucket epochs without a permanent key index', function () {
+test('redis cluster adapter rejects a partial expiring pipeline write', function () {
+    $this->cluster->failPipelineCommand = true;
+
+    expect($this->cache->setMultiple(['first' => 1, 'second' => 2], 60))->toBeFalse();
+});
+
+test('redis cluster groups expiring bulk writes into bounded bucket pipelines', function () {
+    $values = [];
+    $buckets = [];
+    for ($index = 0; $index < 100; $index++) {
+        $key = 'bucketed.' . $index;
+        $values[$key] = $index;
+        $buckets[hexdec(substr(hash('xxh3', $key), 0, 8)) % 128] = true;
+    }
+
+    expect($this->cache->setMultiple($values, 60))->toBeTrue()
+        ->and($this->cluster->setexCalls)->toBe(100)
+        ->and($this->cluster->pipelineCalls)->toBe(count($buckets));
+});
+
+test('redis cluster clear rotates bucket generations without a permanent key index', function () {
     $this->cache->setMultiple(['a' => 1, 'b' => 2]);
     $this->cache->clear();
 
     expect($this->cache->getMultiple(['a', 'b']))->toBe(['a' => null, 'b' => null])
         ->and(implode('|', $this->cluster->keys()))->not->toContain('__keys');
+});
+
+test('missing bucket generation cannot resurrect data written before clear', function () {
+    $this->cache->set('old', 'stale');
+    $this->cache->clear();
+    $this->cluster->dropGenerationFor('old');
+
+    expect($this->cache->get('old'))->toBeNull();
 });

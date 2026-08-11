@@ -31,3 +31,8 @@ Signed Closures
 Unsigned and signed Closure payloads are separate formats. Signature failures,
 malformed payloads, and payloads that do not contain a Closure throw
 ``InvalidArgumentException``.
+
+Closures are executable code and may capture objects, credentials, or request
+state. Only serialize trusted closures into a trusted backend, prefer signed
+payloads, and do not treat a valid signature as proof that captured data is
+safe to retain or reuse in another request.

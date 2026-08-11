@@ -21,7 +21,7 @@
         "scylladb",
         "valkey",
         "weakmap",
-        "chain-cache"
+        "tiered-cache"
     ],
     "authors": [
         {

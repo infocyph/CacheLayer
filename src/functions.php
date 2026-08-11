@@ -5,18 +5,6 @@ declare(strict_types=1);
 use Infocyph\CacheLayer\Memoize\Memoizer;
 use Infocyph\CacheLayer\Memoize\OnceMemoizer;
 
-if (!function_exists('sanitize_cache_ns')) {
-    /**
-     * Normalize cache namespaces into safe key prefixes.
-     */
-    function sanitize_cache_ns(string $ns): string
-    {
-        $sanitized = preg_replace('/[^A-Za-z0-9_\-]/', '_', $ns);
-
-        return is_string($sanitized) ? $sanitized : '';
-    }
-}
-
 if (!function_exists('memoize')) {
     /**
      * @param array<int, mixed> $params
@@ -59,6 +47,14 @@ if (!function_exists('remember')) {
 if (!function_exists('once')) {
     function once(callable $callback): mixed
     {
-        return OnceMemoizer::instance()->once($callback);
+        return OnceMemoizer::instance()->once($callback, 1);
+    }
+}
+
+if (!function_exists('flush_memoizers')) {
+    function flush_memoizers(): void
+    {
+        Memoizer::instance()->flush();
+        OnceMemoizer::instance()->flush();
     }
 }

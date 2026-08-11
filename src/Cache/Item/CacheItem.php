@@ -13,13 +13,13 @@ use Psr\Cache\CacheItemInterface;
 final class CacheItem implements CacheItemInterface
 {
     /**
-     * @param array<string, int> $tags
+     * @param array<string, string> $tags
      */
     public function __construct(
         private readonly InternalCachePoolInterface $pool,
         private readonly string $key,
         private mixed $value = null,
-        private bool $hit = false,
+        private readonly bool $hit = false,
         private ?DateTimeInterface $expiration = null,
         private array $tags = [],
     ) {}
@@ -58,8 +58,8 @@ final class CacheItem implements CacheItemInterface
         return $this->key;
     }
 
-    /** @return array<string, int> */
-    public function getTagVersions(): array
+    /** @return array<string, string> */
+    public function getTagGenerations(): array
     {
         return $this->tags;
     }
@@ -87,15 +87,14 @@ final class CacheItem implements CacheItemInterface
     public function set(mixed $value): static
     {
         $this->value = $value;
-        $this->hit = true;
 
         return $this;
     }
 
     /**
-     * @param array<string, int> $tags
+     * @param array<string, string> $tags
      */
-    public function setTagVersions(array $tags): static
+    public function setTagGenerations(array $tags): static
     {
         $this->tags = $tags;
 

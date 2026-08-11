@@ -18,7 +18,7 @@ Highlights:
 * distributed in-memory cache
 * ``getMulti`` based batch reads
 * TTL-grouped ``setMulti`` batch writes
-* namespace clear advances an epoch and never calls server-wide ``flush``
+* namespace clear replaces an opaque namespace generation and never calls server-wide ``flush``
 * factory auto-configures ``MemcachedLockProvider`` for ``remember()`` when using this adapter
 * lock leases use ``add`` acquisition and CAS-guarded renewal/release so an
   expired owner's cleanup cannot delete a replacement owner's lock
@@ -36,7 +36,8 @@ Example
        ['127.0.0.1', 11211, 100],
    ]);
 
-   $state = $cache->remember('user.42.state', function ($item) {
-       $item->expiresAfter(120);
-       return loadSessionState(42);
-   });
+   $state = $cache->remember(
+       'user.42.state',
+       fn () => loadSessionState(42),
+       ttl: 120,
+   );

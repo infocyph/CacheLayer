@@ -17,7 +17,8 @@ Highlights:
 
 * unified SQL adapter for MySQL, MariaDB, PostgreSQL, and other PDO drivers
 * defaults to SQLite when no DSN/PDO is provided
-* physically separated data and metadata rows (``<ns>:d:<key>`` and ``<ns>:m:<name>``)
+* exact namespace isolation through composite ``(namespace, kind, cache_key)`` rows
+* binary payload columns with physically separated data and metadata kinds
 * automatic table/index initialization
 * driver-aware upsert strategy:
   - PostgreSQL/SQLite: native ``ON CONFLICT``
@@ -28,6 +29,8 @@ Highlights:
 * PostgreSQL locking uses the two-key advisory-lock form
 * SQLite and other PDO drivers without advisory locks use an injected
   ``FileLockProvider`` fallback
+* expired data rows are misses and can be removed in bounded batches with
+  ``PdoCacheAdapter::pruneExpired($limit)``
 
 Schema creation can be separated from runtime access. Run
 ``PdoCacheSchema::install($pdo, 'cachelayer_entries')`` during deployment,
@@ -37,8 +40,10 @@ keeps automatic initialization enabled.
 
 PDO advisory locks remain owned by their creating connection until explicit
 release or connection loss. ``refresh()`` verifies local token ownership and
-connection health. The provider rejects re-entrant acquisition of the same
-lock through one provider instance.
+connection health; it cannot extend a real server-side timed lease because PDO
+advisory locks are connection-owned. Treat ``leaseSeconds`` as API
+compatibility, not automatic expiry. The provider rejects re-entrant
+acquisition of the same lock through one provider instance.
 
 Examples:
 
@@ -72,10 +77,12 @@ Typical Usage
 
    $cache = Cache::pdo('orders');
 
-   $summary = $cache->remember('orders.summary.today', function ($item) {
-       $item->expiresAfter(60);
-       return loadOrderSummary();
-   }, tags: ['orders']);
+   $summary = $cache->remember(
+       'orders.summary.today',
+       fn () => loadOrderSummary(),
+       ttl: 60,
+       tags: ['orders'],
+   );
 
    // Invalidate all related records after an order mutation.
    $cache->invalidateTag('orders');

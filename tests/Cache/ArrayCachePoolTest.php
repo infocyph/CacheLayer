@@ -54,11 +54,6 @@ test('deferred commit uses one bulk persistence call and retains failures', func
             return true;
         }
 
-        public function count(): int
-        {
-            return 0;
-        }
-
         public function deleteItem(string $key): bool
         {
             return $key !== "\0";

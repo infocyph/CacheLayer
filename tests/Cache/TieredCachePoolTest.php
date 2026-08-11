@@ -12,14 +12,14 @@ beforeEach(function () {
     $this->cache = Cache::tiered([$this->l1, $this->l2]);
 });
 
-test('chain adapter writes through all pools', function () {
+test('tiered adapter writes through all pools', function () {
     $this->cache->set('k', 'value');
 
     expect($this->l1->getItem('k')->isHit())->toBeTrue()
         ->and($this->l2->getItem('k')->isHit())->toBeTrue();
 });
 
-test('chain adapter promotes value from lower tier to upper tier', function () {
+test('tiered adapter promotes value from lower tier to upper tier', function () {
     $item = $this->l2->getItem('promote');
     $item->set('from-l2')->save();
 
@@ -51,6 +51,17 @@ test('tiered cache can skip L1 write-through on save', function () {
 
     expect($cache->get('x'))->toBe('X')
         ->and($l1->getItem('x')->isHit())->toBeTrue();
+});
+
+test('tiered tag validation follows the authoritative last tier', function () {
+    $l1 = new ArrayCacheAdapter('tier-disagreement');
+    $l2 = new ArrayCacheAdapter('tier-disagreement');
+    $cache = Cache::tiered([$l1, $l2]);
+    $cache->setTagged('tagged', 'value', ['products']);
+
+    expect($cache->get('tagged'))->toBe('value');
+    $l2->rotateTagGenerations(['products']);
+    expect($cache->get('tagged'))->toBeNull();
 });
 
 test('tiered cache rejects unsupported driver descriptors', function () {

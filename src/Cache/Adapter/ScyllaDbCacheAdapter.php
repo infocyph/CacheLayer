@@ -6,13 +6,13 @@ namespace Infocyph\CacheLayer\Cache\Adapter;
 
 use Cassandra\ExecutionOptions;
 use Cassandra\SimpleStatement;
+use Infocyph\CacheLayer\Cache\CacheInput;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Psr\Cache\CacheItemInterface;
 use RuntimeException;
-use Throwable;
 use Traversable;
 
-final class ScyllaDbCacheAdapter extends AbstractCacheAdapter
+final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGenerationCacheInterface
 {
     private const int WRITE_BATCH_SIZE = 50;
 
@@ -36,7 +36,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter
             throw new RuntimeException('ScyllaDbCacheAdapter requires session method `execute()`.');
         }
 
-        $this->ns = sanitize_cache_ns($namespace);
+        $this->ns = CacheInput::namespace($namespace);
         $resolvedTable = self::validateIdentifier($table, 'table');
         $resolvedKeyspace = self::validateIdentifier($keyspace, 'keyspace');
         $this->qualifiedTable = $resolvedKeyspace . '.' . $resolvedTable;
@@ -63,26 +63,6 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter
         $this->deferred = [];
 
         return true;
-    }
-
-    public function count(): int
-    {
-        $now = time();
-        $count = 0;
-        for ($bucket = 0; $bucket < $this->bucketCount; $bucket++) {
-            $rows = $this->queryRows(
-                "SELECT expires FROM {$this->qualifiedTable} WHERE ns = ? AND bucket = ?",
-                [$this->ns, $bucket],
-            );
-            foreach ($rows as $row) {
-                $expiresAt = $this->normalizeExpiry($row['expires'] ?? null);
-                if ($expiresAt === null || $expiresAt > $now) {
-                    $count++;
-                }
-            }
-        }
-
-        return $count;
     }
 
     public function deleteItem(string $key): bool
@@ -130,53 +110,37 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter
 
         $payload = $this->normalizeString($row['payload'] ?? null);
 
-        return $this->genericFromBase64($key, $payload);
+        return $this->genericFromBlobWithInvalidator(
+            $key,
+            $payload,
+            fn(): bool => $this->deleteItem($key),
+        );
     }
 
     /**
      * @param list<string> $tags
-     * @return array<string, int>
+     * @return array<string, string>
      */
     #[\Override]
-    public function getTagVersions(array $tags): array
+    public function getTagGenerations(array $tags): array
     {
-        $versions = array_fill_keys($tags, 0);
-        foreach ($this->groupByBucket($tags) as $bucket => $group) {
-            $marks = implode(',', array_fill(0, count($group), '?'));
-            $rows = $this->queryRows(
-                "SELECT tag, version FROM {$this->metadataTable} "
-                . "WHERE ns = ? AND bucket = ? AND tag IN ({$marks})",
-                [$this->ns, $bucket, ...$group],
-            );
-            foreach ($rows as $row) {
-                $tag = $this->normalizeString($row['tag'] ?? null);
-                $version = $row['version'] ?? null;
-                if ($tag !== null && is_numeric($version)) {
-                    $versions[$tag] = max(0, (int) $version);
-                }
+        $generations = $this->readTagGenerations($tags);
+        $missing = [];
+        foreach ($tags as $tag) {
+            if (!isset($generations[$tag])) {
+                $missing[$tag] = self::newGeneration();
             }
         }
+        if ($missing !== [] && !$this->storeTagGenerations($missing)) {
+            throw new RuntimeException('Unable to initialize ScyllaDB tag generations.');
+        }
 
-        return $versions;
+        return $generations + $missing;
     }
 
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
-    }
-
-    /** @param list<string> $tags */
-    #[\Override]
-    public function incrementTagVersions(array $tags): bool
-    {
-        foreach ($tags as $tag) {
-            $this->executeCql(
-                "UPDATE {$this->metadataTable} SET version = version + 1 WHERE ns = ? AND bucket = ? AND tag = ?",
-                [$this->ns, $this->bucket($tag), $tag],
-            );
-        }
-
-        return true;
     }
 
     /**
@@ -187,43 +151,73 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter
     public function multiFetch(array $keys): array
     {
         $items = [];
+        $invalid = [];
         foreach ($this->groupByBucket($keys) as $bucket => $group) {
-            $marks = implode(',', array_fill(0, count($group), '?'));
-            $rows = $this->queryRows(
-                "SELECT ckey, payload, expires FROM {$this->qualifiedTable} "
-                . "WHERE ns = ? AND bucket = ? AND ckey IN ({$marks})",
-                [$this->ns, $bucket, ...array_map($this->mapData(...), $group)],
-            );
-            $byKey = [];
-            foreach ($rows as $row) {
-                $physical = $this->normalizeString($row['ckey'] ?? null);
-                if ($physical !== null) {
-                    $byKey[$physical] = $row;
-                }
-            }
-            foreach ($group as $key) {
-                $row = $byKey[$this->mapData($key)] ?? null;
-                $payload = is_array($row) ? $this->normalizeString($row['payload'] ?? null) : null;
-                $items[$key] = $this->genericFromBase64($key, $payload);
-            }
+            $result = $this->fetchBucketItems($bucket, $group);
+            $items += $result['items'];
+            array_push($invalid, ...$result['invalid']);
+        }
+        if ($invalid !== []) {
+            $this->deleteItems($invalid);
         }
 
         return $items;
     }
 
+    /** @param list<string> $tags */
+    #[\Override]
+    public function readTagGenerations(array $tags): array
+    {
+        $generations = [];
+        foreach ($this->groupByBucket($tags) as $bucket => $group) {
+            $marks = implode(',', array_fill(0, count($group), '?'));
+            $rows = $this->queryRows(
+                "SELECT tag, generation FROM {$this->metadataTable} "
+                . "WHERE ns = ? AND bucket = ? AND tag IN ({$marks})",
+                [$this->ns, $bucket, ...$group],
+            );
+            foreach ($rows as $row) {
+                $tag = $this->normalizeString($row['tag'] ?? null);
+                $generation = $this->normalizeString($row['generation'] ?? null);
+                $generation = self::normalizeGeneration($generation);
+                if ($tag !== null && $generation !== null) {
+                    $generations[$tag] = $generation;
+                }
+            }
+        }
+
+        return $generations;
+    }
+
+    /** @param list<string> $tags */
+    #[\Override]
+    public function rotateTagGenerations(array $tags): bool
+    {
+        $generations = [];
+        foreach ($tags as $tag) {
+            $generations[$tag] = self::newGeneration();
+        }
+
+        return $this->storeTagGenerations($generations);
+    }
+
     public function save(CacheItemInterface $item): bool
     {
         return $this->saveEncoded($item, function (CacheItemInterface $saveItem, array $expires): bool {
-            $this->executeCql(
-                "INSERT INTO {$this->qualifiedTable} (ns, bucket, ckey, payload, expires) VALUES (?, ?, ?, ?, ?)",
-                [
-                    $this->ns,
-                    $this->bucket($saveItem->getKey()),
-                    $this->mapData($saveItem->getKey()),
-                    base64_encode($this->encodeItem($saveItem, $expires['expiresAt'])),
-                    $expires['expiresAt'],
-                ],
-            );
+            $cql = "INSERT INTO {$this->qualifiedTable} (ns, bucket, ckey, payload, expires) "
+                . 'VALUES (?, ?, ?, ?, ?)';
+            $arguments = [
+                $this->ns,
+                $this->bucket($saveItem->getKey()),
+                $this->mapData($saveItem->getKey()),
+                $this->encodeItem($saveItem, $expires['expiresAt']),
+                $expires['expiresAt'],
+            ];
+            if ($expires['ttl'] !== null) {
+                $cql .= ' USING TTL ?';
+                $arguments[] = $expires['ttl'];
+            }
+            $this->executeCql($cql, $arguments);
 
             return true;
         });
@@ -244,7 +238,11 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter
 
                 continue;
             }
-            $active[$this->bucket($item->getKey())][] = [$item, $expiration['expiresAt']];
+            $active[$this->bucket($item->getKey())][] = [
+                $item,
+                $expiration['expiresAt'],
+                $expiration['ttl'],
+            ];
         }
         if (!$this->deleteItems($expired)) {
             return false;
@@ -253,6 +251,23 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter
             foreach (array_chunk($group, self::WRITE_BATCH_SIZE) as $chunk) {
                 $this->saveBucket($bucket, $chunk);
             }
+        }
+
+        return true;
+    }
+
+    /** @param array<string, string> $generations */
+    #[\Override]
+    public function storeTagGenerations(array $generations): bool
+    {
+        foreach ($generations as $tag => $generation) {
+            if (!self::isGeneration($generation)) {
+                return false;
+            }
+            $this->executeCql(
+                "INSERT INTO {$this->metadataTable} (ns, bucket, tag, generation) VALUES (?, ?, ?, ?)",
+                [$this->ns, $this->bucket($tag), $tag, strtolower($generation)],
+            );
         }
 
         return true;
@@ -296,7 +311,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter
                 ns text,
                 bucket int,
                 ckey text,
-                payload text,
+                payload blob,
                 expires bigint,
                 PRIMARY KEY ((ns, bucket), ckey)
             )",
@@ -306,7 +321,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter
                 ns text,
                 bucket int,
                 tag text,
-                version counter,
+                generation text,
                 PRIMARY KEY ((ns, bucket), tag)
             )",
         );
@@ -322,11 +337,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter
         $statement = $this->statementFor($cql);
         $options = $this->executionOptions($arguments);
 
-        try {
-            return $this->callSession('execute', [$statement, $options]);
-        } catch (Throwable) {
-            return $this->callSession('execute', [$statement]);
-        }
+        return $this->callSession('execute', [$statement, $options]);
     }
 
     /**
@@ -341,6 +352,43 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter
         }
 
         return $options;
+    }
+
+    /**
+     * @param list<string> $keys
+     * @return array{items:array<string, CacheItem>, invalid:list<string>}
+     */
+    private function fetchBucketItems(int $bucket, array $keys): array
+    {
+        $marks = implode(',', array_fill(0, count($keys), '?'));
+        $rows = $this->queryRows(
+            "SELECT ckey, payload, expires FROM {$this->qualifiedTable} "
+            . "WHERE ns = ? AND bucket = ? AND ckey IN ({$marks})",
+            [$this->ns, $bucket, ...array_map($this->mapData(...), $keys)],
+        );
+        $byKey = [];
+        foreach ($rows as $row) {
+            $physical = $this->normalizeString($row['ckey'] ?? null);
+            if ($physical !== null) {
+                $byKey[$physical] = $row;
+            }
+        }
+
+        $items = [];
+        $invalid = [];
+        foreach ($keys as $key) {
+            $row = $byKey[$this->mapData($key)] ?? null;
+            $payload = is_array($row) ? $this->normalizeString($row['payload'] ?? null) : null;
+            $record = $payload === null ? null : $this->decodeRecordFromBlob($payload);
+            $items[$key] = $record === null
+                ? $this->genericMiss($key)
+                : $this->genericItemFromRecord($key, $record);
+            if (is_array($row) && $record === null) {
+                $invalid[] = $key;
+            }
+        }
+
+        return ['items' => $items, 'invalid' => $invalid];
     }
 
     /**
@@ -455,22 +503,26 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter
         return [];
     }
 
-    /** @param list<array{0:CacheItemInterface, 1:int|null}> $items */
+    /** @param list<array{0:CacheItemInterface, 1:int|null, 2:int|null}> $items */
     private function saveBucket(int $bucket, array $items): void
     {
         $inserts = [];
         $arguments = [];
-        foreach ($items as [$item, $expiresAt]) {
+        foreach ($items as [$item, $expiresAt, $ttl]) {
             $inserts[] = "INSERT INTO {$this->qualifiedTable} "
-                . '(ns, bucket, ckey, payload, expires) VALUES (?, ?, ?, ?, ?);';
+                . '(ns, bucket, ckey, payload, expires) VALUES (?, ?, ?, ?, ?)'
+                . ($ttl === null ? ';' : ' USING TTL ?;');
             array_push(
                 $arguments,
                 $this->ns,
                 $bucket,
                 $this->mapData($item->getKey()),
-                base64_encode($this->encodeItem($item, $expiresAt)),
+                $this->encodeItem($item, $expiresAt),
                 $expiresAt,
             );
+            if ($ttl !== null) {
+                $arguments[] = $ttl;
+            }
         }
         $this->executeCql('BEGIN UNLOGGED BATCH ' . implode(' ', $inserts) . ' APPLY BATCH', $arguments);
     }

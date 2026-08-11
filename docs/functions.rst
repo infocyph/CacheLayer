@@ -6,25 +6,6 @@ Global Helper Functions
 
 CacheLayer autoloads helper functions from ``src/functions.php``.
 
-sanitize_cache_ns()
--------------------
-
-.. php:function:: sanitize_cache_ns(string $ns): string
-
-Normalizes namespaces into safe key prefixes.
-
-Behavior:
-
-* Replaces any character outside ``[A-Za-z0-9_-]`` with ``_``
-* Uses an internal static memoization map for repeated inputs
-
-Example:
-
-.. code-block:: php
-
-   sanitize_cache_ns('tenant/acme.v1');
-   // "tenant_acme_v1"
-
 memoize()
 ---------
 
@@ -75,3 +56,12 @@ Useful for one-time initialization inside request/process scope.
    $config = once(function () {
        return loadLargeConfigArray();
    });
+
+flush_memoizers()
+-----------------
+
+.. php:function:: flush_memoizers(): void
+
+Clears the process-local ``memoize()``, object ``remember()``, and ``once()``
+state. Persistent workers should call it at a request boundary when values must
+not leak into a later request.

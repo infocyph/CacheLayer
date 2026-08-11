@@ -20,18 +20,16 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
 
     private string $driver;
 
-    public function __construct(private PDO $connection, bool $allowSqliteForTesting = false)
-    {
+    public function __construct(
+        private PDO $connection,
+        bool $allowSqliteForTesting = false,
+        bool $initializeSchema = true,
+    ) {
         $this->connection->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-        $driver = $connection->getAttribute(PDO::ATTR_DRIVER_NAME);
-        $this->driver = is_string($driver) ? $driver : '';
-        if (!in_array($this->driver, ['mysql', 'pgsql', 'sqlite'], true)) {
-            throw new ClusterTransportException('PDO invalidation transport supports MySQL and PostgreSQL only.');
+        $this->driver = PdoInvalidationSchema::validateConnection($connection, $allowSqliteForTesting);
+        if ($initializeSchema) {
+            PdoInvalidationSchema::install($connection, $allowSqliteForTesting);
         }
-        if ($this->driver === 'sqlite' && !$allowSqliteForTesting) {
-            throw new ClusterTransportException('SQLite is not a supported shared Cluster Cache transport.');
-        }
-        $this->createSchemaIfMissing();
     }
 
     public function consumeAfter(string $cluster, ?string $cursor, int $limit): InvalidationBatch
@@ -159,47 +157,6 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
             . 'FROM ' . self::TABLE . ' WHERE ' . $where . ' ORDER BY event_id ASC LIMIT :limit';
     }
 
-    private function createClusterIndexIfMissing(): void
-    {
-        $ifNotExists = $this->driver === 'mysql' ? '' : ' IF NOT EXISTS';
-
-        try {
-            $this->connection->exec(
-                'CREATE INDEX' . $ifNotExists . ' cachelayer_invalidation_events_cluster_idx '
-                . 'ON ' . self::TABLE . ' (cluster_name, event_id)',
-            );
-        } catch (PDOException $exception) {
-            if ($this->driver !== 'mysql' || !$this->isDuplicateIndex($exception)) {
-                throw new ClusterTransportException('Unable to initialize the PDO invalidation transport index.', 0, $exception);
-            }
-        }
-    }
-
-    private function createSchemaIfMissing(): void
-    {
-        try {
-            $this->connection->exec($this->createTableSql());
-        } catch (PDOException $exception) {
-            throw new ClusterTransportException('Unable to initialize the PDO invalidation transport schema.', 0, $exception);
-        }
-
-        $this->createClusterIndexIfMissing();
-    }
-
-    private function createTableSql(): string
-    {
-        $id = match ($this->driver) {
-            'mysql' => 'BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY',
-            'pgsql' => 'BIGSERIAL PRIMARY KEY',
-            default => 'INTEGER PRIMARY KEY AUTOINCREMENT',
-        };
-
-        return 'CREATE TABLE IF NOT EXISTS ' . self::TABLE . ' ('
-            . 'event_id ' . $id . ', cluster_name VARCHAR(128) NOT NULL, namespace_name VARCHAR(128) NOT NULL, '
-            . 'event_type VARCHAR(32) NOT NULL, identifier VARCHAR(512) NULL, origin_node_id VARCHAR(255) NOT NULL, '
-            . 'created_at BIGINT NOT NULL)';
-    }
-
     private function eventBoundary(string $cluster, string $aggregate): ?string
     {
         try {
@@ -298,13 +255,6 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
         }
 
         return $id;
-    }
-
-    private function isDuplicateIndex(PDOException $exception): bool
-    {
-        $errorInfo = $exception->errorInfo;
-
-        return is_array($errorInfo) && ($errorInfo[1] ?? null) === 1061;
     }
 
     private function pruneSql(): string

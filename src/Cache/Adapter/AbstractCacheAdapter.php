@@ -17,7 +17,7 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
 
     private ?CachePayloadCodec $codec = null;
 
-    /** @var array<string, int> */
+    /** @var array<string, string> */
     private array $localMetadata = [];
 
     private ?CacheOptions $options = null;
@@ -65,13 +65,6 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         return $this->genericMiss($key);
     }
 
-    public function get(string $key): mixed
-    {
-        $item = $this->getItem($key);
-
-        return $item->isHit() ? $item->get() : null;
-    }
-
     /**
      * @param list<string> $keys
      * @return array<string, CacheItem>
@@ -82,24 +75,14 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
     }
 
     /** @param list<string> $tags */
-    public function getTagVersions(array $tags): array
+    public function getTagGenerations(array $tags): array
     {
-        $versions = [];
+        $generations = [];
         foreach ($tags as $tag) {
-            $versions[$tag] = $this->localMetadata[$tag] ?? 0;
+            $generations[$tag] = $this->localMetadata[$tag] ??= self::newGeneration();
         }
 
-        return $versions;
-    }
-
-    /** @param list<string> $tags */
-    public function incrementTagVersions(array $tags): bool
-    {
-        foreach ($tags as $tag) {
-            $this->localMetadata[$tag] = ($this->localMetadata[$tag] ?? 0) + 1;
-        }
-
-        return true;
+        return $generations;
     }
 
     public function internalPersist(CacheItemInterface $item): bool
@@ -110,6 +93,16 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
     public function internalQueue(CacheItemInterface $item): bool
     {
         return $this->saveDeferred($item);
+    }
+
+    /** @param list<string> $tags */
+    public function rotateTagGenerations(array $tags): bool
+    {
+        foreach ($tags as $tag) {
+            $this->localMetadata[$tag] = self::newGeneration();
+        }
+
+        return true;
     }
 
     public function saveDeferred(CacheItemInterface $item): bool
@@ -123,12 +116,23 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         return true;
     }
 
-    public function set(string $key, mixed $value, ?int $ttl = null): bool
+    protected static function isGeneration(mixed $value): bool
     {
-        $item = $this->getItem($key);
-        $item->set($value)->expiresAfter($ttl);
+        return is_string($value) && strlen($value) === 32 && ctype_xdigit($value);
+    }
 
-        return $this->save($item);
+    protected static function newGeneration(): string
+    {
+        return bin2hex(random_bytes(16));
+    }
+
+    protected static function normalizeGeneration(mixed $value): ?string
+    {
+        if (!is_string($value) || strlen($value) !== 32 || !ctype_xdigit($value)) {
+            return null;
+        }
+
+        return strtolower($value);
     }
 
     protected function decodeRecordFromBase64(string $payload): ?CacheRecord
@@ -150,11 +154,11 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
     protected function encodeItem(
         CacheItemInterface $item,
         ?int $expiresAt,
-        ?int $namespaceEpoch = null,
+        ?string $namespaceGeneration = null,
     ): string {
-        $tags = $item instanceof CacheItem ? $item->getTagVersions() : [];
+        $tags = $item instanceof CacheItem ? $item->getTagGenerations() : [];
 
-        return $this->payloadCodec()->encode($item->get(), $expiresAt, $tags, $namespaceEpoch);
+        return $this->payloadCodec()->encode($item->get(), $expiresAt, $tags, $namespaceGeneration);
     }
 
     protected function genericDeleteAndMiss(string $key): CacheItem
@@ -162,15 +166,6 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         $this->deleteItem($key);
 
         return $this->genericMiss($key);
-    }
-
-    protected function genericFromBase64(string $key, ?string $payload): CacheItem
-    {
-        return $this->genericFromBase64WithInvalidator(
-            $key,
-            $payload,
-            fn(): bool => $this->deleteItem($key),
-        );
     }
 
     /** @param callable(): bool $onInvalid */
@@ -184,15 +179,6 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
             $payload,
             $onInvalid,
             $this->decodeRecordFromBase64(...),
-        );
-    }
-
-    protected function genericFromBlob(string $key, ?string $blob): CacheItem
-    {
-        return $this->genericFromBlobWithInvalidator(
-            $key,
-            $blob,
-            fn(): bool => $this->deleteItem($key),
         );
     }
 
@@ -227,19 +213,9 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         return new CacheItem($this, $key);
     }
 
-    /**
-     * @param list<string> $keys
-     * @param callable(string): CacheItem $fetcher
-     * @return array<string, CacheItem>
-     */
-    protected function multiFetchItems(array $keys, callable $fetcher): array
+    protected function options(): CacheOptions
     {
-        $items = [];
-        foreach ($keys as $key) {
-            $items[$key] = $fetcher($key);
-        }
-
-        return $items;
+        return $this->options ??= new CacheOptions();
     }
 
     protected function resetLocalMetadata(): void

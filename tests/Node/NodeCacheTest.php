@@ -142,6 +142,38 @@ test('node bulk reads fetch only L1 misses from SQLite and promote as one batch'
         ->and(($after['l2_batch_promote'] ?? 0) - ($before['l2_batch_promote'] ?? 0))->toBe(2);
 });
 
+test('node tagged L1 hits use cached generation metadata', function () {
+    $connection = NodeSqliteConnection::create($this->nodeConfig);
+    $l1 = new ArrayCacheAdapter($this->nodeConfig->namespace);
+    $l2 = new NodeSqliteCacheAdapter($connection, $this->nodeConfig->namespace);
+    $cache = new Cache(new NodeCacheAdapter($l1, $l2, false));
+    $cache->setTagged('tagged', 'value', ['products'], 300);
+    $connection->prepare(
+        "DELETE FROM cachelayer_node_entries WHERE namespace = ? AND cache_key = 'm:tag:products'",
+    )->execute([$this->nodeConfig->namespace]);
+
+    expect($cache->get('tagged'))->toBe('value');
+    $l1->clear();
+    expect($cache->get('tagged'))->toBeNull();
+});
+
+test('node never writes L1 when its authoritative L2 write fails', function () {
+    $connection = NodeSqliteConnection::create($this->nodeConfig);
+    $l1 = new ArrayCacheAdapter($this->nodeConfig->namespace);
+    $l2 = new NodeSqliteCacheAdapter($connection, $this->nodeConfig->namespace);
+    $cache = new Cache(new NodeCacheAdapter($l1, $l2));
+    $cache->set('coherent', 'old', 300);
+    $l1->clear();
+    $connection->exec(
+        "CREATE TRIGGER reject_node_update BEFORE UPDATE ON cachelayer_node_entries "
+        . "WHEN OLD.cache_key = 'd:coherent' BEGIN SELECT RAISE(ABORT, 'write rejected'); END",
+    );
+
+    expect($cache->set('coherent', 'new', 300))->toBeFalse()
+        ->and($l1->getItem('coherent')->isHit())->toBeFalse()
+        ->and($l2->getItem('coherent')->get())->toBe('old');
+});
+
 test('expired rows remain outside the read path until bounded pruning', function () {
     $connection = NodeSqliteConnection::create($this->nodeConfig);
     $adapter = new NodeSqliteCacheAdapter($connection, $this->nodeConfig->namespace);

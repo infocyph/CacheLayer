@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Infocyph\CacheLayer\Cache\Adapter;
 
+use Infocyph\CacheLayer\Cache\CacheInput;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
+use PDO;
+use PDOException;
 use Psr\Cache\CacheItemInterface;
 use RuntimeException;
 
@@ -14,11 +17,15 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
 
     private const string DEFAULT_SQLITE_DIR = 'cachelayer/pdo';
 
+    private const string KIND_DATA = 'data';
+
+    private const string KIND_TAG = 'tag';
+
     private readonly string $driver;
 
     private readonly string $namespace;
 
-    private readonly \PDO $pdo;
+    private readonly PDO $pdo;
 
     private readonly string $table;
 
@@ -27,7 +34,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
         ?string $dsn = null,
         ?string $username = null,
         ?string $password = null,
-        ?\PDO $pdo = null,
+        ?PDO $pdo = null,
         string $table = 'cachelayer_entries',
         bool $initializeSchema = true,
     ) {
@@ -35,12 +42,12 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
             throw new RuntimeException('Invalid PDO cache table name.');
         }
 
-        $this->namespace = sanitize_cache_ns($namespace);
+        $this->namespace = CacheInput::namespace($namespace);
         $this->table = $table;
         $resolvedDsn = $dsn ?? 'sqlite:' . self::defaultSqliteFileForNamespace($this->namespace);
-        $this->pdo = $pdo ?? new \PDO($resolvedDsn, $username, $password);
-        $this->pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
-        $driver = $this->pdo->getAttribute(\PDO::ATTR_DRIVER_NAME);
+        $this->pdo = $pdo ?? new PDO($resolvedDsn, $username, $password);
+        $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $driver = $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
         $this->driver = is_string($driver) ? $driver : '';
         if ($this->driver === 'sqlite') {
             $this->pdo->exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=5000;');
@@ -61,65 +68,53 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
         if (!is_dir($directory) && !mkdir($directory, 0700, true) && !is_dir($directory)) {
             throw new RuntimeException("Unable to create SQLite cache directory: {$directory}");
         }
-        if (!is_writable($directory)) {
-            throw new RuntimeException("SQLite cache directory is not writable: {$directory}");
+        $permissions = fileperms($directory);
+        if (!is_writable($directory) || ($permissions !== false && (($permissions & 0x0002) === 0x0002))) {
+            throw new RuntimeException("SQLite cache directory must be writable and not world-writable: {$directory}");
         }
 
-        return $directory . DIRECTORY_SEPARATOR . 'cache_' . sanitize_cache_ns($namespace) . '.sqlite';
+        return $directory . DIRECTORY_SEPARATOR . 'cache_' . CacheInput::namespace($namespace) . '.sqlite';
     }
 
     public function clear(): bool
     {
-        $statement = $this->pdo->prepare("DELETE FROM {$this->table} WHERE ckey LIKE ?");
-        $cleared = $statement->execute([$this->namespace . ':%']);
+        $statement = $this->pdo->prepare("DELETE FROM {$this->table} WHERE namespace = ?");
+        $cleared = $statement->execute([$this->namespace]);
         $this->deferred = [];
 
         return $cleared;
     }
 
-    public function count(): int
-    {
-        $statement = $this->pdo->prepare(
-            "SELECT COUNT(*) FROM {$this->table}
-             WHERE ckey LIKE ? AND (expires IS NULL OR expires > ?)",
-        );
-        $statement->execute([$this->namespace . ':d:%', time()]);
-        $count = $statement->fetchColumn();
-
-        return is_numeric($count) ? max(0, (int) $count) : 0;
-    }
-
     public function deleteItem(string $key): bool
     {
-        $statement = $this->pdo->prepare("DELETE FROM {$this->table} WHERE ckey = ?");
+        $statement = $this->pdo->prepare(
+            "DELETE FROM {$this->table} WHERE namespace = ? AND kind = ? AND cache_key = ?",
+        );
 
-        return $statement->execute([$this->mapData($key)]);
+        return $statement->execute([$this->namespace, self::KIND_DATA, $key]);
     }
 
     /** @param list<string> $keys */
     public function deleteItems(array $keys): bool
     {
-        return $this->deleteMapped(array_map($this->mapData(...), $keys));
+        return $this->deleteByKind(self::KIND_DATA, $keys);
     }
 
-    public function getClient(): \PDO
+    public function getClient(): PDO
     {
         return $this->pdo;
     }
 
     public function getItem(string $key): CacheItem
     {
-        $statement = $this->pdo->prepare(
-            "SELECT payload, expires FROM {$this->table} WHERE ckey = ? LIMIT 1",
-        );
-        $statement->execute([$this->mapData($key)]);
-        $row = $statement->fetch(\PDO::FETCH_ASSOC);
+        $rows = $this->fetchRows(self::KIND_DATA, [$key]);
+        $row = $rows[$key] ?? null;
         if (!is_array($row)) {
             return $this->genericMiss($key);
         }
 
         $item = $this->hydrate($key, $row);
-        if ($item !== null) {
+        if ($item instanceof CacheItem) {
             return $item;
         }
         $this->deleteItem($key);
@@ -129,58 +124,37 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
 
     /**
      * @param list<string> $tags
-     * @return array<string, int>
+     * @return array<string, string>
      */
     #[\Override]
-    public function getTagVersions(array $tags): array
+    public function getTagGenerations(array $tags): array
     {
-        $mapped = [];
-        foreach ($tags as $tag) {
-            $mapped[$tag] = $this->mapTag($tag);
-        }
-        $rows = $this->fetchRows(array_values($mapped));
-        $versions = [];
-        foreach ($mapped as $tag => $physical) {
-            $row = $rows[$physical] ?? null;
-            $payload = is_array($row) ? $row['payload'] : null;
-            $versions[$tag] = is_string($payload) && ctype_digit($payload) ? (int) $payload : 0;
+        if ($tags === []) {
+            return [];
         }
 
-        return $versions;
+        $rows = $this->fetchRows(self::KIND_TAG, $tags);
+        $generations = [];
+        $initialize = [];
+        foreach ($tags as $tag) {
+            $row = $rows[$tag] ?? null;
+            $generation = is_array($row) ? $row['payload'] : null;
+            if (!self::isGeneration($generation)) {
+                $generation = self::newGeneration();
+                $initialize[] = [self::KIND_TAG, $tag, $generation, null];
+            }
+            $generations[$tag] = strtolower((string) $generation);
+        }
+        if (!$this->upsertRows($initialize)) {
+            throw new RuntimeException('Unable to initialize PDO tag generations.');
+        }
+
+        return $generations;
     }
 
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
-    }
-
-    /** @param list<string> $tags */
-    #[\Override]
-    public function incrementTagVersions(array $tags): bool
-    {
-        if ($tags === []) {
-            return true;
-        }
-
-        $sql = match ($this->driver) {
-            'pgsql', 'sqlite' => "INSERT INTO {$this->table} (ckey, payload, expires) VALUES (?, '1', NULL)
-                ON CONFLICT (ckey) DO UPDATE SET payload = CAST({$this->table}.payload AS INTEGER) + 1",
-            'mysql', 'mariadb' => "INSERT INTO {$this->table} (ckey, payload, expires) VALUES (?, '1', NULL)
-                ON DUPLICATE KEY UPDATE payload = CAST(payload AS UNSIGNED) + 1",
-            default => null,
-        };
-        if ($sql === null) {
-            return $this->incrementTagsWithTransaction($tags);
-        }
-
-        $statement = $this->pdo->prepare($sql);
-        foreach ($tags as $tag) {
-            if (!$statement->execute([$this->mapTag($tag)])) {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     /**
@@ -189,24 +163,52 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
      */
     public function multiFetch(array $keys): array
     {
-        $mapped = [];
-        foreach ($keys as $key) {
-            $mapped[$key] = $this->mapData($key);
-        }
-        $rows = $this->fetchRows(array_values($mapped));
+        $rows = $this->fetchRows(self::KIND_DATA, $keys);
         $items = [];
         $stale = [];
-        foreach ($mapped as $logical => $physical) {
-            $row = $rows[$physical] ?? null;
-            $item = is_array($row) ? $this->hydrate($logical, $row) : null;
-            $items[$logical] = $item ?? $this->genericMiss($logical);
+        foreach ($keys as $key) {
+            $row = $rows[$key] ?? null;
+            $item = is_array($row) ? $this->hydrate($key, $row) : null;
+            $items[$key] = $item ?? $this->genericMiss($key);
             if (is_array($row) && $item === null) {
-                $stale[] = $physical;
+                $stale[] = $key;
             }
         }
-        $this->deleteMapped($stale);
+        $this->deleteByKind(self::KIND_DATA, $stale);
 
         return $items;
+    }
+
+    public function pruneExpired(int $limit = 1000): int
+    {
+        if ($limit < 1) {
+            throw new RuntimeException('PDO prune limit must be positive.');
+        }
+        $statement = $this->pdo->prepare(
+            "SELECT cache_key FROM {$this->table} WHERE namespace = ? AND kind = ? "
+            . 'AND expires IS NOT NULL AND expires <= ? LIMIT ?',
+        );
+        $statement->bindValue(1, $this->namespace, PDO::PARAM_STR);
+        $statement->bindValue(2, self::KIND_DATA, PDO::PARAM_STR);
+        $statement->bindValue(3, time(), PDO::PARAM_INT);
+        $statement->bindValue(4, $limit, PDO::PARAM_INT);
+        $statement->execute();
+        $keys = $statement->fetchAll(PDO::FETCH_COLUMN);
+        $keys = array_values(array_filter($keys, is_string(...)));
+
+        return $this->deleteByKind(self::KIND_DATA, $keys) ? count($keys) : 0;
+    }
+
+    /** @param list<string> $tags */
+    #[\Override]
+    public function rotateTagGenerations(array $tags): bool
+    {
+        $rows = [];
+        foreach ($tags as $tag) {
+            $rows[] = [self::KIND_TAG, $tag, self::newGeneration(), null];
+        }
+
+        return $this->upsertRows($rows);
     }
 
     public function save(CacheItemInterface $item): bool
@@ -220,8 +222,9 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
         }
 
         return $this->upsertRows([[
-            $this->mapData($item->getKey()),
-            base64_encode($this->encodeItem($item, $expiration['expiresAt'])),
+            self::KIND_DATA,
+            $item->getKey(),
+            $this->encodeItem($item, $expiration['expiresAt']),
             $expiration['expiresAt'],
         ]]);
     }
@@ -237,26 +240,30 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
             }
             $expiration = CachePayloadCodec::expirationFromItem($item);
             if ($expiration['ttl'] !== null && $expiration['ttl'] <= 0) {
-                $expired[] = $this->mapData($item->getKey());
+                $expired[] = $item->getKey();
 
                 continue;
             }
             $rows[] = [
-                $this->mapData($item->getKey()),
-                base64_encode($this->encodeItem($item, $expiration['expiresAt'])),
+                self::KIND_DATA,
+                $item->getKey(),
+                $this->encodeItem($item, $expiration['expiresAt']),
                 $expiration['expiresAt'],
             ];
         }
 
-        return $this->deleteMapped($expired) && $this->upsertRows($rows);
+        return $this->deleteByKind(self::KIND_DATA, $expired) && $this->upsertRows($rows);
     }
 
-    /** @param list<string> $mappedKeys */
-    private function deleteMapped(array $mappedKeys): bool
+    /** @param list<string> $keys */
+    private function deleteByKind(string $kind, array $keys): bool
     {
-        foreach (array_chunk($mappedKeys, self::BATCH_SIZE) as $chunk) {
+        foreach (array_chunk($keys, self::BATCH_SIZE) as $chunk) {
             $marks = implode(',', array_fill(0, count($chunk), '?'));
-            if (!$this->pdo->prepare("DELETE FROM {$this->table} WHERE ckey IN ({$marks})")->execute($chunk)) {
+            $parameters = [$this->namespace, $kind, ...$chunk];
+            if (!$this->pdo->prepare(
+                "DELETE FROM {$this->table} WHERE namespace = ? AND kind = ? AND cache_key IN ({$marks})",
+            )->execute($parameters)) {
                 return false;
             }
         }
@@ -265,24 +272,32 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
     }
 
     /**
-     * @param list<string> $mappedKeys
+     * @param list<string> $keys
      * @return array<string, array{payload:string, expires:int|null}>
      */
-    private function fetchRows(array $mappedKeys): array
+    private function fetchRows(string $kind, array $keys): array
     {
         $rows = [];
-        foreach (array_chunk($mappedKeys, self::BATCH_SIZE) as $chunk) {
+        foreach (array_chunk($keys, self::BATCH_SIZE) as $chunk) {
             $marks = implode(',', array_fill(0, count($chunk), '?'));
             $statement = $this->pdo->prepare(
-                "SELECT ckey, payload, expires FROM {$this->table} WHERE ckey IN ({$marks})",
+                "SELECT cache_key, payload, expires FROM {$this->table} "
+                . "WHERE namespace = ? AND kind = ? AND cache_key IN ({$marks})",
             );
-            $statement->execute($chunk);
-            foreach ($statement->fetchAll(\PDO::FETCH_ASSOC) as $row) {
-                if (!is_array($row) || !is_string($row['ckey'] ?? null) || !is_string($row['payload'] ?? null)) {
+            $statement->execute([$this->namespace, $kind, ...$chunk]);
+            foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                if (!is_array($row) || !is_string($row['cache_key'] ?? null)) {
                     continue;
                 }
-                $rows[$row['ckey']] = [
-                    'payload' => $row['payload'],
+                $payload = $row['payload'] ?? null;
+                if (is_resource($payload)) {
+                    $payload = stream_get_contents($payload);
+                }
+                if (!is_string($payload)) {
+                    continue;
+                }
+                $rows[$row['cache_key']] = [
+                    'payload' => $payload,
                     'expires' => is_numeric($row['expires'] ?? null) ? (int) $row['expires'] : null,
                 ];
             }
@@ -291,40 +306,70 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
         return $rows;
     }
 
-    /** @param array<array-key, mixed> $row */
+    /** @param array{payload:string, expires:int|null} $row */
     private function hydrate(string $key, array $row): ?CacheItem
     {
-        $expiresAt = is_numeric($row['expires']) ? (int) $row['expires'] : null;
-        if (CachePayloadCodec::isExpired($expiresAt) || !is_string($row['payload'])) {
+        if (CachePayloadCodec::isExpired($row['expires'])) {
             return null;
         }
 
-        $record = $this->decodeRecordFromBase64($row['payload']);
+        $record = $this->decodeRecordFromBlob($row['payload']);
 
         return $record === null ? null : $this->genericItemFromRecord($key, $record);
     }
 
-    /** @param list<string> $tags */
-    private function incrementTagsWithTransaction(array $tags): bool
+    /** @param list<array{0:string, 1:string, 2:string, 3:int|null}> $rows */
+    private function upsertChunk(array $rows): bool
+    {
+        if (!in_array($this->driver, ['pgsql', 'sqlite', 'mysql', 'mariadb'], true)) {
+            return $this->upsertGenericRows($rows);
+        }
+
+        $values = implode(',', array_fill(0, count($rows), '(?, ?, ?, ?, ?)'));
+        $suffix = in_array($this->driver, ['pgsql', 'sqlite'], true)
+            ? 'ON CONFLICT (namespace, kind, cache_key) DO UPDATE SET '
+                . 'payload = EXCLUDED.payload, expires = EXCLUDED.expires'
+            : 'ON DUPLICATE KEY UPDATE payload = VALUES(payload), expires = VALUES(expires)';
+        $parameters = [];
+        foreach ($rows as [$kind, $key, $payload, $expires]) {
+            array_push($parameters, $this->namespace, $kind, $key, $payload, $expires);
+        }
+
+        return $this->pdo->prepare(
+            "INSERT INTO {$this->table} (namespace, kind, cache_key, payload, expires) "
+            . "VALUES {$values} {$suffix}",
+        )->execute($parameters);
+    }
+
+    /** @param list<array{0:string, 1:string, 2:string, 3:int|null}> $rows */
+    private function upsertGenericRows(array $rows): bool
     {
         $this->pdo->beginTransaction();
 
         try {
-            foreach ($tags as $tag) {
-                $key = $this->mapTag($tag);
+            foreach ($rows as [$kind, $key, $payload, $expires]) {
                 $update = $this->pdo->prepare(
-                    "UPDATE {$this->table} SET payload = CAST(payload AS INTEGER) + 1 WHERE ckey = ?",
+                    "UPDATE {$this->table} SET payload = ?, expires = ? "
+                    . 'WHERE namespace = ? AND kind = ? AND cache_key = ?',
                 );
-                $update->execute([$key]);
+                $update->execute([$payload, $expires, $this->namespace, $kind, $key]);
                 if ($update->rowCount() === 0) {
+                    $exists = $this->pdo->prepare(
+                        "SELECT 1 FROM {$this->table} WHERE namespace = ? AND kind = ? AND cache_key = ?",
+                    );
+                    $exists->execute([$this->namespace, $kind, $key]);
+                    if ($exists->fetchColumn() !== false) {
+                        continue;
+                    }
                     $this->pdo->prepare(
-                        "INSERT INTO {$this->table} (ckey, payload, expires) VALUES (?, '1', NULL)",
-                    )->execute([$key]);
+                        "INSERT INTO {$this->table} (namespace, kind, cache_key, payload, expires) "
+                        . 'VALUES (?, ?, ?, ?, ?)',
+                    )->execute([$this->namespace, $kind, $key, $payload, $expires]);
                 }
             }
 
             return $this->pdo->commit();
-        } catch (\PDOException $failure) {
+        } catch (PDOException $failure) {
             if ($this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
@@ -333,69 +378,9 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
         }
     }
 
-    private function mapData(string $key): string
-    {
-        return $this->namespace . ':d:' . $key;
-    }
-
-    private function mapTag(string $tag): string
-    {
-        return $this->namespace . ':m:tag:' . $tag;
-    }
-
-    /** @param list<array{0:string, 1:string, 2:int|null}> $rows */
-    private function upsertChunk(array $rows): bool
-    {
-        if (!in_array($this->driver, ['pgsql', 'sqlite', 'mysql', 'mariadb'], true)) {
-            $this->pdo->beginTransaction();
-
-            try {
-                foreach ($rows as $row) {
-                    $this->upsertGeneric($row);
-                }
-
-                return $this->pdo->commit();
-            } catch (\PDOException $failure) {
-                if ($this->pdo->inTransaction()) {
-                    $this->pdo->rollBack();
-                }
-
-                throw $failure;
-            }
-        }
-
-        $values = implode(',', array_fill(0, count($rows), '(?, ?, ?)'));
-        $suffix = in_array($this->driver, ['pgsql', 'sqlite'], true)
-            ? 'ON CONFLICT (ckey) DO UPDATE SET payload = EXCLUDED.payload, expires = EXCLUDED.expires'
-            : 'ON DUPLICATE KEY UPDATE payload = VALUES(payload), expires = VALUES(expires)';
-        $parameters = [];
-        foreach ($rows as $row) {
-            array_push($parameters, ...$row);
-        }
-
-        return $this->pdo->prepare(
-            "INSERT INTO {$this->table} (ckey, payload, expires) VALUES {$values} {$suffix}",
-        )->execute($parameters);
-    }
-
-    /** @param array{0:string, 1:string, 2:int|null} $row */
-    private function upsertGeneric(array $row): void
-    {
-        $update = $this->pdo->prepare("UPDATE {$this->table} SET payload = ?, expires = ? WHERE ckey = ?");
-        $update->execute([$row[1], $row[2], $row[0]]);
-        if ($update->rowCount() === 0) {
-            $this->pdo->prepare(
-                "INSERT INTO {$this->table} (ckey, payload, expires) VALUES (?, ?, ?)",
-            )->execute($row);
-        }
-    }
-
-    /** @param list<array{0:string, 1:string, 2:int|null}> $rows */
+    /** @param list<array{0:string, 1:string, 2:string, 3:int|null}> $rows */
     private function upsertRows(array $rows): bool
     {
-        if ($rows === []) {
-            return true;
-        }
         foreach (array_chunk($rows, self::BATCH_SIZE) as $chunk) {
             if (!$this->upsertChunk($chunk)) {
                 return false;

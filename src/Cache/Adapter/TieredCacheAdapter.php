@@ -9,9 +9,10 @@ use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Cache\Metrics\CacheMetricsCollectorInterface;
 use Infocyph\CacheLayer\Cache\Metrics\InMemoryCacheMetricsCollector;
 use InvalidArgumentException;
+use LogicException;
 use Psr\Cache\CacheItemInterface;
 
-final class ChainCacheAdapter extends AbstractCacheAdapter
+final class TieredCacheAdapter extends AbstractCacheAdapter
 {
     /** @param list<InternalCachePoolInterface> $pools */
     public function __construct(
@@ -87,31 +88,21 @@ final class ChainCacheAdapter extends AbstractCacheAdapter
 
     /**
      * @param list<string> $tags
-     * @return array<string, int>
+     * @return array<string, string>
      */
     #[\Override]
-    public function getTagVersions(array $tags): array
+    public function getTagGenerations(array $tags): array
     {
-        $first = $this->pools[0];
+        foreach (array_reverse($this->pools) as $authoritative) {
+            return $authoritative->getTagGenerations($tags);
+        }
 
-        return $first->getTagVersions($tags);
+        throw new LogicException('A tiered cache must retain an authoritative pool.');
     }
 
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
-    }
-
-    /** @param list<string> $tags */
-    #[\Override]
-    public function incrementTagVersions(array $tags): bool
-    {
-        $incremented = true;
-        foreach ($this->pools as $pool) {
-            $incremented = $pool->incrementTagVersions($tags) && $incremented;
-        }
-
-        return $incremented;
     }
 
     /**
@@ -127,7 +118,7 @@ final class ChainCacheAdapter extends AbstractCacheAdapter
                 break;
             }
             $wanted = array_keys($remaining);
-            $fetched = iterator_to_array($pool->getItems($wanted), true);
+            $fetched = $pool->multiFetch($wanted);
             $hits = [];
             foreach ($wanted as $key) {
                 $item = $fetched[$key] ?? null;
@@ -149,6 +140,18 @@ final class ChainCacheAdapter extends AbstractCacheAdapter
         }
 
         return $ordered;
+    }
+
+    /** @param list<string> $tags */
+    #[\Override]
+    public function rotateTagGenerations(array $tags): bool
+    {
+        $incremented = true;
+        foreach ($this->pools as $pool) {
+            $incremented = $pool->rotateTagGenerations($tags) && $incremented;
+        }
+
+        return $incremented;
     }
 
     public function save(CacheItemInterface $item): bool
@@ -181,11 +184,11 @@ final class ChainCacheAdapter extends AbstractCacheAdapter
     private function copyItem(CacheItemInterface $source): CacheItem
     {
         $ttl = $source instanceof CacheItem ? $source->ttlSeconds() : null;
-        $tags = $source instanceof CacheItem ? $source->getTagVersions() : [];
+        $tags = $source instanceof CacheItem ? $source->getTagGenerations() : [];
 
         return (new CacheItem($this, $source->getKey(), $source->get(), true))
             ->expiresAfter($ttl)
-            ->setTagVersions($tags);
+            ->setTagGenerations($tags);
     }
 
     /** @param array<string, CacheItem> $items */
@@ -215,7 +218,7 @@ final class ChainCacheAdapter extends AbstractCacheAdapter
             $target->set($item->get());
             $target->expiresAfter($item instanceof CacheItem ? $item->ttlSeconds() : null);
             if ($target instanceof CacheItem && $item instanceof CacheItem) {
-                $target->setTagVersions($item->getTagVersions());
+                $target->setTagGenerations($item->getTagGenerations());
             }
             $targets[$key] = $target;
         }
@@ -229,7 +232,7 @@ final class ChainCacheAdapter extends AbstractCacheAdapter
         $target->set($item->get());
         $target->expiresAfter($item instanceof CacheItem ? $item->ttlSeconds() : null);
         if ($target instanceof CacheItem && $item instanceof CacheItem) {
-            $target->setTagVersions($item->getTagVersions());
+            $target->setTagGenerations($item->getTagGenerations());
         }
 
         return $pool->save($target);

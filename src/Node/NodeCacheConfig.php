@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Infocyph\CacheLayer\Node;
 
+use Infocyph\CacheLayer\Cache\CacheInput;
 use Infocyph\CacheLayer\Cache\Lock\LockProviderInterface;
+use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 use Infocyph\CacheLayer\Node\Exception\NodeCacheConfigurationException;
 
 final readonly class NodeCacheConfig
@@ -24,10 +26,6 @@ final readonly class NodeCacheConfig
             throw new NodeCacheConfigurationException('The SQLite cache file path is invalid.');
         }
 
-        if ($namespace === '') {
-            throw new NodeCacheConfigurationException('The cache namespace cannot be empty.');
-        }
-
         if ($lockDirectory !== null && ($lockDirectory === '' || str_contains($lockDirectory, "\0"))) {
             throw new NodeCacheConfigurationException('The lock directory path is invalid.');
         }
@@ -36,6 +34,10 @@ final readonly class NodeCacheConfig
             throw new NodeCacheConfigurationException('The SQLite busy timeout cannot be negative.');
         }
 
-        $this->namespace = sanitize_cache_ns($namespace);
+        try {
+            $this->namespace = CacheInput::namespace($namespace);
+        } catch (CacheInvalidArgumentException $failure) {
+            throw new NodeCacheConfigurationException($failure->getMessage(), 0, $failure);
+        }
     }
 }

@@ -55,6 +55,19 @@ final class CacheInput
         return self::keys($materialized);
     }
 
+    public static function namespace(string $namespace): string
+    {
+        if (strlen($namespace) < 1
+            || strlen($namespace) > 64
+            || preg_match('/^[A-Za-z0-9_.-]+$/D', $namespace) !== 1) {
+            throw new CacheInvalidArgumentException(
+                'Cache namespaces must contain 1-64 characters from A-Z, a-z, 0-9, _, ., and -.',
+            );
+        }
+
+        return $namespace;
+    }
+
     /**
      * @param array<array-key, mixed> $tags
      * @return list<string>

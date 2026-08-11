@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace Infocyph\CacheLayer\Memoize;
 
-use Closure;
 use ReflectionException;
-use ReflectionFunction;
 use WeakMap;
 
 final class Memoizer
@@ -42,6 +40,7 @@ final class Memoizer
         $this->staticCache = [];
         $this->objectCache = new WeakMap();
         $this->hits = $this->misses = 0;
+        CallableFingerprint::flush();
     }
 
     /**
@@ -53,7 +52,7 @@ final class Memoizer
     public function get(callable $callable, array $params = []): mixed
     {
         $cacheKey = self::buildCacheKey(
-            self::callableSignature($callable),
+            CallableFingerprint::callable($callable),
             $params,
         );
 
@@ -81,7 +80,7 @@ final class Memoizer
     public function getFor(object $object, callable $callable, array $params = []): mixed
     {
         $cacheKey = self::buildCacheKey(
-            self::callableSignature($callable),
+            CallableFingerprint::callable($callable),
             $params,
         );
 
@@ -126,43 +125,10 @@ final class Memoizer
 
         $normalized = [];
         foreach ($params as $param) {
-            $normalized[] = self::normalizeParam($param);
+            $normalized[] = CallableFingerprint::value($param);
         }
 
         return $signature . '|' . hash('xxh128', serialize($normalized));
-    }
-
-    /**
-     * @throws ReflectionException
- * @param callable $callable The callable argument.
-     */
-    private static function callableSignature(callable $callable): string
-    {
-        if ($callable instanceof Closure) {
-            $rf = new ReflectionFunction($callable);
-            $file = $rf->getFileName() ?: 'internal';
-
-            return 'closure:' . $file . ':' . $rf->getStartLine() . '-' . $rf->getEndLine();
-        }
-
-        if (is_string($callable)) {
-            return 'string:' . $callable;
-        }
-
-        if (is_array($callable)) {
-            $target = is_object($callable[0]) ? $callable[0]::class : $callable[0];
-
-            return 'array:' . $target . '::' . $callable[1];
-        }
-
-        if (is_object($callable)) {
-            return 'invokable:' . $callable::class;
-        }
-
-        $rf = new ReflectionFunction(Closure::fromCallable($callable));
-        $file = $rf->getFileName() ?: 'internal';
-
-        return 'callable:' . $file . ':' . $rf->getStartLine() . '-' . $rf->getEndLine();
     }
 
     /**
@@ -177,31 +143,5 @@ final class Memoizer
 
         $oldest = array_key_first($cache);
         unset($cache[$oldest]);
-    }
-
-    /**
-     * @param array $values The values to normalize.
-     * @phpstan-param array<mixed> $values
-     * @phpstan-return array<mixed>
-     */
-    private static function normalizeArray(array $values): array
-    {
-        $normalized = [];
-        foreach ($values as $key => $value) {
-            $normalized[$key] = self::normalizeParam($value);
-        }
-
-        return $normalized;
-    }
-
-    private static function normalizeParam(mixed $value): mixed
-    {
-        return match (true) {
-            $value instanceof Closure => 'closure#' . spl_object_id($value),
-            is_object($value) => 'obj#' . spl_object_id($value),
-            is_resource($value) => 'res#' . get_resource_type($value) . '#' . (int) $value,
-            is_array($value) => self::normalizeArray($value),
-            default => $value,
-        };
     }
 }

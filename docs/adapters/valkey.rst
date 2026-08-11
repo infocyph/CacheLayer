@@ -36,7 +36,9 @@ Example
 
    $cache = Cache::valkey('api', 'valkey://127.0.0.1:6379/0');
 
-   $payload = $cache->remember('endpoint:/v1/users?page=1', function ($item) {
-       $item->expiresAfter(30);
-       return fetchApiPayload();
-   }, tags: ['users']);
+   $payload = $cache->remember(
+       'endpoint.v1.users.page.1',
+       fn () => fetchApiPayload(),
+       ttl: 30,
+       tags: ['users'],
+   );

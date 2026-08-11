@@ -16,11 +16,6 @@ final class NullCacheAdapter extends AbstractCacheAdapter
         return true;
     }
 
-    public function count(): int
-    {
-        return 0;
-    }
-
     public function deleteItem(string $key): bool
     {
         unset($key);
@@ -46,9 +41,14 @@ final class NullCacheAdapter extends AbstractCacheAdapter
 
     /** @param list<string> $tags */
     #[\Override]
-    public function getTagVersions(array $tags): array
+    public function getTagGenerations(array $tags): array
     {
-        return array_fill_keys($tags, 0);
+        $generations = [];
+        foreach ($tags as $tag) {
+            $generations[$tag] = self::newGeneration();
+        }
+
+        return $generations;
     }
 
     public function hasItem(string $key): bool
@@ -56,15 +56,6 @@ final class NullCacheAdapter extends AbstractCacheAdapter
         unset($key);
 
         return false;
-    }
-
-    /** @param list<string> $tags */
-    #[\Override]
-    public function incrementTagVersions(array $tags): bool
-    {
-        unset($tags);
-
-        return true;
     }
 
     /**
@@ -80,6 +71,15 @@ final class NullCacheAdapter extends AbstractCacheAdapter
         }
 
         return $items;
+    }
+
+    /** @param list<string> $tags */
+    #[\Override]
+    public function rotateTagGenerations(array $tags): bool
+    {
+        unset($tags);
+
+        return true;
     }
 
     public function save(CacheItemInterface $item): bool

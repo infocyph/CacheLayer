@@ -4,14 +4,82 @@ declare(strict_types=1);
 
 use Infocyph\CacheLayer\Cluster\ClusterCache;
 use Infocyph\CacheLayer\Cluster\ClusterCacheConfig;
+use Infocyph\CacheLayer\Cache\Adapter\AbstractCacheAdapter;
+use Infocyph\CacheLayer\Cache\Cache;
+use Infocyph\CacheLayer\Cache\Item\CacheItem;
+use Infocyph\CacheLayer\Cluster\Consumer\InvalidationConsumer;
+use Infocyph\CacheLayer\Cluster\Consumer\InvalidationHandler;
+use Infocyph\CacheLayer\Cluster\Cursor\SqliteCursorStore;
 use Infocyph\CacheLayer\Cluster\Event\InvalidationEvent;
 use Infocyph\CacheLayer\Cluster\Event\InvalidationEventType;
 use Infocyph\CacheLayer\Cluster\Exception\ClusterCacheException;
 use Infocyph\CacheLayer\Cluster\Exception\ClusterTransportException;
+use Infocyph\CacheLayer\Cluster\Health\ClusterStatusTracker;
+use Infocyph\CacheLayer\Cluster\Recovery\ClusterRecoveryManager;
 use Infocyph\CacheLayer\Cluster\Transport\InvalidationTransportData;
 use Infocyph\CacheLayer\Cluster\Transport\Pdo\PdoInvalidationTransport;
+use Infocyph\CacheLayer\Cluster\Transport\Pdo\PdoInvalidationSchema;
 use Infocyph\CacheLayer\Node\NodeCacheConfig;
 use Infocyph\CacheLayer\Tests\Cluster\Support\InMemoryInvalidationTransport;
+use Psr\Cache\CacheItemInterface;
+
+final class RejectingClusterCacheAdapter extends AbstractCacheAdapter
+{
+    /** @var array<string, mixed> */
+    public array $rejectedOperations = [];
+
+    public function clear(): bool
+    {
+        return $this->reject('clear');
+    }
+
+    public function deleteItem(string $key): bool
+    {
+        return $this->reject('deleteItem', $key);
+    }
+
+    public function deleteItems(array $keys): bool
+    {
+        return $this->reject('deleteItems', $keys);
+    }
+
+    public function getItem(string $key): CacheItem
+    {
+        return $this->genericMiss($key);
+    }
+
+    public function hasItem(string $key): bool
+    {
+        return $this->reject('hasItem', $key);
+    }
+
+    public function multiFetch(array $keys): array
+    {
+        $items = [];
+        foreach ($keys as $key) {
+            $items[$key] = $this->genericMiss($key);
+        }
+
+        return $items;
+    }
+
+    public function save(CacheItemInterface $item): bool
+    {
+        return $this->reject('save', $item);
+    }
+
+    public function saveItems(array $items): bool
+    {
+        return $this->reject('saveItems', $items);
+    }
+
+    private function reject(string $operation, mixed $argument = null): bool
+    {
+        $this->rejectedOperations[$operation] = $argument;
+
+        return false;
+    }
+}
 
 beforeEach(function () {
     $this->clusterDirectory = sys_get_temp_dir() . '/cachelayer-cluster-' . uniqid();
@@ -165,6 +233,19 @@ test('PDO transport refuses SQLite unless it is explicitly test-only', function 
         ->toThrow(\Infocyph\CacheLayer\Cluster\Exception\ClusterTransportException::class);
 });
 
+test('PDO transport can use a separately bootstrapped schema without DDL on construction', function () {
+    $connection = new \PDO('sqlite:' . $this->clusterDirectory . '/preinstalled-transport.sqlite');
+    PdoInvalidationSchema::install($connection, allowSqliteForTesting: true);
+    $transport = new PdoInvalidationTransport(
+        $connection,
+        allowSqliteForTesting: true,
+        initializeSchema: false,
+    );
+
+    expect($transport->publish(InvalidationEvent::key('preinstalled', 'application', 'key', 'writer')))
+        ->toBe('1');
+});
+
 test('invalidation transport data rejects malformed and overflowing timestamps', function () {
     expect(fn () => InvalidationTransportData::unsignedInteger('-1', 'created_at', 'test transport'))
         ->toThrow(ClusterTransportException::class)
@@ -205,6 +286,29 @@ test('invalidation events enforce identifier and timestamp invariants', function
         ))->toThrow(ClusterCacheException::class);
 });
 
+test('cluster configuration and runtime inputs enforce transport bounds before publication', function () {
+    expect(fn() => new ClusterCacheConfig(str_repeat('c', 129), 'node'))
+        ->toThrow(\Infocyph\CacheLayer\Cluster\Exception\ClusterConfigurationException::class)
+        ->and(fn() => new ClusterCacheConfig('cluster', str_repeat('n', 256)))
+        ->toThrow(\Infocyph\CacheLayer\Cluster\Exception\ClusterConfigurationException::class)
+        ->and(fn() => $this->nodeA->invalidateKey(str_repeat('k', 65)))
+        ->toThrow(ClusterCacheException::class)
+        ->and(fn() => $this->nodeA->invalidateTag(str_repeat('t', 65)))
+        ->toThrow(ClusterCacheException::class);
+});
+
+test('poison event escape hatch clears local data before advancing the cursor', function () {
+    $this->nodeB->cache()->set('stale', 'value');
+    $eventId = $this->transport->publish(
+        InvalidationEvent::key('test-cluster', 'application', 'poison', 'writer'),
+    );
+
+    $this->nodeB->skipEventAfterClear($eventId);
+
+    expect($this->nodeB->cache()->get('stale'))->toBeNull()
+        ->and($this->nodeB->status()->cursor)->toBe($eventId);
+});
+
 test('transactional outbox publishes with the source transaction and applies locally after commit', function () {
     $connection = new \PDO('sqlite:' . $this->clusterDirectory . '/outbox.sqlite');
     $transport = new PdoInvalidationTransport($connection, allowSqliteForTesting: true);
@@ -235,4 +339,51 @@ test('transactional outbox events replay on their origin node after a post-commi
 
     expect($runtime->consume())->toBe(1)
         ->and($runtime->cache()->get('product.42'))->toBeNull();
+});
+
+test('consumer keeps its cursor when local invalidation returns false', function () {
+    $adapter = new RejectingClusterCacheAdapter();
+    $cache = new Cache($adapter);
+    $transport = new InMemoryInvalidationTransport();
+    $transport->publish(InvalidationEvent::key('failed-cluster', 'application', 'key', 'writer'));
+    $cursor = new SqliteCursorStore(
+        $this->clusterDirectory . '/failed-cursor.sqlite',
+        'failed-cluster',
+        'consumer',
+    );
+    $recovery = new ClusterRecoveryManager($cache, $cursor, $transport, 'failed-cluster');
+    $consumer = new InvalidationConsumer(
+        $transport,
+        $cursor,
+        new InvalidationHandler($cache, 'application'),
+        $recovery,
+        'failed-cluster',
+        'consumer',
+        new ClusterStatusTracker(),
+    );
+
+    expect(fn() => $consumer->consume())->toThrow(ClusterCacheException::class)
+        ->and($cursor->current())->toBeNull()
+        ->and(array_keys($adapter->rejectedOperations))->toBe(['deleteItem']);
+});
+
+test('recovery keeps its cursor when the required clear returns false', function () {
+    $adapter = new RejectingClusterCacheAdapter();
+    $cache = new Cache($adapter);
+    $transport = new InMemoryInvalidationTransport();
+    foreach (['one', 'two', 'three'] as $key) {
+        $transport->publish(InvalidationEvent::key('recovery-failure', 'application', $key, 'writer'));
+    }
+    $transport->discardBefore('recovery-failure', 3);
+    $cursor = new SqliteCursorStore(
+        $this->clusterDirectory . '/recovery-failed-cursor.sqlite',
+        'recovery-failure',
+        'consumer',
+    );
+    $cursor->advance('1');
+    $recovery = new ClusterRecoveryManager($cache, $cursor, $transport, 'recovery-failure');
+
+    expect(fn() => $recovery->recoverIfRequired())->toThrow(ClusterCacheException::class)
+        ->and($cursor->current())->toBe('1')
+        ->and(array_keys($adapter->rejectedOperations))->toBe(['clear']);
 });

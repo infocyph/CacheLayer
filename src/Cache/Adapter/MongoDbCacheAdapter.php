@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace Infocyph\CacheLayer\Cache\Adapter;
 
+use Infocyph\CacheLayer\Cache\CacheInput;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Psr\Cache\CacheItemInterface;
 use RuntimeException;
 
-final class MongoDbCacheAdapter extends AbstractCacheAdapter
+final class MongoDbCacheAdapter extends AbstractCacheAdapter implements TagGenerationCacheInterface
 {
     private readonly string $ns;
 
@@ -16,7 +17,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter
         private readonly object $collection,
         string $namespace = 'default',
     ) {
-        $this->ns = sanitize_cache_ns($namespace);
+        $this->ns = CacheInput::namespace($namespace);
 
         foreach (['findOne', 'find', 'updateOne', 'bulkWrite', 'deleteOne', 'deleteMany', 'countDocuments'] as $method) {
             if (!method_exists($this->collection, $method)) {
@@ -51,20 +52,6 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter
         return true;
     }
 
-    public function count(): int
-    {
-        $count = $this->collection->countDocuments([
-            'ns' => $this->ns,
-            'kind' => 'data',
-            '$or' => [
-                ['expires' => null],
-                ['expires' => ['$gt' => time()]],
-            ],
-        ]);
-
-        return is_numeric($count) ? max(0, (int) $count) : 0;
-    }
-
     public function deleteItem(string $key): bool
     {
         $this->collection->deleteOne(['_id' => $this->mapData($key)]);
@@ -96,38 +83,34 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter
             return $this->genericMiss($key);
         }
 
-        $payload = $row['payload'] ?? null;
+        $payload = $this->binaryString($row['payload'] ?? null);
 
-        return $this->genericFromBase64($key, is_string($payload) ? $payload : null);
+        return $this->genericFromBlobWithInvalidator(
+            $key,
+            $payload,
+            fn(): bool => $this->deleteItem($key),
+        );
     }
 
     /**
      * @param list<string> $tags
-     * @return array<string, int>
+     * @return array<string, string>
      */
     #[\Override]
-    public function getTagVersions(array $tags): array
+    public function getTagGenerations(array $tags): array
     {
-        $versions = array_fill_keys($tags, 0);
-        if ($tags === []) {
-            return $versions;
-        }
-        $documents = $this->collection->find([
-            '_id' => ['$in' => array_map($this->mapTag(...), $tags)],
-        ]);
-        if (!is_iterable($documents)) {
-            throw new RuntimeException('MongoDB find() must return an iterable result.');
-        }
-        foreach ($documents as $document) {
-            $row = AdapterValueNormalizer::fromJsonOrArrayLike($document);
-            $tag = is_array($row) ? ($row['tag'] ?? null) : null;
-            $version = is_array($row) ? ($row['version'] ?? null) : null;
-            if (is_string($tag) && is_numeric($version)) {
-                $versions[$tag] = max(0, (int) $version);
+        $generations = $this->readTagGenerations($tags);
+        $missing = [];
+        foreach ($tags as $tag) {
+            if (!isset($generations[$tag])) {
+                $missing[$tag] = self::newGeneration();
             }
         }
+        if ($missing !== [] && !$this->storeTagGenerations($missing)) {
+            throw new RuntimeException('Unable to initialize MongoDB tag generations.');
+        }
 
-        return $versions;
+        return $generations + $missing;
     }
 
     public function hasItem(string $key): bool
@@ -141,28 +124,6 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter
         ]);
 
         return is_numeric($count) && (int) $count > 0;
-    }
-
-    /** @param list<string> $tags */
-    #[\Override]
-    public function incrementTagVersions(array $tags): bool
-    {
-        $operations = [];
-        foreach ($tags as $tag) {
-            $operations[] = ['updateOne' => [
-                ['_id' => $this->mapTag($tag)],
-                [
-                    '$setOnInsert' => ['ns' => $this->ns, 'kind' => 'metadata', 'tag' => $tag],
-                    '$inc' => ['version' => 1],
-                ],
-                ['upsert' => true],
-            ]];
-        }
-        if ($operations !== []) {
-            $this->collection->bulkWrite($operations, ['ordered' => false]);
-        }
-
-        return true;
     }
 
     /**
@@ -189,8 +150,8 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter
         $stale = [];
         foreach ($keys as $key) {
             $row = $byId[$this->mapData($key)] ?? null;
-            $payload = is_array($row) && is_string($row['payload'] ?? null) ? $row['payload'] : null;
-            $item = $this->genericFromBase64WithInvalidator($key, $payload, static fn(): bool => true);
+            $payload = is_array($row) ? $this->binaryString($row['payload'] ?? null) : null;
+            $item = $this->genericFromBlobWithInvalidator($key, $payload, static fn(): bool => true);
             $items[$key] = $item;
             if (is_array($row) && !$item->isHit()) {
                 $stale[] = $key;
@@ -199,6 +160,44 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter
         $this->deleteItems($stale);
 
         return $items;
+    }
+
+    /** @param list<string> $tags */
+    #[\Override]
+    public function readTagGenerations(array $tags): array
+    {
+        if ($tags === []) {
+            return [];
+        }
+        $documents = $this->collection->find([
+            '_id' => ['$in' => array_map($this->mapTag(...), $tags)],
+        ]);
+        if (!is_iterable($documents)) {
+            throw new RuntimeException('MongoDB find() must return an iterable result.');
+        }
+        $generations = [];
+        foreach ($documents as $document) {
+            $row = AdapterValueNormalizer::fromJsonOrArrayLike($document);
+            $tag = is_array($row) ? ($row['tag'] ?? null) : null;
+            $generation = is_array($row) ? self::normalizeGeneration($row['generation'] ?? null) : null;
+            if (is_string($tag) && $generation !== null) {
+                $generations[$tag] = $generation;
+            }
+        }
+
+        return $generations;
+    }
+
+    /** @param list<string> $tags */
+    #[\Override]
+    public function rotateTagGenerations(array $tags): bool
+    {
+        $generations = [];
+        foreach ($tags as $tag) {
+            $generations[$tag] = self::newGeneration();
+        }
+
+        return $this->storeTagGenerations($generations);
     }
 
     public function save(CacheItemInterface $item): bool
@@ -210,7 +209,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter
                     '$set' => [
                         'ns' => $this->ns,
                         'kind' => 'data',
-                        'payload' => base64_encode($this->encodeItem($saveItem, $expires['expiresAt'])),
+                        'payload' => $this->binaryValue($this->encodeItem($saveItem, $expires['expiresAt'])),
                         'expires' => $expires['expiresAt'],
                     ],
                 ],
@@ -241,7 +240,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter
                 ['$set' => [
                     'ns' => $this->ns,
                     'kind' => 'data',
-                    'payload' => base64_encode($this->encodeItem($item, $expiration['expiresAt'])),
+                    'payload' => $this->binaryValue($this->encodeItem($item, $expiration['expiresAt'])),
                     'expires' => $expiration['expiresAt'],
                 ]],
                 ['upsert' => true],
@@ -253,6 +252,58 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter
         }
 
         return true;
+    }
+
+    /** @param array<string, string> $generations */
+    #[\Override]
+    public function storeTagGenerations(array $generations): bool
+    {
+        $operations = [];
+        foreach ($generations as $tag => $generation) {
+            if (!self::isGeneration($generation)) {
+                return false;
+            }
+            $operations[] = ['updateOne' => [
+                ['_id' => $this->mapTag($tag)],
+                [
+                    '$set' => [
+                        'ns' => $this->ns,
+                        'kind' => 'metadata',
+                        'tag' => $tag,
+                        'generation' => strtolower($generation),
+                    ],
+                ],
+                ['upsert' => true],
+            ]];
+        }
+        if ($operations !== []) {
+            $this->collection->bulkWrite($operations, ['ordered' => false]);
+        }
+
+        return true;
+    }
+
+    private function binaryString(mixed $value): ?string
+    {
+        if (is_string($value)) {
+            return $value;
+        }
+        if (is_object($value) && is_callable([$value, 'getData'])) {
+            $data = $value->getData();
+
+            return is_string($data) ? $data : null;
+        }
+
+        return null;
+    }
+
+    private function binaryValue(string $value): mixed
+    {
+        if (class_exists(\MongoDB\BSON\Binary::class)) {
+            return new \MongoDB\BSON\Binary($value, \MongoDB\BSON\Binary::TYPE_GENERIC);
+        }
+
+        return $value;
     }
 
     private function mapData(string $key): string
