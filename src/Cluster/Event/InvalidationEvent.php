@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Infocyph\CacheLayer\Cluster\Event;
 
+use Infocyph\CacheLayer\Cluster\ClusterInput;
 use Infocyph\CacheLayer\Cluster\Exception\ClusterCacheException;
 
 final readonly class InvalidationEvent
@@ -17,17 +18,10 @@ final readonly class InvalidationEvent
         public string $originNodeId,
         public int $createdAt,
     ) {
-        if ($cluster === '' || $namespace === '' || $originNodeId === '') {
-            throw new ClusterCacheException('Invalidation events require a cluster, namespace, and origin node ID.');
-        }
-
-        if ($type === InvalidationEventType::Namespace && $identifier !== null) {
-            throw new ClusterCacheException('Namespace invalidation events must not contain an identifier.');
-        }
-
-        if ($type !== InvalidationEventType::Namespace && ($identifier === null || $identifier === '')) {
-            throw new ClusterCacheException('Key and tag invalidation events require a non-empty identifier.');
-        }
+        ClusterInput::cluster($cluster);
+        ClusterInput::namespace($namespace);
+        ClusterInput::nodeId($originNodeId);
+        ClusterInput::identifier($type, $identifier);
 
         if ($createdAt < 0) {
             throw new ClusterCacheException('Invalidation event timestamps cannot be negative.');
@@ -51,9 +45,7 @@ final readonly class InvalidationEvent
 
     public function withId(string $id): self
     {
-        if ($id === '') {
-            throw new ClusterCacheException('Invalidation event IDs cannot be empty.');
-        }
+        ClusterInput::eventId($id);
 
         return new self($id, $this->cluster, $this->namespace, $this->type, $this->identifier, $this->originNodeId, $this->createdAt);
     }

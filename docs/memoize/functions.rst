@@ -9,7 +9,7 @@ memoize(callable, params)
 
 ``memoize($callable, $params)`` caches return values by:
 
-* callable signature
+* callable identity, including Closure source/captures and object instance
 * normalized parameters hash
 
 Internally this uses ``Memoizer::get()``.
@@ -39,7 +39,7 @@ once(callback)
 
 Key details:
 
-* cache key includes caller context + callback fingerprint
+* cache key includes the exact caller file/line/context + callback fingerprint
 * closure source fingerprinting is memoized
 * bounded cache size (2048 entries), oldest entry evicted
 
@@ -56,3 +56,9 @@ Inspecting/Resetting Memoizer State
    $stats = $memo->stats(); // ['hits' => ..., 'misses' => ..., 'total' => ...]
 
    $memo->flush();
+   flush_memoizers(); // also resets once() and is suitable at request boundaries
+
+Memoized state is process-local, not request-local. In PHP-FPM it normally dies
+with the request process lifecycle, but event loops and persistent workers can
+reuse it across requests. Call ``flush_memoizers()`` at the boundary when that
+reuse is not intentional.

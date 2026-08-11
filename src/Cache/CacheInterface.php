@@ -21,7 +21,10 @@ interface CacheInterface extends ArrayAccess, CacheItemPoolInterface, SimpleCach
     /** @param list<string> $tags */
     public function invalidateTags(array $tags): bool;
 
-    /** @param list<string> $tags */
+    /**
+     * @param callable(): mixed $resolver
+     * @param list<string> $tags
+     */
     public function remember(string $key, callable $resolver, mixed $ttl = null, array $tags = []): mixed;
 
     public function setLockProvider(LockProviderInterface $lockProvider): self;

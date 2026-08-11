@@ -50,13 +50,12 @@ test('remember caches once and supports tag invalidation', function () {
 
     $v1 = $this->cache->remember(
         'hot',
-        function ($item) use (&$count) {
+        function () use (&$count) {
             $count++;
-            $item->expiresAfter(30);
 
             return 'payload';
         },
-        null,
+        30,
         ['hot-path'],
     );
 
@@ -104,11 +103,7 @@ test('rejects empty tags in tag operations', function () {
 });
 
 test('remember respects ttl argument expiry', function () {
-    $this->cache->remember('short', function ($item) {
-        $item->expiresAfter(1);
-
-        return 'value';
-    }, 1);
+    $this->cache->remember('short', fn() => 'value', 1);
 
     usleep(2_000_000);
 
@@ -128,7 +123,7 @@ test('delete on missing key is treated as successful', function () {
         ->and($this->cache->deleteItems(['never-there', 'also-missing']))->toBeTrue();
 });
 
-test('tag version invalidation marks prior entries stale', function () {
+test('tag generation invalidation marks prior entries stale', function () {
     $this->cache->setTagged('article', 'v1', ['content']);
     expect($this->cache->get('article'))->toBe('v1');
 
@@ -148,18 +143,20 @@ test('valid user keys cannot collide with internal tag metadata', function () {
         ->and($this->cache->get('tagged'))->toBeNull();
 });
 
-test('file tag increments do not lose concurrent updates', function () {
+test('file tag rotations remain valid during concurrent updates', function () {
     if (!function_exists('pcntl_fork') || !function_exists('pcntl_exec')) {
         $this->markTestSkipped('pcntl is required for the concurrency test.');
     }
 
+    $adapter = new FileCacheAdapter('features', $this->cacheDir);
+    $before = $adapter->getTagGenerations(['concurrent'])['concurrent'];
     $children = [];
     for ($worker = 0; $worker < 4; $worker++) {
         $pid = pcntl_fork();
         if ($pid === 0) {
             $adapter = new FileCacheAdapter('features', $this->cacheDir);
             for ($increment = 0; $increment < 25; $increment++) {
-                $adapter->incrementTagVersions(['concurrent']);
+                $adapter->rotateTagGenerations(['concurrent']);
             }
             pcntl_exec(PHP_BINARY, ['-r', '']);
             throw new RuntimeException('Unable to terminate concurrency-test worker.');
@@ -173,8 +170,9 @@ test('file tag increments do not lose concurrent updates', function () {
         expect(pcntl_wexitstatus($status))->toBe(0);
     }
 
-    $adapter = new FileCacheAdapter('features', $this->cacheDir);
-    expect($adapter->getTagVersions(['concurrent']))->toBe(['concurrent' => 100]);
+    $generation = $adapter->getTagGenerations(['concurrent'])['concurrent'];
+    expect($generation)->toMatch('/^[a-f0-9]{32}$/')
+        ->and($generation)->not->toBe($before);
 });
 
 test('remember uses configured lock provider', function () {
@@ -212,6 +210,110 @@ test('remember uses configured lock provider', function () {
 
     expect($calls['acquire'])->toBe(1)
         ->and($calls['release'])->toBe(1);
+});
+
+test('remember discards a value invalidated while its resolver runs', function () {
+    $value = $this->cache->remember('raced', function (): string {
+        $this->cache->invalidateTag('products');
+
+        return 'stale';
+    }, 300, ['products']);
+
+    expect($value)->toBe('stale')
+        ->and($this->cache->get('raced'))->toBeNull();
+});
+
+test('remember rechecks after lock timeout before resolving', function () {
+    $cache = Cache::memory('timeout-recheck');
+    $provider = new class($cache) implements LockProviderInterface {
+        public function __construct(private Cache $cache) {}
+
+        public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): ?LockHandle
+        {
+            expect($key)->not->toBeEmpty()
+                ->and($waitSeconds)->toBeGreaterThanOrEqual(0)
+                ->and($leaseSeconds)->toBeGreaterThan(0);
+            $this->cache->set('filled', 'winner', 300);
+
+            return null;
+        }
+
+        public function refresh(?LockHandle $handle, float $leaseSeconds): bool
+        {
+            expect($handle)->toBeInstanceOf(LockHandle::class)
+                ->and($leaseSeconds)->toBeGreaterThan(0);
+
+            return false;
+        }
+
+        public function release(?LockHandle $handle): void {}
+    };
+    $runs = 0;
+    $cache->setLockProvider($provider);
+
+    expect($cache->remember('filled', function () use (&$runs): string {
+        ++$runs;
+
+        return 'loser';
+    }))->toBe('winner')
+        ->and($runs)->toBe(0);
+});
+
+test('remember never stores after lock ownership is lost', function () {
+    $cache = Cache::memory('lost-lock');
+    $provider = new class implements LockProviderInterface {
+        public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): ?LockHandle
+        {
+            expect($waitSeconds)->toBeGreaterThanOrEqual(0);
+
+            return new LockHandle($key, 'owner', leaseSeconds: $leaseSeconds);
+        }
+
+        public function refresh(?LockHandle $handle, float $leaseSeconds): bool
+        {
+            expect($handle)->toBeInstanceOf(LockHandle::class)
+                ->and($leaseSeconds)->toBeGreaterThan(0);
+
+            return false;
+        }
+
+        public function release(?LockHandle $handle): void {}
+    };
+    $cache->setLockProvider($provider);
+
+    expect($cache->remember('lost', fn(): string => 'computed', 300))->toBe('computed')
+        ->and($cache->get('lost'))->toBeNull()
+        ->and($cache->exportMetrics()['array']['remember_discarded_after_lock_loss'] ?? 0)->toBe(1);
+});
+
+test('remember lock identities include the cache namespace', function () {
+    $keys = [];
+    $provider = new class($keys) implements LockProviderInterface {
+        public function __construct(private array &$keys) {}
+
+        public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): ?LockHandle
+        {
+            expect($waitSeconds)->toBeGreaterThanOrEqual(0);
+            $this->keys[] = $key;
+
+            return new LockHandle($key, bin2hex(random_bytes(16)), leaseSeconds: $leaseSeconds);
+        }
+
+        public function refresh(?LockHandle $handle, float $leaseSeconds): bool
+        {
+            expect($handle)->toBeInstanceOf(LockHandle::class)
+                ->and($leaseSeconds)->toBeGreaterThan(0);
+
+            return true;
+        }
+
+        public function release(?LockHandle $handle): void {}
+    };
+    Cache::memory('tenant-a')->setLockProvider($provider)->remember('same', fn(): int => 1);
+    Cache::memory('tenant-b')->setLockProvider($provider)->remember('same', fn(): int => 2);
+
+    expect($keys)->toHaveCount(2)
+        ->and($keys[0])->not->toBe($keys[1]);
 });
 
 test('metrics collector exports hit and miss counters', function () {

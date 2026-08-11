@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Infocyph\CacheLayer\Cache\Adapter;
 
+use Infocyph\CacheLayer\Cache\CacheInput;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Psr\Cache\CacheItemInterface;
 use RuntimeException;
@@ -25,7 +26,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter
         if (!class_exists(\Memcached::class)) {
             throw new RuntimeException('Memcached extension not loaded');
         }
-        $this->namespace = sanitize_cache_ns($namespace);
+        $this->namespace = CacheInput::namespace($namespace);
         $this->client = $client ?? new \Memcached();
         if ($client === null) {
             $this->client->addServers($servers);
@@ -34,8 +35,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter
 
     public function clear(): bool
     {
-        $this->client->add($this->epochKey(), 0);
-        $cleared = $this->client->increment($this->epochKey()) !== false;
+        $cleared = $this->client->set($this->generationKey(), self::newGeneration());
         $this->deferred = [];
 
         return $cleared;
@@ -76,12 +76,12 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter
     public function getItem(string $key): CacheItem
     {
         $mapped = $this->mapData($key);
-        $stored = $this->client->getMulti([$this->epochKey(), $mapped]);
+        $stored = $this->client->getMulti([$this->generationKey(), $mapped]);
         $stored = is_array($stored) ? $stored : [];
-        $epoch = $this->normalizeVersion($stored[$this->epochKey()] ?? null);
+        $generation = $this->namespaceGeneration($stored[$this->generationKey()] ?? null);
         $blob = $stored[$mapped] ?? null;
         $record = is_string($blob) ? $this->decodeRecordFromBlob($blob) : null;
-        if ($record !== null && ($record->namespaceEpoch ?? 0) === $epoch) {
+        if ($record !== null && $record->namespaceGeneration === $generation) {
             return $this->genericItemFromRecord($key, $record);
         }
         if (is_string($blob)) {
@@ -93,42 +93,28 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter
 
     /**
      * @param list<string> $tags
-     * @return array<string, int>
+     * @return array<string, string>
      */
     #[\Override]
-    public function getTagVersions(array $tags): array
+    public function getTagGenerations(array $tags): array
     {
         if ($tags === []) {
             return [];
         }
         $stored = $this->client->getMulti(array_map($this->mapTag(...), $tags));
         $stored = is_array($stored) ? $stored : [];
-        $versions = [];
+        $generations = [];
         foreach ($tags as $tag) {
-            $versions[$tag] = $this->normalizeVersion($stored[$this->mapTag($tag)] ?? null);
+            $key = $this->mapTag($tag);
+            $generations[$tag] = $this->tagGeneration($key, $stored[$key] ?? null);
         }
 
-        return $versions;
+        return $generations;
     }
 
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
-    }
-
-    /** @param list<string> $tags */
-    #[\Override]
-    public function incrementTagVersions(array $tags): bool
-    {
-        foreach ($tags as $tag) {
-            $key = $this->mapTag($tag);
-            $this->client->add($key, 0);
-            if ($this->client->increment($key) === false) {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     /**
@@ -141,20 +127,20 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter
             return [];
         }
 
-        $physical = [$this->epochKey()];
+        $physical = [$this->generationKey()];
         foreach ($keys as $key) {
             $physical[] = $this->mapData($key);
         }
         $stored = $this->client->getMulti($physical, \Memcached::GET_PRESERVE_ORDER);
         $stored = is_array($stored) ? $stored : [];
-        $epoch = $this->normalizeVersion($stored[$this->epochKey()] ?? null);
+        $generation = $this->namespaceGeneration($stored[$this->generationKey()] ?? null);
         $items = [];
         $stale = [];
         foreach ($keys as $key) {
             $mapped = $this->mapData($key);
             $blob = $stored[$mapped] ?? null;
             $record = is_string($blob) ? $this->decodeRecordFromBlob($blob) : null;
-            if ($record === null || ($record->namespaceEpoch ?? 0) !== $epoch) {
+            if ($record === null || $record->namespaceGeneration !== $generation) {
                 $items[$key] = $this->genericMiss($key);
                 if (is_string($blob)) {
                     $stale[] = $mapped;
@@ -171,6 +157,18 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter
         return $items;
     }
 
+    /** @param list<string> $tags */
+    #[\Override]
+    public function rotateTagGenerations(array $tags): bool
+    {
+        $generations = [];
+        foreach ($tags as $tag) {
+            $generations[$this->mapTag($tag)] = self::newGeneration();
+        }
+
+        return $generations === [] || $this->client->setMulti($generations);
+    }
+
     public function save(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
@@ -183,7 +181,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter
 
         return $this->client->set(
             $this->mapData($item->getKey()),
-            $this->encodeItem($item, $expiration['expiresAt'], $this->namespaceEpoch()),
+            $this->encodeItem($item, $expiration['expiresAt'], $this->namespaceGeneration()),
             $expiration['ttl'] ?? 0,
         );
     }
@@ -191,7 +189,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter
     /** @param array<string, CacheItemInterface> $items */
     public function saveItems(array $items): bool
     {
-        $epoch = $this->namespaceEpoch();
+        $generation = $this->namespaceGeneration();
         $groups = [];
         $expired = [];
         foreach ($items as $item) {
@@ -208,7 +206,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter
             $groups[$ttl][$this->mapData($item->getKey())] = $this->encodeItem(
                 $item,
                 $expiration['expiresAt'],
-                $epoch,
+                $generation,
             );
         }
 
@@ -224,9 +222,9 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter
         return true;
     }
 
-    private function epochKey(): string
+    private function generationKey(): string
     {
-        return $this->namespace . ':m:epoch';
+        return $this->namespace . ':m:generation';
     }
 
     private function mapData(string $key): string
@@ -239,15 +237,50 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter
         return $this->namespace . ':m:tag:' . $tag;
     }
 
-    private function namespaceEpoch(): int
+    private function namespaceGeneration(mixed $value = null): string
     {
-        $value = $this->client->get($this->epochKey());
+        if ($value === null) {
+            $value = $this->client->get($this->generationKey());
+        }
+        $generation = self::normalizeGeneration($value);
+        if ($generation !== null) {
+            return $generation;
+        }
 
-        return $this->normalizeVersion($value);
+        $candidate = self::newGeneration();
+        $value = $this->client->add($this->generationKey(), $candidate)
+            ? $candidate
+            : $this->client->get($this->generationKey());
+        $generation = self::normalizeGeneration($value);
+        if ($generation === null) {
+            $generation = self::newGeneration();
+            if (!$this->client->set($this->generationKey(), $generation)) {
+                throw new RuntimeException('Unable to initialize Memcached namespace generation.');
+            }
+        }
+
+        return $generation;
     }
 
-    private function normalizeVersion(mixed $value): int
+    private function tagGeneration(string $key, mixed $value): string
     {
-        return is_int($value) && $value >= 0 ? $value : 0;
+        $generation = self::normalizeGeneration($value);
+        if ($generation !== null) {
+            return $generation;
+        }
+
+        $candidate = self::newGeneration();
+        $generation = self::normalizeGeneration(
+            $this->client->add($key, $candidate) ? $candidate : $this->client->get($key),
+        );
+        if ($generation !== null) {
+            return $generation;
+        }
+        $generation = self::newGeneration();
+        if (!$this->client->set($key, $generation)) {
+            throw new RuntimeException('Unable to initialize Memcached tag generation.');
+        }
+
+        return $generation;
     }
 }

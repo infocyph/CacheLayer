@@ -18,12 +18,9 @@ interface InternalCachePoolInterface extends CacheItemPoolInterface
 
     /**
      * @param list<string> $tags
-     * @return array<string, int>
+     * @return array<string, string>
      */
-    public function getTagVersions(array $tags): array;
-
-    /** @param list<string> $tags */
-    public function incrementTagVersions(array $tags): bool;
+    public function getTagGenerations(array $tags): array;
 
     public function internalPersist(CacheItemInterface $item): bool;
 
@@ -34,6 +31,9 @@ interface InternalCachePoolInterface extends CacheItemPoolInterface
      * @return array<string, CacheItemInterface>
      */
     public function multiFetch(array $keys): array;
+
+    /** @param list<string> $tags */
+    public function rotateTagGenerations(array $tags): bool;
 
     /**
      * @param array<string, CacheItemInterface> $items

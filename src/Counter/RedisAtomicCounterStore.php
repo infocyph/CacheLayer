@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Infocyph\CacheLayer\Counter;
 
+use Infocyph\CacheLayer\Cache\CacheInput;
 use Infocyph\CacheLayer\Counter\Exception\AtomicCounterException;
+use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 
 final readonly class RedisAtomicCounterStore implements AtomicCounterStoreInterface
 {
@@ -27,7 +29,11 @@ LUA;
             throw new AtomicCounterException('phpredis extension not loaded');
         }
 
-        $this->namespace = sanitize_cache_ns($namespace);
+        try {
+            $this->namespace = CacheInput::namespace($namespace);
+        } catch (CacheInvalidArgumentException $failure) {
+            throw new AtomicCounterException($failure->getMessage(), 0, $failure);
+        }
     }
 
     public function decrement(string $key, int $by = 1, ?int $ttlSeconds = null): AtomicCounterValue
@@ -80,8 +86,10 @@ LUA;
 
     private function map(string $key): string
     {
-        if (!preg_match('/^[A-Za-z0-9_.-]+$/D', $key)) {
-            throw new AtomicCounterException('Atomic counter key is invalid.');
+        try {
+            CacheInput::key($key);
+        } catch (CacheInvalidArgumentException $failure) {
+            throw new AtomicCounterException($failure->getMessage(), 0, $failure);
         }
 
         return $this->namespace . ':counter:' . $key;

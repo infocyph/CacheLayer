@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Infocyph\CacheLayer\Cache\Adapter;
 
+use Infocyph\CacheLayer\Cache\CacheInput;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 use Infocyph\CacheLayer\Support\RedisConnection;
@@ -47,7 +48,7 @@ class RedisCacheAdapter extends AbstractCacheAdapter
             throw new RuntimeException('phpredis extension not loaded');
         }
 
-        $this->ns = sanitize_cache_ns($namespace);
+        $this->ns = CacheInput::namespace($namespace);
         $this->redis = $client ?? $this->connect($dsn);
     }
 
@@ -63,17 +64,6 @@ class RedisCacheAdapter extends AbstractCacheAdapter
         $this->deferred = [];
 
         return true;
-    }
-
-    public function count(): int
-    {
-        $iter = null;
-        $count = 0;
-        while ($keys = $this->redis->scan($iter, $this->ns . ':d:*', 1000)) {
-            $count += count($keys);
-        }
-
-        return $count;
     }
 
     public function deleteItem(string $key): bool
@@ -117,7 +107,7 @@ class RedisCacheAdapter extends AbstractCacheAdapter
 
     /** @param list<string> $tags */
     #[\Override]
-    public function getTagVersions(array $tags): array
+    public function getTagGenerations(array $tags): array
     {
         if ($tags === []) {
             return [];
@@ -125,37 +115,25 @@ class RedisCacheAdapter extends AbstractCacheAdapter
 
         $values = $this->redis->mget(array_map($this->mapTag(...), $tags));
         $values = is_array($values) ? array_values($values) : [];
-        $versions = [];
+        $generations = [];
+        $missing = [];
         foreach ($tags as $index => $tag) {
             $value = $values[$index] ?? null;
-            $versions[$tag] = is_numeric($value) ? max(0, (int) $value) : 0;
+            $generation = self::normalizeGeneration($value);
+            if ($generation === null) {
+                $missing[$tag] = $value;
+
+                continue;
+            }
+            $generations[$tag] = $generation;
         }
 
-        return $versions;
+        return $generations + $this->initializeTagGenerations($missing);
     }
 
     public function hasItem(string $key): bool
     {
         return $this->redis->exists($this->map($key)) === 1;
-    }
-
-    /** @param list<string> $tags */
-    #[\Override]
-    public function incrementTagVersions(array $tags): bool
-    {
-        if ($tags === []) {
-            return true;
-        }
-        if (count($tags) === 1) {
-            return $this->redis->incr($this->mapTag($tags[0])) !== false;
-        }
-
-        $pipeline = $this->redis->multi(\Redis::PIPELINE);
-        foreach ($tags as $tag) {
-            $pipeline->incr($this->mapTag($tag));
-        }
-
-        return $pipeline->exec() !== false;
     }
 
     /**
@@ -203,6 +181,21 @@ class RedisCacheAdapter extends AbstractCacheAdapter
         }
 
         return $items;
+    }
+
+    /** @param list<string> $tags */
+    #[\Override]
+    public function rotateTagGenerations(array $tags): bool
+    {
+        if ($tags === []) {
+            return true;
+        }
+        $generations = [];
+        foreach ($tags as $tag) {
+            $generations[$this->mapTag($tag)] = self::newGeneration();
+        }
+
+        return $this->redis->mset($generations);
     }
 
     public function save(CacheItemInterface $item): bool
@@ -259,12 +252,8 @@ class RedisCacheAdapter extends AbstractCacheAdapter
         if ($expiring === []) {
             return $ok;
         }
-        $pipeline = $this->redis->multi(\Redis::PIPELINE);
-        foreach ($expiring as [$key, $ttl, $blob]) {
-            $pipeline->setex($key, $ttl, $blob);
-        }
 
-        return $pipeline->exec() !== false && $ok;
+        return $ok && $this->saveExpiring($expiring);
     }
 
     private function connect(string $dsn): \Redis
@@ -276,6 +265,33 @@ class RedisCacheAdapter extends AbstractCacheAdapter
         }
     }
 
+    /**
+     * @param array<string, mixed> $missing
+     * @return array<string, string>
+     */
+    private function initializeTagGenerations(array $missing): array
+    {
+        $generations = [];
+        foreach ($missing as $tag => $value) {
+            $candidate = self::newGeneration();
+            $key = $this->mapTag($tag);
+            if ($value === false || $value === null) {
+                $stored = $this->redis->set($key, $candidate, ['nx']);
+                $current = $stored ? $candidate : $this->redis->get($key);
+            } else {
+                $this->redis->set($key, $candidate);
+                $current = $candidate;
+            }
+            $generation = self::normalizeGeneration($current);
+            if ($generation === null) {
+                throw new RuntimeException('Unable to initialize Redis tag generation.');
+            }
+            $generations[$tag] = $generation;
+        }
+
+        return $generations;
+    }
+
     private function map(string $key): string
     {
         return $this->ns . ':d:' . $key;
@@ -284,5 +300,19 @@ class RedisCacheAdapter extends AbstractCacheAdapter
     private function mapTag(string $tag): string
     {
         return $this->ns . ':m:tag:' . $tag;
+    }
+
+    /** @param list<array{0:string, 1:int, 2:string}> $records */
+    private function saveExpiring(array $records): bool
+    {
+        $pipeline = $this->redis->multi(\Redis::PIPELINE);
+        foreach ($records as [$key, $ttl, $blob]) {
+            $pipeline->setex($key, $ttl, $blob);
+        }
+        $results = $pipeline->exec();
+
+        return is_array($results)
+            && count($results) === count($records)
+            && AdapterValueNormalizer::allTrue($results);
     }
 }

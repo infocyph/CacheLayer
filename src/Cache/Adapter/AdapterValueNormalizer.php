@@ -6,6 +6,18 @@ namespace Infocyph\CacheLayer\Cache\Adapter;
 
 final class AdapterValueNormalizer
 {
+    /** @param array<mixed> $values */
+    public static function allTrue(array $values): bool
+    {
+        foreach ($values as $value) {
+            if ($value !== true) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     /**
      * @phpstan-return array<string, mixed>|null
  * @param mixed $value The value argument.

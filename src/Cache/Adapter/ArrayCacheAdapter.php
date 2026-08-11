@@ -4,14 +4,15 @@ declare(strict_types=1);
 
 namespace Infocyph\CacheLayer\Cache\Adapter;
 
+use Infocyph\CacheLayer\Cache\CacheInput;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Psr\Cache\CacheItemInterface;
 
-final class ArrayCacheAdapter extends AbstractCacheAdapter
+final class ArrayCacheAdapter extends AbstractCacheAdapter implements TagGenerationCacheInterface
 {
     private readonly string $ns;
 
-    /** @var array<string, int> */
+    /** @var array<string, string> */
     private array $metadata = [];
 
     /** @var array<string, string> */
@@ -19,7 +20,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter
 
     public function __construct(string $namespace = 'default')
     {
-        $this->ns = sanitize_cache_ns($namespace);
+        $this->ns = CacheInput::namespace($namespace);
     }
 
     public function clear(): bool
@@ -29,13 +30,6 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter
         $this->deferred = [];
 
         return true;
-    }
-
-    public function count(): int
-    {
-        $this->pruneExpired();
-
-        return count($this->store);
     }
 
     public function deleteItem(string $key): bool
@@ -63,19 +57,27 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter
         $mapped = $this->map($key);
         $blob = $this->store[$mapped] ?? null;
 
-        return $this->genericFromBlob($key, is_string($blob) ? $blob : null);
+        return $this->genericFromBlobWithInvalidator(
+            $key,
+            is_string($blob) ? $blob : null,
+            function () use ($mapped): bool {
+                unset($this->store[$mapped]);
+
+                return true;
+            },
+        );
     }
 
     /** @param list<string> $tags */
     #[\Override]
-    public function getTagVersions(array $tags): array
+    public function getTagGenerations(array $tags): array
     {
-        $versions = [];
+        $generations = [];
         foreach ($tags as $tag) {
-            $versions[$tag] = $this->metadata[$tag] ?? 0;
+            $generations[$tag] = $this->metadata[$tag] ??= self::newGeneration();
         }
 
-        return $versions;
+        return $generations;
     }
 
     public function hasItem(string $key): bool
@@ -91,17 +93,6 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter
             unset($this->store[$mapped]);
 
             return false;
-        }
-
-        return true;
-    }
-
-    /** @param list<string> $tags */
-    #[\Override]
-    public function incrementTagVersions(array $tags): bool
-    {
-        foreach ($tags as $tag) {
-            $this->metadata[$tag] = ($this->metadata[$tag] ?? 0) + 1;
         }
 
         return true;
@@ -130,6 +121,24 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter
         }
 
         return $items;
+    }
+
+    /** @param list<string> $tags */
+    #[\Override]
+    public function readTagGenerations(array $tags): array
+    {
+        return array_intersect_key($this->metadata, array_fill_keys($tags, true));
+    }
+
+    /** @param list<string> $tags */
+    #[\Override]
+    public function rotateTagGenerations(array $tags): bool
+    {
+        foreach ($tags as $tag) {
+            $this->metadata[$tag] = self::newGeneration();
+        }
+
+        return true;
     }
 
     public function save(CacheItemInterface $item): bool
@@ -163,18 +172,22 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter
         return true;
     }
 
+    /** @param array<string, string> $generations */
+    #[\Override]
+    public function storeTagGenerations(array $generations): bool
+    {
+        foreach ($generations as $tag => $generation) {
+            if (!self::isGeneration($generation)) {
+                return false;
+            }
+            $this->metadata[$tag] = strtolower($generation);
+        }
+
+        return true;
+    }
+
     private function map(string $key): string
     {
         return $this->ns . ':d:' . $key;
-    }
-
-    private function pruneExpired(): void
-    {
-        foreach ($this->store as $mapped => $blob) {
-            $record = $this->decodeRecordFromBlob($blob);
-            if ($record === null) {
-                unset($this->store[$mapped]);
-            }
-        }
     }
 }

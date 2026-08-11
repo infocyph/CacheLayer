@@ -14,6 +14,8 @@ Highlights:
 
 * values shared across PHP processes on the same host
 * namespace-specific segment key strategy
+* shared locks for reads and exclusive locks for mutation
+* an owner marker that rejects accidental ``ftok`` segment collisions
 * good for host-local IPC cache use cases
 
 Notes:

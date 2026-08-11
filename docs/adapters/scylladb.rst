@@ -18,7 +18,9 @@ Highlights:
 * keyspace/table-backed cache entries with bounded partition buckets
 * bucket-grouped ``IN`` reads and bounded unlogged write batches
 * schema bootstrap with ``CREATE TABLE IF NOT EXISTS``
-* TTL stored as absolute timestamp in ``expires``
+* native Scylla TTL on data rows, plus the absolute expiration timestamp used
+  for read-time validation
+* binary ``blob`` payload storage without Base64 expansion
 
 Supported injected session methods:
 

@@ -27,10 +27,12 @@ Process flow:
    $cache = Cache::file('shop', __DIR__ . '/storage/cache');
 
    // Read-through cache on miss with stampede protection.
-   $product = $cache->remember('product.42', function ($item) {
-       $item->expiresAfter(300);
-       return loadProductFromDatabase(42);
-   }, tags: ['products', 'product.42']);
+   $product = $cache->remember(
+       'product.42',
+       fn () => loadProductFromDatabase(42),
+       ttl: 300,
+       tags: ['products', 'product.42'],
+   );
 
    // On product update, invalidate only related cache.
    $cache->invalidateTags(['products', 'product.42']);
@@ -67,10 +69,12 @@ Process flow:
    //     'secret',
    // );
 
-   $invoice = $cache->remember('invoice.2026-1001', function ($item) {
-       $item->expiresAfter(180);
-       return buildInvoicePayload(1001);
-   }, tags: ['invoices', 'customer.77']);
+   $invoice = $cache->remember(
+       'invoice.2026-1001',
+       fn () => buildInvoicePayload(1001),
+       ttl: 180,
+       tags: ['invoices', 'customer.77'],
+   );
 
    // Invalidate by business scope when source data changes.
    $cache->invalidateTag('customer.77');

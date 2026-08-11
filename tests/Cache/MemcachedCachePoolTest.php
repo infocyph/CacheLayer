@@ -11,6 +11,7 @@ declare(strict_types=1);
 
 use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
+use Infocyph\CacheLayer\Cache\Lock\MemcachedLockProvider;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 
 /* ── Skip suite if Memcached unavailable ─────────────────────────── */
@@ -119,13 +120,27 @@ test('invalid key throws', function () {
         ->toThrow(InvalidArgumentException::class);
 });
 
-test('clear only advances this namespace epoch', function () use ($memcachedHost, $memcachedPort) {
+test('clear only rotates this namespace generation', function () use ($memcachedHost, $memcachedPort) {
     $other = Cache::memcached('other', [[$memcachedHost, $memcachedPort, 0]], $this->client);
     $this->cache->set('z', 9);
     $other->set('z', 10);
     $this->cache->clear();
     expect($this->cache->hasItem('z'))->toBeFalse()
         ->and($other->get('z'))->toBe(10);
+});
+
+test('an expired Memcached lock owner cannot delete its replacement', function () {
+    $provider = new MemcachedLockProvider($this->client);
+    $oldOwner = $provider->acquire('reports', 0.0, 30.0);
+    expect($oldOwner)->not->toBeNull();
+    if ($oldOwner === null) {
+        return;
+    }
+
+    $this->client->set($oldOwner->key, 'replacement-token', 30);
+    $provider->release($oldOwner);
+
+    expect($this->client->get($oldOwner->key))->toBe('replacement-token');
 });
 
 test('Memcached adapter multiFetch()', function () {

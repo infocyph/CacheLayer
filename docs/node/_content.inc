@@ -75,12 +75,12 @@ Write lifecycle
 1. A normal write is persisted to SQLite first.
 2. A successful SQLite write is copied to APCu when APCu is available.
 3. A delete or namespace clear is attempted across both layers.
-4. Tagged entries and tag-version metadata are local to this node.
+4. Tagged entries and tag-generation metadata are local to this node.
 
-With the default ``failOpen: true``, an L2 failure can fall back to an L1 write
-so the request can continue. This is a resilience choice: the L1-only value is
-lost when that PHP/APCu process is restarted. Set ``failOpen: false`` when a
-storage failure must be surfaced to the application instead.
+An L2 write failure never populates L1, even with ``failOpen: true``. This
+prevents a failed authoritative write from temporarily surfacing through L1.
+Set ``failOpen: false`` when a storage failure must be surfaced to the
+application instead of being returned as ``false``.
 
 Requirements and filesystem placement
 --------------------------------------
@@ -142,8 +142,8 @@ Configuration reference
 
 ``namespace``
    Logical cache partition inside the SQLite database. It defaults to
-   ``default`` and is sanitized before use. Use a stable, application-specific
-   name such as ``catalog`` or ``billing``.
+   ``default`` and is strictly validated as 1--64 characters from
+   ``[A-Za-z0-9_.-]``. Use a stable name such as ``catalog`` or ``billing``.
 
 ``lockDirectory``
    Optional directory for the file lock provider used by ``remember()``. Leave
@@ -217,11 +217,8 @@ node from doing the same expensive work.
 
    $product = $cache->remember(
        'product.42',
-       function ($item) use ($repository) {
-           $item->expiresAfter(300);
-
-           return $repository->find(42);
-       },
+       fn () => $repository->find(42),
+       ttl: 300,
        tags: ['products', 'product.42'],
    );
 
@@ -232,8 +229,8 @@ resolver safe to run more than once.
 Tags and invalidation
 ~~~~~~~~~~~~~~~~~~~~~
 
-Tags group related cached values. CacheLayer invalidates them by changing local
-tag versions rather than scanning every cached key.
+Tags group related cached values. CacheLayer invalidates them by replacing
+local opaque generations rather than scanning every cached key.
 
 .. code-block:: php
 

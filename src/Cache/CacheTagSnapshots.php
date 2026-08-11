@@ -21,7 +21,7 @@ final class CacheTagSnapshots
             if (!$item instanceof CacheItem || !$item->isHit()) {
                 continue;
             }
-            foreach ($item->getTagVersions() as $tag => $_version) {
+            foreach ($item->getTagGenerations() as $tag => $_generation) {
                 $tagSet[$tag] = true;
             }
         }
@@ -29,11 +29,12 @@ final class CacheTagSnapshots
         return array_keys($tagSet);
     }
 
-    /** @param array<string, int> $versions */
-    public static function isCurrent(CacheItem $item, array $versions): bool
+    /** @param array<string, string> $generations */
+    public static function isCurrent(CacheItem $item, array $generations): bool
     {
-        foreach ($item->getTagVersions() as $tag => $expected) {
-            if (($versions[$tag] ?? 0) !== $expected) {
+        foreach ($item->getTagGenerations() as $tag => $expected) {
+            $current = $generations[$tag] ?? null;
+            if (!is_string($current) || !hash_equals($expected, $current)) {
                 return false;
             }
         }
@@ -59,15 +60,15 @@ final class CacheTagSnapshots
 
     /**
      * @param array<string, CacheItemInterface> $items
-     * @param array<string, int> $versions
+     * @param array<string, string> $generations
      * @param callable(string): CacheItemInterface $miss
      * @return array{items:array<string, CacheItemInterface>, stale:list<string>}
      */
-    public static function rejectStale(array $items, array $versions, callable $miss): array
+    public static function rejectStale(array $items, array $generations, callable $miss): array
     {
         $stale = [];
         foreach ($items as $key => $item) {
-            if (!$item instanceof CacheItem || !$item->isHit() || self::isCurrent($item, $versions)) {
+            if (!$item instanceof CacheItem || !$item->isHit() || self::isCurrent($item, $generations)) {
                 continue;
             }
             $stale[] = $key;
@@ -79,6 +80,6 @@ final class CacheTagSnapshots
 
     private static function isTaggedHit(CacheItemInterface $item): bool
     {
-        return $item instanceof CacheItem && $item->isHit() && $item->getTagVersions() !== [];
+        return $item instanceof CacheItem && $item->isHit() && $item->getTagGenerations() !== [];
     }
 }

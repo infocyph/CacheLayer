@@ -6,6 +6,7 @@ namespace Infocyph\CacheLayer\Node\Adapter;
 
 use Infocyph\CacheLayer\Cache\Adapter\AbstractCacheAdapter;
 use Infocyph\CacheLayer\Cache\Adapter\InternalCachePoolInterface;
+use Infocyph\CacheLayer\Cache\Adapter\TagGenerationCacheInterface;
 use Infocyph\CacheLayer\Cache\CacheOptions;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Cache\Metrics\CacheMetricsCollectorInterface;
@@ -13,7 +14,7 @@ use Infocyph\CacheLayer\Cache\Metrics\InMemoryCacheMetricsCollector;
 use Psr\Cache\CacheItemInterface;
 use Throwable;
 
-final class NodeCacheAdapter extends AbstractCacheAdapter
+final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerationCacheInterface
 {
     public function __construct(
         private readonly ?InternalCachePoolInterface $l1,
@@ -82,32 +83,34 @@ final class NodeCacheAdapter extends AbstractCacheAdapter
 
     /**
      * @param list<string> $tags
-     * @return array<string, int>
+     * @return array<string, string>
      */
     #[\Override]
-    public function getTagVersions(array $tags): array
+    public function getTagGenerations(array $tags): array
     {
-        return $this->attempt(
-            fn(): array => $this->l2->getTagVersions($tags),
-            array_fill_keys($tags, 0),
+        $cached = !$this->l1 instanceof TagGenerationCacheInterface
+            ? []
+            : $this->attempt(fn(): array => $this->l1->readTagGenerations($tags), [], 'l1_failure');
+        $missing = array_values(array_diff($tags, array_keys($cached)));
+        if ($missing === []) {
+            return $cached;
+        }
+
+        $loaded = $this->attempt(
+            fn(): array => $this->l2->getTagGenerations($missing),
+            $this->freshGenerations($missing),
             'l2_failure',
         );
+        if ($this->l1 instanceof TagGenerationCacheInterface) {
+            $this->attempt(fn(): bool => $this->l1->storeTagGenerations($loaded), false, 'l1_failure');
+        }
+
+        return $cached + $loaded;
     }
 
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
-    }
-
-    /** @param list<string> $tags */
-    #[\Override]
-    public function incrementTagVersions(array $tags): bool
-    {
-        $l2 = $this->attempt(fn(): bool => $this->l2->incrementTagVersions($tags), false, 'l2_failure');
-        $l1 = $this->l1 === null
-            || $this->attempt(fn(): bool => $this->l1->incrementTagVersions($tags), false, 'l1_failure');
-
-        return $l2 && $l1;
     }
 
     /**
@@ -132,20 +135,49 @@ final class NodeCacheAdapter extends AbstractCacheAdapter
         return $ordered;
     }
 
+    /** @param list<string> $tags */
+    #[\Override]
+    public function readTagGenerations(array $tags): array
+    {
+        return $this->getTagGenerations($tags);
+    }
+
+    /** @param list<string> $tags */
+    #[\Override]
+    public function rotateTagGenerations(array $tags): bool
+    {
+        $l2 = $this->attempt(fn(): bool => $this->l2->rotateTagGenerations($tags), false, 'l2_failure');
+        if (!$l2 || !$this->l1 instanceof TagGenerationCacheInterface) {
+            return $l2;
+        }
+
+        $fenced = $this->attempt(fn(): bool => $this->l1->rotateTagGenerations($tags), false, 'l1_failure');
+        $generations = $this->attempt(fn(): array => $this->l2->getTagGenerations($tags), [], 'l2_failure');
+        $stored = $generations !== []
+            && $this->attempt(fn(): bool => $this->l1->storeTagGenerations($generations), false, 'l1_failure');
+        if (!$fenced || !$stored) {
+            $this->attempt(fn(): bool => $this->l1->clear(), false, 'l1_failure');
+        }
+
+        return $fenced && $stored;
+    }
+
     public function save(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
             return false;
         }
         $stored = $this->saveOneInto($this->l2, $item, 'l2_failure');
-        if (!$stored && !$this->failOpen) {
+        if (!$stored) {
             return false;
         }
         if ($this->l1 === null) {
             return $stored;
         }
 
-        return $this->saveOneInto($this->l1, $item, 'l1_failure') || $stored;
+        $this->saveOneInto($this->l1, $item, 'l1_failure');
+
+        return true;
     }
 
     /** @param array<string, CacheItemInterface> $items */
@@ -158,16 +190,23 @@ final class NodeCacheAdapter extends AbstractCacheAdapter
         }
 
         $stored = $this->saveInto($this->l2, $items, 'l2_failure');
-        if (!$stored && !$this->failOpen) {
+        if (!$stored) {
             return false;
         }
         if ($this->l1 !== null) {
-            $l1Stored = $this->saveInto($this->l1, $items, 'l1_failure');
-
-            return $stored || $l1Stored;
+            $this->saveInto($this->l1, $items, 'l1_failure');
         }
 
-        return $stored;
+        return true;
+    }
+
+    /** @param array<string, string> $generations */
+    #[\Override]
+    public function storeTagGenerations(array $generations): bool
+    {
+        return $this->l2->storeTagGenerations($generations)
+            && (!$this->l1 instanceof TagGenerationCacheInterface
+                || $this->l1->storeTagGenerations($generations));
     }
 
     /**
@@ -190,6 +229,20 @@ final class NodeCacheAdapter extends AbstractCacheAdapter
         }
     }
 
+    /**
+     * @param list<string> $tags
+     * @return array<string, string>
+     */
+    private function freshGenerations(array $tags): array
+    {
+        $generations = [];
+        foreach ($tags as $tag) {
+            $generations[$tag] = self::newGeneration();
+        }
+
+        return $generations;
+    }
+
     private function metric(string $name, int $amount = 1): void
     {
         if ($amount > 0) {
@@ -200,11 +253,11 @@ final class NodeCacheAdapter extends AbstractCacheAdapter
     private function nodeItem(CacheItemInterface $item): CacheItem
     {
         $ttl = $item instanceof CacheItem ? $item->ttlSeconds() : null;
-        $tags = $item instanceof CacheItem ? $item->getTagVersions() : [];
+        $tags = $item instanceof CacheItem ? $item->getTagGenerations() : [];
 
         return (new CacheItem($this, $item->getKey(), $item->get(), true))
             ->expiresAfter($ttl)
-            ->setTagVersions($tags);
+            ->setTagGenerations($tags);
     }
 
     /**
@@ -265,14 +318,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter
      */
     private function readPool(InternalCachePoolInterface $pool, array $keys): array
     {
-        $items = [];
-        foreach ($pool->getItems($keys) as $key => $item) {
-            if (is_string($key) && $item instanceof CacheItemInterface) {
-                $items[$key] = $item;
-            }
-        }
-
-        return $items;
+        return $pool->multiFetch($keys);
     }
 
     /** @param array<string, CacheItemInterface> $items */
@@ -287,7 +333,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter
             if ($item instanceof CacheItem) {
                 $target->expiresAfter($item->ttlSeconds());
                 if ($target instanceof CacheItem) {
-                    $target->setTagVersions($item->getTagVersions());
+                    $target->setTagGenerations($item->getTagGenerations());
                 }
             }
             $targets[$key] = $target;
@@ -305,7 +351,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter
         if ($item instanceof CacheItem) {
             $target->expiresAfter($item->ttlSeconds());
             if ($target instanceof CacheItem) {
-                $target->setTagVersions($item->getTagVersions());
+                $target->setTagGenerations($item->getTagGenerations());
             }
         }
 

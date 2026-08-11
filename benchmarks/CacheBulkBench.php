@@ -116,7 +116,7 @@ final class CacheBulkBench
         for ($index = 0; $index < $params['size']; $index++) {
             $key = 'tier-full.' . $index;
             $keys[] = $key;
-            $l1->set($key, $index, 60);
+            $l1->save($l1->createItem($key)->set($index)->expiresAfter(60));
         }
 
         return count($cache->getMultiple($keys));
@@ -134,7 +134,7 @@ final class CacheBulkBench
         for ($index = 0; $index < $params['size']; $index++) {
             $key = 'tier3.' . $index;
             $keys[] = $key;
-            $l3->set($key, $index, 60);
+            $l3->save($l3->createItem($key)->set($index)->expiresAfter(60));
         }
 
         return count($cache->getMultiple($keys));
@@ -152,7 +152,7 @@ final class CacheBulkBench
             $key = 'tier.' . $index;
             $keys[] = $key;
             $target = $index % 2 === 0 ? $l1 : $l2;
-            $target->set($key, $index, 60);
+            $target->save($target->createItem($key)->set($index)->expiresAfter(60));
         }
 
         return count($cache->getMultiple($keys));
@@ -160,6 +160,7 @@ final class CacheBulkBench
 
     public function provideSizes(): iterable
     {
+        yield '1 key' => ['size' => 1];
         yield '10 keys' => ['size' => 10];
         yield '100 keys' => ['size' => 100];
         yield '1000 keys' => ['size' => 1000];

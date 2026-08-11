@@ -3,18 +3,20 @@
 declare(strict_types=1);
 
 use Infocyph\CacheLayer\Cache\Adapter\CachePayloadCodec;
+use Infocyph\CacheLayer\Cache\Adapter\ArrayCacheAdapter;
 use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Cache\CacheOptions;
 
 test('payload codec signs and verifies CacheLayer v2 records', function () {
     $codec = new CachePayloadCodec(new CacheOptions(integrityKey: 'secret-key-123'));
 
-    $blob = $codec->encode(['k' => 'v'], null, ['group' => 2]);
+    $generation = bin2hex(random_bytes(16));
+    $blob = $codec->encode(['k' => 'v'], null, ['group' => $generation]);
     expect(str_starts_with($blob, 'cl2-sig:'))->toBeTrue();
 
     $record = $codec->decode($blob);
     expect($record?->value)->toBe(['k' => 'v'])
-        ->and($record?->tags)->toBe(['group' => 2]);
+        ->and($record?->tags)->toBe(['group' => $generation]);
 });
 
 test('payload codec rejects tampered signed payload', function () {
@@ -22,6 +24,20 @@ test('payload codec rejects tampered signed payload', function () {
     $blob = $codec->encode('value', null);
 
     expect($codec->decode($blob . 'x'))->toBeNull();
+});
+
+test('cache treats a corrupted signed record as a miss and deletes it', function () {
+    $adapter = new ArrayCacheAdapter('signed-cleanup');
+    $cache = new Cache($adapter, options: new CacheOptions(integrityKey: 'secret-key-123'));
+    $cache->set('record', 'value');
+
+    $store = new ReflectionProperty($adapter, 'store');
+    $records = $store->getValue($adapter);
+    $records['signed-cleanup:d:record'] .= 'tampered';
+    $store->setValue($adapter, $records);
+
+    expect($cache->get('record', 'fallback'))->toBe('fallback')
+        ->and($store->getValue($adapter))->not->toHaveKey('signed-cleanup:d:record');
 });
 
 test('payload codec policies are isolated between instances', function () {
@@ -43,6 +59,18 @@ test('long-running cache instances do not leak serialization policy', function (
         ->and($permissive->get('object'))->toBeInstanceOf(stdClass::class)
         ->and($strict->set('scalar', 'still-valid'))->toBeTrue()
         ->and($strict->get('scalar'))->toBe('still-valid');
+});
+
+test('weak map enforces object and closure policies without serializing references', function () {
+    $strict = Cache::weakMap('strict-weak', new CacheOptions(allowObjects: false, allowClosures: false));
+    $closuresOnly = Cache::weakMap('closure-weak', new CacheOptions(allowObjects: false, allowClosures: true));
+    $closure = static fn(): string => 'retained';
+
+    expect($strict->set('object', new stdClass()))->toBeFalse()
+        ->and($strict->set('closure', $closure))->toBeFalse()
+        ->and($closuresOnly->set('object', new stdClass()))->toBeFalse()
+        ->and($closuresOnly->set('closure', $closure))->toBeTrue()
+        ->and($closuresOnly->get('closure'))->toBe($closure);
 });
 
 test('payload codec delegates only top-level closures to special serialization', function () {

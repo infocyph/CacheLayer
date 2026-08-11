@@ -9,17 +9,18 @@ use Infocyph\CacheLayer\Cache\Adapter\CachePayloadCodec;
 use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Cache\CacheOptions;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
+use Infocyph\CacheLayer\Exceptions\CacheBackendException;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 use Psr\Cache\CacheItemInterface;
 use RuntimeException;
 
 final class ArchitectureHardeningTest extends AbstractCacheAdapter
 {
-    /** @var array<string, array{value:mixed,expires:int|null,tags:array<string,int>}> */
+    /** @var array<string, array{value:mixed,expires:int|null,tags:array<string,string>}> */
     private array $records = [];
 
-    /** @var array<string, int> */
-    private array $versions = [];
+    /** @var array<string, string> */
+    private array $generations = [];
 
     public int $deleteBatches = 0;
 
@@ -36,7 +37,7 @@ final class ArchitectureHardeningTest extends AbstractCacheAdapter
     public function clear(): bool
     {
         $this->records = [];
-        $this->versions = [];
+        $this->generations = [];
 
         return true;
     }
@@ -83,7 +84,7 @@ final class ArchitectureHardeningTest extends AbstractCacheAdapter
             }
             $items[$key] = (new CacheItem($this, $key, $record['value'], true))
                 ->expiresAt(CachePayloadCodec::toDateTime($record['expires']))
-                ->setTagVersions($record['tags']);
+                ->setTagGenerations($record['tags']);
         }
 
         return $items;
@@ -112,31 +113,31 @@ final class ArchitectureHardeningTest extends AbstractCacheAdapter
             $this->records[$item->getKey()] = [
                 'value' => $item->get(),
                 'expires' => $ttl === null ? null : time() + $ttl,
-                'tags' => $item instanceof CacheItem ? $item->getTagVersions() : [],
+                'tags' => $item instanceof CacheItem ? $item->getTagGenerations() : [],
             ];
         }
 
         return true;
     }
 
-    public function getTagVersions(array $tags): array
+    public function getTagGenerations(array $tags): array
     {
         $this->tagFetchBatches++;
         if ($this->throwOnTagRead) {
             throw new RuntimeException('backend tag read failed');
         }
-        $versions = [];
+        $generations = [];
         foreach ($tags as $tag) {
-            $versions[$tag] = $this->versions[$tag] ?? 0;
+            $generations[$tag] = $this->generations[$tag] ??= bin2hex(random_bytes(16));
         }
 
-        return $versions;
+        return $generations;
     }
 
-    public function incrementTagVersions(array $tags): bool
+    public function rotateTagGenerations(array $tags): bool
     {
         foreach ($tags as $tag) {
-            $this->versions[$tag] = ($this->versions[$tag] ?? 0) + 1;
+            $this->generations[$tag] = bin2hex(random_bytes(16));
         }
 
         return true;
@@ -182,7 +183,7 @@ test('bulk validation completes before any storage mutation', function () {
         ->and($adapter->deleteBatches)->toBe(0);
 });
 
-test('bulk tagged reads fetch tag versions once and reject whole stale records', function () {
+test('bulk tagged reads fetch tag generations once and reject whole stale records', function () {
     $adapter = new ArchitectureHardeningTest();
     $cache = new Cache($adapter);
     $cache->setTagged('one', 1, ['group', 'shared']);
@@ -211,6 +212,31 @@ test('cache items can only be persisted by their exact owning pool', function ()
         ->and($second->getItem('local')->isHit())->toBeFalse();
 });
 
+test('invalid argument failures satisfy both PSR cache contracts', function () {
+    $exception = new CacheInvalidArgumentException('invalid');
+
+    expect($exception)->toBeInstanceOf(\Psr\Cache\InvalidArgumentException::class)
+        ->and($exception)->toBeInstanceOf(\Psr\SimpleCache\InvalidArgumentException::class);
+});
+
+test('namespaces are strictly validated instead of normalized', function () {
+    expect(fn() => Cache::memory('tenant/a'))->toThrow(CacheInvalidArgumentException::class)
+        ->and(fn() => Cache::memory('tenant:a'))->toThrow(CacheInvalidArgumentException::class)
+        ->and(fn() => Cache::memory(str_repeat('n', 65)))->toThrow(CacheInvalidArgumentException::class)
+        ->and(Cache::memory('tenant-a.v1'))->toBeInstanceOf(Cache::class);
+});
+
+test('missing tag metadata cannot resurrect a tagged record', function () {
+    $adapter = new \Infocyph\CacheLayer\Cache\Adapter\ArrayCacheAdapter('generation-loss');
+    $cache = new Cache($adapter);
+    $cache->setTagged('record', 'stale', ['products']);
+
+    $metadata = new \ReflectionProperty($adapter, 'metadata');
+    $metadata->setValue($adapter, []);
+
+    expect($cache->get('record'))->toBeNull();
+});
+
 test('zero and negative ttl delete through single and bulk APIs', function () {
     $cache = new Cache(new ArchitectureHardeningTest());
     $cache->setMultiple(['zero' => 1, 'negative' => 2]);
@@ -232,7 +258,14 @@ test('runtime failures are fail-open by default and optionally propagate', funct
     $closedAdapter = new ArchitectureHardeningTest();
     $closed = new Cache($closedAdapter, options: new CacheOptions(failOpen: false));
     $closedAdapter->throwOnRead = true;
-    expect(fn() => $closed->get('key'))->toThrow(RuntimeException::class);
+    expect(fn() => $closed->get('key'))->toThrow(CacheBackendException::class);
+});
+
+test('fail-closed backend failures satisfy both PSR cache exception contracts', function () {
+    $exception = new CacheBackendException('failed');
+
+    expect($exception)->toBeInstanceOf(\Psr\Cache\CacheException::class)
+        ->and($exception)->toBeInstanceOf(\Psr\SimpleCache\CacheException::class);
 });
 
 test('tag metadata failures cannot expose or create tagged values', function () {
@@ -254,9 +287,9 @@ test('tiered reads perform one batch per needed tier and one promotion batch', f
     $l1 = new ArchitectureHardeningTest();
     $l2 = new ArchitectureHardeningTest();
     $cache = Cache::tiered([$l1, $l2]);
-    $l1->set('l1', 1);
-    $l2->set('l2a', 2);
-    $l2->set('l2b', 3);
+    $l1->save($l1->createItem('l1')->set(1));
+    $l2->save($l2->createItem('l2a')->set(2));
+    $l2->save($l2->createItem('l2b')->set(3));
     $l1->resetOperationCounts();
     $l2->resetOperationCounts();
 

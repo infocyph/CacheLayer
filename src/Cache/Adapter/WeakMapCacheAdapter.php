@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace Infocyph\CacheLayer\Cache\Adapter;
 
+use Closure;
+use Infocyph\CacheLayer\Cache\CacheInput;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Psr\Cache\CacheItemInterface;
-use WeakMap;
 use WeakReference;
 
 final class WeakMapCacheAdapter extends AbstractCacheAdapter
@@ -19,19 +20,15 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter
     /** @var array<string, int|null> */
     private array $weakExpires = [];
 
-    /** @var WeakMap<object, array{key:string,expires:int|null}> */
-    private WeakMap $weakObjects;
-
     /** @var array<string, WeakReference<object>> */
     private array $weakRefs = [];
 
-    /** @var array<string, array<string, int>> */
+    /** @var array<string, array<string, string>> */
     private array $weakTags = [];
 
     public function __construct(string $namespace = 'default')
     {
-        $this->ns = sanitize_cache_ns($namespace);
-        $this->weakObjects = new WeakMap();
+        $this->ns = CacheInput::namespace($namespace);
     }
 
     public function clear(): bool
@@ -40,47 +37,16 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter
         $this->weakRefs = [];
         $this->weakExpires = [];
         $this->weakTags = [];
-        $this->weakObjects = new WeakMap();
         $this->deferred = [];
         $this->resetLocalMetadata();
 
         return true;
     }
 
-    public function count(): int
-    {
-        $this->pruneCollected();
-        $this->pruneExpiredScalar();
-
-        $count = count($this->scalarStore);
-        foreach ($this->weakRefs as $mapped => $ref) {
-            $obj = $ref->get();
-            if (!is_object($obj)) {
-                continue;
-            }
-
-            if (CachePayloadCodec::isExpired($this->weakExpires[$mapped] ?? null)) {
-                continue;
-            }
-
-            $count++;
-        }
-
-        return $count;
-    }
-
     public function deleteItem(string $key): bool
     {
         $mapped = $this->map($key);
         unset($this->scalarStore[$mapped], $this->weakExpires[$mapped], $this->weakTags[$mapped]);
-
-        $ref = $this->weakRefs[$mapped] ?? null;
-        if ($ref instanceof WeakReference) {
-            $obj = $ref->get();
-            if (is_object($obj) && isset($this->weakObjects[$obj])) {
-                unset($this->weakObjects[$obj]);
-            }
-        }
 
         unset($this->weakRefs[$mapped]);
 
@@ -111,14 +77,14 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter
             $exp = $this->weakExpires[$mapped] ?? null;
 
             if (is_object($obj) && !CachePayloadCodec::isExpired($exp)) {
-                $item = new CacheItem($this, $key);
-                $item->set($obj);
-                if ($exp !== null) {
-                    $item->expiresAt(CachePayloadCodec::toDateTime($exp));
-                }
-                $item->setTagVersions($this->weakTags[$mapped] ?? []);
-
-                return $item;
+                return new CacheItem(
+                    $this,
+                    $key,
+                    $obj,
+                    true,
+                    CachePayloadCodec::toDateTime($exp),
+                    $this->weakTags[$mapped] ?? [],
+                );
             }
 
             $this->deleteItem($key);
@@ -226,13 +192,18 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter
         $value = $item->get();
 
         if (is_object($value)) {
+            if ($value instanceof Closure && !$this->options()->allowClosures) {
+                return false;
+            }
+            if (!$value instanceof Closure && !$this->options()->allowObjects) {
+                return false;
+            }
             $ref = WeakReference::create($value);
             $this->weakRefs[$mapped] = $ref;
             $this->weakExpires[$mapped] = $expires['expiresAt'];
             $this->weakTags[$mapped] = $item instanceof CacheItem
-                ? $item->getTagVersions()
+                ? $item->getTagGenerations()
                 : [];
-            $this->weakObjects[$value] = ['key' => $mapped, 'expires' => $expires['expiresAt']];
             unset($this->scalarStore[$mapped]);
 
             return true;
@@ -250,16 +221,6 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter
             $obj = $ref->get();
             if (!is_object($obj) || CachePayloadCodec::isExpired($this->weakExpires[$mapped] ?? null)) {
                 unset($this->weakRefs[$mapped], $this->weakExpires[$mapped], $this->weakTags[$mapped]);
-            }
-        }
-    }
-
-    private function pruneExpiredScalar(): void
-    {
-        foreach ($this->scalarStore as $mapped => $blob) {
-            $record = $this->decodeRecordFromBlob($blob);
-            if ($record === null) {
-                unset($this->scalarStore[$mapped]);
             }
         }
     }

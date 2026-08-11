@@ -6,6 +6,7 @@ namespace Infocyph\CacheLayer\Cluster\Recovery;
 
 use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Cluster\Cursor\CursorStoreInterface;
+use Infocyph\CacheLayer\Cluster\Exception\ClusterCacheException;
 use Infocyph\CacheLayer\Cluster\Transport\InvalidationTransportInterface;
 
 final readonly class ClusterRecoveryManager
@@ -25,7 +26,9 @@ final readonly class ClusterRecoveryManager
             return false;
         }
 
-        $this->cache->clear();
+        if (!$this->cache->clear()) {
+            throw new ClusterCacheException('Unable to clear the local cache during cluster recovery.');
+        }
         $this->cursorStore->reset($oldest);
 
         return true;

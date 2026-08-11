@@ -52,7 +52,7 @@ it('remember() caches per-instance callables', function () {
         ->and(memoize()->stats()['hits'])->toBe(1);
 });
 
-it('once() caches by call site', function () {
+it('once() keeps distinct source lines independent', function () {
     $counter = 0;
 
     $value = (function () use (&$counter) {
@@ -68,8 +68,56 @@ it('once() caches by call site', function () {
     })();
 
     expect($value)->toBe(1)
-        ->and($valueAgain)->toBe(1)
-        ->and($counter)->toBe(1);
+        ->and($valueAgain)->toBe(2)
+        ->and($counter)->toBe(2);
+});
+
+it('memoizer distinguishes closure captures and object instances', function () {
+    $make = static fn(int $offset): Closure => fn(int $value): int => $value + $offset;
+    $first = $make(10);
+    $second = $make(20);
+    $service = static fn(int $offset): object => new class($offset) {
+        public function __construct(private int $offset) {}
+
+        public function calculate(int $value): int
+        {
+            return $value + $this->offset;
+        }
+    };
+    $serviceA = $service(10);
+    $serviceB = $service(20);
+
+    expect(memoize($first, [1]))->toBe(11)
+        ->and(memoize($second, [1]))->toBe(21)
+        ->and(memoize([$serviceA, 'calculate'], [1]))->toBe(11)
+        ->and(memoize([$serviceB, 'calculate'], [1]))->toBe(21);
+});
+
+it('memoizer distinguishes separate reference captures from the same source', function () {
+    $first = 10;
+    $second = 10;
+    $factory = static function (int &$capture): Closure {
+        return static function () use (&$capture): int {
+            return $capture;
+        };
+    };
+
+    expect(memoize($factory($first)))->toBe(10);
+    $second = 20;
+
+    expect(memoize($factory($second)))->toBe(20);
+});
+
+it('flush_memoizers resets process lifetime memoization', function () {
+    $runs = 0;
+    $loader = function () use (&$runs): int {
+        return ++$runs;
+    };
+
+    expect(memoize($loader))->toBe(1)
+        ->and(memoize($loader))->toBe(1);
+    flush_memoizers();
+    expect(memoize($loader))->toBe(2);
 });
 
 it('memoize trait caches values within object', function () {

@@ -33,3 +33,17 @@ test('shared memory adapter uses private filesystem and segment permissions', fu
 
     $adapter->clear();
 });
+
+test('shared memory namespace clear cannot affect another namespace', function () {
+    $first = Cache::sharedMemory('shm-isolation-a');
+    $second = Cache::sharedMemory('shm-isolation-b');
+
+    $first->set('key', 'first');
+    $second->set('key', 'second');
+    $first->clear();
+
+    expect($first->get('key'))->toBeNull()
+        ->and($second->get('key'))->toBe('second');
+
+    $second->clear();
+});

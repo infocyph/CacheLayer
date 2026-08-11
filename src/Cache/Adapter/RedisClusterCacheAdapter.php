@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Infocyph\CacheLayer\Cache\Adapter;
 
+use Infocyph\CacheLayer\Cache\CacheInput;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Psr\Cache\CacheItemInterface;
 use RuntimeException;
@@ -11,6 +12,8 @@ use RuntimeException;
 final class RedisClusterCacheAdapter extends AbstractCacheAdapter
 {
     private const int BUCKET_COUNT = 128;
+
+    private const int PIPELINE_MODE = 2;
 
     private readonly object $cluster;
 
@@ -31,19 +34,19 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter
             }
             $client = new \RedisCluster(null, $seeds, $timeout, $readTimeout, $persistent);
         }
-        foreach (['del', 'exists', 'get', 'incr', 'mget', 'mset', 'set', 'setex'] as $method) {
+        foreach (['del', 'exists', 'get', 'mget', 'mset', 'multi', 'set', 'setex'] as $method) {
             if (!method_exists($client, $method)) {
                 throw new RuntimeException("Redis Cluster client must expose {$method}().");
             }
         }
-        $this->namespace = sanitize_cache_ns($namespace);
+        $this->namespace = CacheInput::namespace($namespace);
         $this->cluster = $client;
     }
 
     public function clear(): bool
     {
         for ($bucket = 0; $bucket < self::BUCKET_COUNT; $bucket++) {
-            if ($this->call('incr', $this->epochKey($bucket)) === false) {
+            if (!$this->call('set', $this->generationKey($bucket), self::newGeneration())) {
                 return false;
             }
         }
@@ -77,12 +80,12 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter
     public function getItem(string $key): CacheItem
     {
         $bucket = $this->bucket($key);
-        $values = $this->call('mget', [$this->epochKey($bucket), $this->mapData($key)]);
+        $values = $this->call('mget', [$this->generationKey($bucket), $this->mapData($key)]);
         $values = is_array($values) ? array_values($values) : [];
-        $epoch = $this->normalizeVersion($values[0] ?? null);
+        $generation = $this->namespaceGeneration($bucket, $values[0] ?? null);
         $blob = $values[1] ?? null;
         $record = is_string($blob) ? $this->decodeRecordFromBlob($blob) : null;
-        if ($record !== null && ($record->namespaceEpoch ?? 0) === $epoch) {
+        if ($record !== null && $record->namespaceGeneration === $generation) {
             return $this->genericItemFromRecord($key, $record);
         }
         if (is_string($blob)) {
@@ -94,39 +97,35 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter
 
     /**
      * @param list<string> $tags
-     * @return array<string, int>
+     * @return array<string, string>
      */
     #[\Override]
-    public function getTagVersions(array $tags): array
+    public function getTagGenerations(array $tags): array
     {
-        $versions = [];
+        $generations = [];
         foreach ($this->groupByBucket($tags) as $group) {
             $values = $this->call('mget', array_map($this->mapTag(...), $group));
             $values = is_array($values) ? array_values($values) : [];
+            $initialize = [];
             foreach ($group as $index => $tag) {
-                $versions[$tag] = $this->normalizeVersion($values[$index] ?? null);
+                $generation = self::normalizeGeneration($values[$index] ?? null);
+                if ($generation === null) {
+                    $generation = self::newGeneration();
+                    $initialize[$this->mapTag($tag)] = $generation;
+                }
+                $generations[$tag] = $generation;
+            }
+            if ($initialize !== [] && !$this->call('mset', $initialize)) {
+                throw new RuntimeException('Unable to initialize Redis Cluster tag generations.');
             }
         }
 
-        return $versions;
+        return $generations;
     }
 
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
-    }
-
-    /** @param list<string> $tags */
-    #[\Override]
-    public function incrementTagVersions(array $tags): bool
-    {
-        foreach ($tags as $tag) {
-            if ($this->call('incr', $this->mapTag($tag)) === false) {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     /**
@@ -152,6 +151,23 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter
         return $ordered;
     }
 
+    /** @param list<string> $tags */
+    #[\Override]
+    public function rotateTagGenerations(array $tags): bool
+    {
+        foreach ($this->groupByBucket($tags) as $group) {
+            $generations = [];
+            foreach ($group as $tag) {
+                $generations[$this->mapTag($tag)] = self::newGeneration();
+            }
+            if (!$this->call('mset', $generations)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     public function save(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
@@ -162,8 +178,8 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter
             return $this->deleteItem($item->getKey());
         }
         $bucket = $this->bucket($item->getKey());
-        $epoch = $this->normalizeVersion($this->call('get', $this->epochKey($bucket)));
-        $blob = $this->encodeItem($item, $expiration['expiresAt'], $epoch);
+        $generation = $this->namespaceGeneration($bucket);
+        $blob = $this->encodeItem($item, $expiration['expiresAt'], $generation);
 
         return (bool) ($expiration['ttl'] === null
             ? $this->call('set', $this->mapData($item->getKey()), $blob)
@@ -197,9 +213,14 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter
         return $this->cluster->{$method}(...$arguments);
     }
 
-    private function epochKey(int $bucket): string
+    private function callObject(object $target, string $method, mixed ...$arguments): mixed
     {
-        return $this->prefix($bucket) . ':m:epoch';
+        $callable = [$target, $method];
+        if (!is_callable($callable)) {
+            return false;
+        }
+
+        return $callable(...$arguments);
     }
 
     /**
@@ -208,16 +229,16 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter
      */
     private function fetchBucket(int $bucket, array $keys): array
     {
-        $physical = [$this->epochKey($bucket), ...array_map($this->mapData(...), $keys)];
+        $physical = [$this->generationKey($bucket), ...array_map($this->mapData(...), $keys)];
         $values = $this->call('mget', $physical);
         $values = is_array($values) ? array_values($values) : [];
-        $epoch = $this->normalizeVersion($values[0] ?? null);
+        $generation = $this->namespaceGeneration($bucket, $values[0] ?? null);
         $items = [];
         $stale = [];
         foreach ($keys as $index => $key) {
             $blob = $values[$index + 1] ?? null;
             $record = is_string($blob) ? $this->decodeRecordFromBlob($blob) : null;
-            if ($record !== null && ($record->namespaceEpoch ?? 0) === $epoch) {
+            if ($record !== null && $record->namespaceGeneration === $generation) {
                 $items[$key] = $this->genericItemFromRecord($key, $record);
 
                 continue;
@@ -229,6 +250,11 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter
         }
 
         return ['items' => $items, 'stale' => $stale];
+    }
+
+    private function generationKey(int $bucket): string
+    {
+        return $this->prefix($bucket) . ':m:generation';
     }
 
     /**
@@ -269,9 +295,28 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter
         return $this->prefix($this->bucket($tag)) . ':m:tag:' . $tag;
     }
 
-    private function normalizeVersion(mixed $value): int
+    private function namespaceGeneration(int $bucket, mixed $value = null): string
     {
-        return is_numeric($value) ? max(0, (int) $value) : 0;
+        if ($value === null) {
+            $value = $this->call('get', $this->generationKey($bucket));
+        }
+        $generation = self::normalizeGeneration($value);
+        if ($generation !== null) {
+            return $generation;
+        }
+
+        $candidate = self::newGeneration();
+        $stored = $this->call('set', $this->generationKey($bucket), $candidate, ['nx']);
+        $current = $stored ? $candidate : $this->call('get', $this->generationKey($bucket));
+        $generation = self::normalizeGeneration($current);
+        if ($generation === null) {
+            $generation = self::newGeneration();
+            if (!$this->call('set', $this->generationKey($bucket), $generation)) {
+                throw new RuntimeException('Unable to initialize Redis Cluster namespace generation.');
+            }
+        }
+
+        return $generation;
     }
 
     private function prefix(int $bucket): string
@@ -282,8 +327,9 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter
     /** @param list<CacheItemInterface> $items */
     private function saveBucket(int $bucket, array $items): bool
     {
-        $epoch = $this->normalizeVersion($this->call('get', $this->epochKey($bucket)));
+        $generation = $this->namespaceGeneration($bucket);
         $plain = [];
+        $expiring = [];
         foreach ($items as $item) {
             $expiration = CachePayloadCodec::expirationFromItem($item);
             if ($expiration['ttl'] !== null && $expiration['ttl'] <= 0) {
@@ -291,17 +337,39 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter
 
                 continue;
             }
-            $blob = $this->encodeItem($item, $expiration['expiresAt'], $epoch);
+            $blob = $this->encodeItem($item, $expiration['expiresAt'], $generation);
             if ($expiration['ttl'] === null) {
                 $plain[$this->mapData($item->getKey())] = $blob;
 
                 continue;
             }
-            if (!$this->call('setex', $this->mapData($item->getKey()), $expiration['ttl'], $blob)) {
-                return false;
-            }
+            $expiring[] = [$this->mapData($item->getKey()), $expiration['ttl'], $blob];
         }
 
-        return $plain === [] || (bool) $this->call('mset', $plain);
+        if ($plain !== [] && !$this->call('mset', $plain)) {
+            return false;
+        }
+        if ($expiring === []) {
+            return true;
+        }
+
+        return $this->saveExpiring($expiring);
+    }
+
+    /** @param list<array{0:string, 1:int, 2:string}> $records */
+    private function saveExpiring(array $records): bool
+    {
+        $pipeline = $this->call('multi', self::PIPELINE_MODE);
+        if (!is_object($pipeline)) {
+            return false;
+        }
+        foreach ($records as [$key, $ttl, $blob]) {
+            $this->callObject($pipeline, 'setex', $key, $ttl, $blob);
+        }
+        $results = $this->callObject($pipeline, 'exec');
+
+        return is_array($results)
+            && count($results) === count($records)
+            && AdapterValueNormalizer::allTrue($results);
     }
 }

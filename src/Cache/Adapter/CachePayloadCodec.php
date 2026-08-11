@@ -73,13 +73,13 @@ final readonly class CachePayloadCodec
     }
 
     /**
-     * @param array<string, int> $tags
+     * @param array<string, string> $tags
      */
     public function encode(
         mixed $value,
         ?int $expiresAt,
         array $tags = [],
-        ?int $namespaceEpoch = null,
+        ?string $namespaceGeneration = null,
     ): string {
         [$encoding, $encodedValue] = $this->encodeValue($value);
         $serialized = serialize([
@@ -88,7 +88,7 @@ final readonly class CachePayloadCodec
             'value' => $encodedValue,
             'expires' => $expiresAt,
             'tags' => $tags,
-            'epoch' => $namespaceEpoch,
+            'namespace' => $namespaceGeneration,
         ]);
         if ($this->isPayloadTooLarge($serialized)) {
             throw new RuntimeException('The encoded cache record exceeds the configured payload limit.');
@@ -252,14 +252,11 @@ final readonly class CachePayloadCodec
         if (!is_array($tags)) {
             return null;
         }
-        foreach ($tags as $tag => $version) {
-            if (!is_string($tag) || !is_int($version) || $version < 0) {
-                return null;
-            }
-        }
-
-        $epoch = $decoded['epoch'] ?? null;
-        if ($epoch !== null && (!is_int($epoch) || $epoch < 0)) {
+        $namespaceGeneration = $decoded['namespace'] ?? null;
+        if ($namespaceGeneration !== null
+            && (!is_string($namespaceGeneration)
+                || strlen($namespaceGeneration) !== 32
+                || !ctype_xdigit($namespaceGeneration))) {
             return null;
         }
 
@@ -268,7 +265,16 @@ final readonly class CachePayloadCodec
             return null;
         }
 
-        return new CacheRecord($value['value'], $expiresAt, $tags, $epoch);
+        foreach ($tags as $tag => $generation) {
+            if (!is_string($tag)
+                || !is_string($generation)
+                || strlen($generation) !== 32
+                || !ctype_xdigit($generation)) {
+                return null;
+            }
+        }
+
+        return new CacheRecord($value['value'], $expiresAt, $tags, $namespaceGeneration);
     }
 
     private function unserializeNative(string $payload): mixed
