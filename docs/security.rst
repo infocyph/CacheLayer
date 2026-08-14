@@ -104,6 +104,23 @@ Recommended Production Profile
 4. Prefer non-executable file storage adapters over ``phpFiles`` where
    possible.
 
+Authentication State
+--------------------
+
+For replay counters, one-time consumption, authorization state, or another
+security decision, require all of the following:
+
+* ``isFailOpen() === false``;
+* ``hasPayloadIntegrity() === true``;
+* ``isAuthoritative() === true``; and
+* ``authenticationStateLock()`` returns a provider in the same coordination
+  domain as the state backend.
+
+Use one direct primary backend. Do not use tiered/local-L1 reads, replica reads,
+or an eventually consistent cache for monotonic authentication state. The
+capability API exposes CacheLayer's effective local policy; deployment topology
+such as replica routing remains the application's responsibility.
+
 Backend-Specific Notes
 ----------------------
 

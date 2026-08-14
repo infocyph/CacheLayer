@@ -60,6 +60,7 @@ Facade helpers:
 * ``useRedisLock(?Redis $client = null, string $prefix = 'cachelayer:lock:'): self``
 * ``useValkeyLock(?Redis $client = null, string $prefix = 'cachelayer:lock:'): self``
 * ``useMemcachedLock(?Memcached $client = null, string $prefix = 'cachelayer:lock:'): self``
+* ``authenticationStateLock(): ?LockProviderInterface``
 
 Custom lock providers can implement ``LockProviderInterface``:
 
@@ -128,6 +129,13 @@ Adapter defaults:
 * Redis adapter factory sets ``RedisLockProvider``
 * Valkey adapter factory sets ``RedisLockProvider``
 * Memcached adapter factory sets ``MemcachedLockProvider``
+* PDO/SQLite adapter factories set ``PdoLockProvider`` or its file fallback
+* local memory/file/APCu/shared-memory factories set ``FileLockProvider``
+
+MongoDB, ScyllaDB, Redis Cluster, null-store, and directly constructed caches do
+not claim an authentication-state lock until the caller explicitly configures
+one. Tiered caches never expose an authentication-state lock because their read
+path is not authoritative for monotonic state.
 * PDO/SQLite adapter factories set ``PdoLockProvider``; SQLite uses its
   file-lock fallback
 * all other adapters use ``FileLockProvider`` by default
