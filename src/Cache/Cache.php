@@ -23,7 +23,7 @@ use MongoDB\Client;
 use Psr\Cache\CacheItemInterface;
 use Throwable;
 
-final class Cache implements CacheInterface
+final class Cache implements AuthenticationStateCacheInterface
 {
     private const float LOCK_LEASE_SECONDS = 30.0;
 
@@ -31,18 +31,31 @@ final class Cache implements CacheInterface
 
     private const int TTL_JITTER_PERCENT = 8;
 
+    private readonly bool $authoritative;
+
     private readonly CacheOptions $options;
+
+    private bool $authenticationStateLockCapable;
+
+    private LockProviderInterface $lockProvider;
 
     private ?Closure $metricsExportHook = null;
 
     public function __construct(
         private readonly InternalCachePoolInterface $adapter,
-        private LockProviderInterface $lockProvider = new FileLockProvider(),
+        ?LockProviderInterface $lockProvider = null,
         private CacheMetricsCollectorInterface $metrics = new InMemoryCacheMetricsCollector(),
         ?CacheOptions $options = null,
         private readonly string $namespace = 'default',
     ) {
         CacheInput::namespace($namespace);
+        $this->authoritative = !in_array(
+            $adapter::class,
+            [Adapter\TieredCacheAdapter::class, Adapter\NullCacheAdapter::class],
+            true,
+        );
+        $this->lockProvider = $lockProvider ?? new FileLockProvider();
+        $this->authenticationStateLockCapable = $lockProvider !== null;
         $this->options = $options ?? new CacheOptions();
         if ($adapter instanceof AbstractCacheAdapter) {
             $adapter->configureOptions($this->options);
@@ -51,7 +64,12 @@ final class Cache implements CacheInterface
 
     public static function apcu(string $namespace = 'default', ?CacheOptions $options = null): self
     {
-        return new self(new Adapter\ApcuCacheAdapter($namespace), options: $options, namespace: $namespace);
+        return new self(
+            new Adapter\ApcuCacheAdapter($namespace),
+            new FileLockProvider(),
+            options: $options,
+            namespace: $namespace,
+        );
     }
 
     public static function file(
@@ -59,7 +77,12 @@ final class Cache implements CacheInterface
         ?string $dir = null,
         ?CacheOptions $options = null,
     ): self {
-        return new self(new Adapter\FileCacheAdapter($namespace, $dir), options: $options, namespace: $namespace);
+        return new self(
+            new Adapter\FileCacheAdapter($namespace, $dir),
+            new FileLockProvider(),
+            options: $options,
+            namespace: $namespace,
+        );
     }
 
     /** @param list<array{0:string, 1:int, 2:int}> $servers */
@@ -81,7 +104,12 @@ final class Cache implements CacheInterface
 
     public static function memory(string $namespace = 'default', ?CacheOptions $options = null): self
     {
-        return new self(new Adapter\ArrayCacheAdapter($namespace), options: $options, namespace: $namespace);
+        return new self(
+            new Adapter\ArrayCacheAdapter($namespace),
+            new FileLockProvider(),
+            options: $options,
+            namespace: $namespace,
+        );
     }
 
     public static function mongodb(
@@ -145,7 +173,12 @@ final class Cache implements CacheInterface
         ?string $dir = null,
         ?CacheOptions $options = null,
     ): self {
-        return new self(new Adapter\PhpFilesCacheAdapter($namespace, $dir), options: $options, namespace: $namespace);
+        return new self(
+            new Adapter\PhpFilesCacheAdapter($namespace, $dir),
+            new FileLockProvider(),
+            options: $options,
+            namespace: $namespace,
+        );
     }
 
     public static function redis(
@@ -219,6 +252,7 @@ final class Cache implements CacheInterface
     ): self {
         return new self(
             new Adapter\SharedMemoryCacheAdapter($namespace, $segmentSize),
+            new FileLockProvider(),
             options: $options,
             namespace: $namespace,
         );
@@ -269,7 +303,20 @@ final class Cache implements CacheInterface
 
     public static function weakMap(string $namespace = 'default', ?CacheOptions $options = null): self
     {
-        return new self(new Adapter\WeakMapCacheAdapter($namespace), options: $options, namespace: $namespace);
+        return new self(
+            new Adapter\WeakMapCacheAdapter($namespace),
+            new FileLockProvider(),
+            options: $options,
+            namespace: $namespace,
+        );
+    }
+
+    public function authenticationStateLock(): ?LockProviderInterface
+    {
+        return match ([$this->authenticationStateLockCapable, $this->authoritative]) {
+            [true, true] => $this->lockProvider,
+            default => null,
+        };
     }
 
     public function clear(): bool
@@ -397,6 +444,11 @@ final class Cache implements CacheInterface
         return $this->getItem($key)->isHit();
     }
 
+    public function hasPayloadIntegrity(): bool
+    {
+        return $this->options->integrityKey !== null;
+    }
+
     public function invalidateTag(string $tag): bool
     {
         return $this->invalidateTags([$tag]);
@@ -409,6 +461,16 @@ final class Cache implements CacheInterface
         $this->metric(count($tags) === 1 ? 'tag_invalidate' : 'tag_invalidate_batch');
 
         return $invalidated;
+    }
+
+    public function isAuthoritative(): bool
+    {
+        return $this->authoritative;
+    }
+
+    public function isFailOpen(): bool
+    {
+        return $this->options->failOpen;
     }
 
     public function offsetExists(mixed $offset): bool
@@ -546,6 +608,7 @@ final class Cache implements CacheInterface
     public function setLockProvider(LockProviderInterface $lockProvider): self
     {
         $this->lockProvider = $lockProvider;
+        $this->authenticationStateLockCapable = true;
 
         return $this;
     }

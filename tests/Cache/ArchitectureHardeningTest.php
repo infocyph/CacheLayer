@@ -9,6 +9,7 @@ use Infocyph\CacheLayer\Cache\Adapter\CachePayloadCodec;
 use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Cache\CacheOptions;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
+use Infocyph\CacheLayer\Cache\Lock\FileLockProvider;
 use Infocyph\CacheLayer\Exceptions\CacheBackendException;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 use Psr\Cache\CacheItemInterface;
@@ -259,6 +260,36 @@ test('runtime failures are fail-open by default and optionally propagate', funct
     $closed = new Cache($closedAdapter, options: new CacheOptions(failOpen: false));
     $closedAdapter->throwOnRead = true;
     expect(fn() => $closed->get('key'))->toThrow(CacheBackendException::class);
+});
+
+test('authentication state capabilities expose effective cache policy', function () {
+    $safe = Cache::memory(
+        'authentication-state',
+        new CacheOptions(integrityKey: 'state-integrity-key', failOpen: false),
+    );
+
+    expect($safe->isFailOpen())->toBeFalse()
+        ->and($safe->hasPayloadIntegrity())->toBeTrue()
+        ->and($safe->isAuthoritative())->toBeTrue()
+        ->and($safe->authenticationStateLock())->toBeInstanceOf(FileLockProvider::class);
+
+    $default = new Cache(new ArchitectureHardeningTest());
+    expect($default->isFailOpen())->toBeTrue()
+        ->and($default->hasPayloadIntegrity())->toBeFalse()
+        ->and($default->authenticationStateLock())->toBeNull();
+
+    $default->setLockProvider(new FileLockProvider());
+    expect($default->authenticationStateLock())->toBeInstanceOf(FileLockProvider::class);
+});
+
+test('non-authoritative caches cannot expose an authentication state lock', function () {
+    $tiered = Cache::tiered([new ArchitectureHardeningTest()]);
+    $tiered->setLockProvider(new FileLockProvider());
+
+    expect($tiered->isAuthoritative())->toBeFalse()
+        ->and($tiered->authenticationStateLock())->toBeNull()
+        ->and(Cache::nullStore()->isAuthoritative())->toBeFalse()
+        ->and(Cache::nullStore()->authenticationStateLock())->toBeNull();
 });
 
 test('fail-closed backend failures satisfy both PSR cache exception contracts', function () {
