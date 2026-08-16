@@ -31,16 +31,4 @@ final readonly class CacheOptions
         }
     }
 
-    public static function fromEnvironment(): self
-    {
-        $integrityKey = getenv('CACHELAYER_PAYLOAD_INTEGRITY_KEY');
-        $maxPayloadBytes = getenv('CACHELAYER_MAX_PAYLOAD_BYTES');
-
-        return new self(
-            integrityKey: is_string($integrityKey) && $integrityKey !== '' ? $integrityKey : null,
-            maxPayloadBytes: is_string($maxPayloadBytes) && ctype_digit($maxPayloadBytes)
-                ? (int) $maxPayloadBytes
-                : 8_388_608,
-        );
-    }
 }

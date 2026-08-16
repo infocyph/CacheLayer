@@ -227,6 +227,10 @@ test('namespaces are strictly validated instead of normalized', function () {
         ->and(Cache::memory('tenant-a.v1'))->toBeInstanceOf(Cache::class);
 });
 
+test('cache options do not load process environment state', function () {
+    expect(method_exists(CacheOptions::class, 'fromEnvironment'))->toBeFalse();
+});
+
 test('missing tag metadata cannot resurrect a tagged record', function () {
     $adapter = new \Infocyph\CacheLayer\Cache\Adapter\ArrayCacheAdapter('generation-loss');
     $cache = new Cache($adapter);
