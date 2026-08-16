@@ -47,17 +47,18 @@ Per-instance construction API:
    use Infocyph\CacheLayer\Cache\Cache;
    use Infocyph\CacheLayer\Cache\CacheOptions;
 
-   $cache = Cache::redis('app', options: new CacheOptions(
-       integrityKey: 'replace-with-strong-secret',
-       maxPayloadBytes: 8_388_608,
-       allowClosures: false,
-       allowObjects: false,
-   ));
+   function createCache(string $integrityKey): Cache
+   {
+       return Cache::redis('app', options: new CacheOptions(
+           integrityKey: $integrityKey,
+           maxPayloadBytes: 8_388_608,
+           allowClosures: false,
+           allowObjects: false,
+       ));
+   }
 
-``CacheOptions::fromEnvironment()`` explicitly reads:
-
-* ``CACHELAYER_PAYLOAD_INTEGRITY_KEY``
-* ``CACHELAYER_MAX_PAYLOAD_BYTES``
+Pass secret material from the application's composition root. CacheLayer does
+not read process environment state.
 
 2) ``phpFiles`` Adapter Guardrails
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -98,7 +99,8 @@ different timeout, TLS, retry, or socket-context settings.
 Recommended Production Profile
 ------------------------------
 
-1. Set ``CACHELAYER_PAYLOAD_INTEGRITY_KEY`` to a strong random secret.
+1. Pass a strong random secret as ``CacheOptions::$integrityKey`` from the
+   application's composition root.
 2. Disable closure/object payloads unless explicitly required.
 3. Use explicit, private cache directories outside shared temp space.
 4. Prefer non-executable file storage adapters over ``phpFiles`` where

@@ -129,24 +129,26 @@ A bulk read asks L1 for the full batch, asks later tiers only for remaining keys
 Payload and runtime policy is provided at construction and never stored globally:
 
 ```php
+use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Cache\CacheOptions;
 
-$options = new CacheOptions(
-    integrityKey: $_ENV['CACHE_INTEGRITY_KEY'],
-    maxPayloadBytes: 8_388_608,
-    compressionThreshold: 4096,
-    compressionLevel: 6,
-    allowClosures: false,
-    allowObjects: false,
-    failOpen: true,
-);
-
-$cache = Cache::redis('app', options: $options);
+function createCache(string $integrityKey): Cache
+{
+    return Cache::redis('app', options: new CacheOptions(
+        integrityKey: $integrityKey,
+        maxPayloadBytes: 8_388_608,
+        compressionThreshold: 4096,
+        compressionLevel: 6,
+        allowClosures: false,
+        allowObjects: false,
+        failOpen: true,
+    ));
+}
 ```
 
 Records use only the CacheLayer v2 markers `cl2:`, `cl2-gz:`, and `cl2-sig:`. Compression is threshold-based and retained only when smaller. HMAC verification, payload bounds, bounded decompression, and deserialization policy are isolated per cache instance. Corrupt payloads are safe misses.
 
-Construction and configuration errors throw. Runtime backend failures default to fail-open: reads become misses, writes/deletes return `false`, and `backend_failure` is recorded. Set `failOpen: false` to propagate runtime failures. `CacheOptions::fromEnvironment()` explicitly reads `CACHELAYER_PAYLOAD_INTEGRITY_KEY` and `CACHELAYER_MAX_PAYLOAD_BYTES`; environment state is never read implicitly.
+Construction and configuration errors throw. Runtime backend failures default to fail-open: reads become misses, writes/deletes return `false`, and `backend_failure` is recorded. Set `failOpen: false` to propagate runtime failures. Pass deploy-varying values from the application's composition root; CacheLayer never reads process environment state.
 
 ## Node Cache
 

@@ -66,19 +66,21 @@ Immutable options
    use Infocyph\CacheLayer\Cache\Cache;
    use Infocyph\CacheLayer\Cache\CacheOptions;
 
-   $cache = Cache::redis('app', options: new CacheOptions(
-       integrityKey: $_ENV['CACHE_INTEGRITY_KEY'],
-       maxPayloadBytes: 8_388_608,
-       compressionThreshold: 4096,
-       allowClosures: false,
-       allowObjects: false,
-       failOpen: true,
-   ));
+   function createCache(string $integrityKey): Cache
+   {
+       return Cache::redis('app', options: new CacheOptions(
+           integrityKey: $integrityKey,
+           maxPayloadBytes: 8_388_608,
+           compressionThreshold: 4096,
+           allowClosures: false,
+           allowObjects: false,
+           failOpen: true,
+       ));
+   }
 
-``CacheOptions::fromEnvironment()`` is the explicit opt-in for
-``CACHELAYER_PAYLOAD_INTEGRITY_KEY`` and ``CACHELAYER_MAX_PAYLOAD_BYTES``.
-Options are isolated per instance and cannot be changed after record processing
-begins.
+Pass deploy-varying values from the application's composition root. CacheLayer
+does not read process environment state. Options are isolated per instance and
+cannot be changed after record processing begins.
 
 Runtime failure policy
 ----------------------
