@@ -16,7 +16,7 @@ jobs:
       actions: read
       contents: read
     with:
-      php_extensions: "apcu, mbstring, sysvshm"
+      php_extensions: "apcu, mbstring, memcached, mongodb, pdo, pdo_mysql, pdo_pgsql, pdo_sqlite, redis, sysvshm"
       fail_on_skipped_tests: true
       integration_services: '["mysql","postgres","sqlite","redis","valkey","memcached","scylladb"]'
       service_topologies: '{}'
