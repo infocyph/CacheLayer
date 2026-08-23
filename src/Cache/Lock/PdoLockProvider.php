@@ -21,11 +21,31 @@ final class PdoLockProvider implements LockProviderInterface
         private \PDO $pdo,
         private string $prefix = 'cachelayer:lock:',
         int $retrySleepMicros = 50_000,
-        private FileLockProvider $fallback = new FileLockProvider(),
+        private ?LockProviderInterface $fallback = new FileLockProvider(),
     ) {
         $this->retrySleepMicros = max(1_000, $retrySleepMicros);
         $driver = $this->pdo->getAttribute(\PDO::ATTR_DRIVER_NAME);
-        $this->driver = is_string($driver) ? $driver : '';
+        $this->driver = is_string($driver) ? strtolower($driver) : '';
+
+        if ($this->fallback === null && !self::supportsNativeDriver($this->driver)) {
+            throw new UnsupportedPdoLockDriver(sprintf(
+                'PDO driver "%s" does not support native cache locks.',
+                $this->driver === '' ? 'unknown' : $this->driver,
+            ));
+        }
+    }
+
+    public static function strict(
+        \PDO $pdo,
+        string $prefix = 'cachelayer:lock:',
+        int $retrySleepMicros = 50_000,
+    ): self {
+        return new self($pdo, $prefix, $retrySleepMicros, fallback: null);
+    }
+
+    public static function supportsNativeDriver(string $driver): bool
+    {
+        return in_array(strtolower($driver), ['mysql', 'mariadb', 'pgsql'], true);
     }
 
     public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): ?LockHandle
@@ -37,7 +57,7 @@ final class PdoLockProvider implements LockProviderInterface
         return match ($this->driver) {
             'mysql', 'mariadb' => $this->acquireMysql($key, $waitSeconds, $leaseSeconds),
             'pgsql' => $this->acquirePgsql($key, $waitSeconds, $leaseSeconds),
-            default => $this->fallback->acquire($key, $waitSeconds, $leaseSeconds),
+            default => $this->fallback?->acquire($key, $waitSeconds, $leaseSeconds),
         };
     }
 
@@ -52,7 +72,7 @@ final class PdoLockProvider implements LockProviderInterface
 
         return match ($this->driver) {
             'mysql', 'mariadb', 'pgsql' => $this->owns($handle) && $this->connectionAlive(),
-            default => $this->fallback->refresh($handle, $leaseSeconds),
+            default => $this->fallback?->refresh($handle, $leaseSeconds) ?? false,
         };
     }
 
@@ -62,8 +82,8 @@ final class PdoLockProvider implements LockProviderInterface
             return;
         }
 
-        if (!in_array($this->driver, ['mysql', 'mariadb', 'pgsql'], true)) {
-            $this->fallback->release($handle);
+        if (!self::supportsNativeDriver($this->driver)) {
+            $this->fallback?->release($handle);
 
             return;
         }
@@ -74,6 +94,7 @@ final class PdoLockProvider implements LockProviderInterface
         $released = match ($this->driver) {
             'mysql', 'mariadb' => $this->releaseMysql($handle),
             'pgsql' => $this->releasePgsql($handle),
+            default => false,
         };
         if ($released) {
             unset($this->activeTokens[$handle->key]);

@@ -116,9 +116,27 @@ Provider semantics:
   handle's lease duration does not force expiry.
 * File locks retain an open ``flock`` until release. Renewal verifies that the
   owned file resource is still open.
-* SQLite and PDO drivers without native advisory locks use the file provider
-  fallback. Use the same writable lock directory in every process that must
-  coordinate.
+* ``PdoLockProvider`` uses a native PDO lock only for MySQL/MariaDB and
+  PostgreSQL. SQLite and other drivers use its fallback provider by default;
+  this is a fallback-backed PDO lock, not a distributed PDO lock. Use the same
+  writable lock directory in every process that must coordinate when using
+  ``FileLockProvider``.
+
+Require a native PDO lock with strict mode. It validates the PDO driver during
+construction and throws ``UnsupportedPdoLockDriver`` rather than silently
+falling back:
+
+.. code-block:: php
+
+   use Infocyph\CacheLayer\Cache\Lock\PdoLockProvider;
+
+   $locks = PdoLockProvider::strict($pdo);
+   $cache->setLockProvider($locks);
+
+``PdoLockProvider::supportsNativeDriver($driver)`` reports whether a driver
+supports native locking. Constructing ``new PdoLockProvider($pdo)`` remains
+fallback-enabled for backward compatibility; pass any
+``LockProviderInterface`` explicitly to choose a different fallback.
 
 Release is best effort and ownership guarded. Distributed leases may disappear
 after expiry, eviction, backend restart, or connection loss; callers must not

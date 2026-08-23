@@ -27,8 +27,8 @@ Highlights:
 * batched ``multiFetch()`` via single ``IN (...)`` query
 * MySQL/MariaDB locking uses bounded connection-scoped named locks
 * PostgreSQL locking uses the two-key advisory-lock form
-* SQLite and other PDO drivers without advisory locks use an injected
-  ``FileLockProvider`` fallback
+* SQLite and other PDO drivers without advisory locks use a fallback-backed
+  ``FileLockProvider`` lock by default
 * expired data rows are misses and can be removed in bounded batches with
   ``PdoCacheAdapter::pruneExpired($limit)``
 
@@ -44,6 +44,20 @@ connection health; it cannot extend a real server-side timed lease because PDO
 advisory locks are connection-owned. Treat ``leaseSeconds`` as API
 compatibility, not automatic expiry. The provider rejects re-entrant
 acquisition of the same lock through one provider instance.
+
+For deployments that require native PDO coordination, construct the lock
+provider in strict mode and attach it to the cache. Strict mode supports only
+MySQL/MariaDB and PostgreSQL and throws ``UnsupportedPdoLockDriver`` at
+construction for other PDO drivers; it never falls back to file locking.
+
+.. code-block:: php
+
+   use Infocyph\CacheLayer\Cache\Lock\PdoLockProvider;
+
+   $cache->setLockProvider(PdoLockProvider::strict($pdo));
+
+The default ``new PdoLockProvider($pdo)`` remains fallback-enabled. It is a
+fallback-backed PDO lock on unsupported drivers, not a distributed PDO lock.
 
 Examples:
 
