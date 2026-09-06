@@ -64,6 +64,50 @@ test('shared memory exposes atomic capability across instances', function () {
     $first->clear();
 });
 
+test('shared memory compare-and-set is strict and visible across instances', function () {
+    $first = Cache::sharedMemory('shm-cas');
+    $second = Cache::sharedMemory('shm-cas');
+    $atomic = $second->atomic();
+    expect($atomic)->not->toBeNull();
+    $first->set('state', 1, 30);
+
+    expect($atomic->compareAndSet('state', '1', 2, 30))->toBeFalse()
+        ->and($atomic->compareAndSet('state', 1, 2, 30))->toBeTrue()
+        ->and($atomic->compareAndSet('state', 1, 3, 30))->toBeFalse()
+        ->and($first->get('state'))->toBe(2);
+
+    $first->clear();
+});
+
+test('shared memory compare-and-set validates tagged state inside its lock domain', function () {
+    $cache = Cache::sharedMemory('shm-tagged-cas');
+    $atomic = $cache->atomic();
+    expect($atomic)->not->toBeNull();
+
+    $cache->setTagged('current', 'v1', ['group-current'], 30);
+    expect($atomic->compareAndSet('current', 'v1', 'v2', 30))->toBeTrue()
+        ->and($cache->get('current'))->toBe('v2');
+
+    $cache->setTagged('stale', 'v1', ['group-stale'], 30);
+    $cache->invalidateTag('group-stale');
+    expect($atomic->compareAndSet('stale', 'v1', 'v2', 30))->toBeFalse();
+
+    $cache->clear();
+});
+
+test('shared memory compare-and-set replacement honors ttl', function () {
+    $cache = Cache::sharedMemory('shm-cas-ttl');
+    $atomic = $cache->atomic();
+    expect($atomic)->not->toBeNull();
+    $cache->set('state', 'v1', 30);
+
+    expect($atomic->compareAndSet('state', 'v1', 'v2', 1))->toBeTrue();
+    usleep(2_000_000);
+
+    expect($cache->get('state'))->toBeNull();
+    $cache->clear();
+});
+
 test('shared memory atomic consume returns a value exactly once across instances', function () {
     $first = Cache::sharedMemory('shm-consume');
     $second = Cache::sharedMemory('shm-consume');
