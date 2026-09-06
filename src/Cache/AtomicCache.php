@@ -20,7 +20,8 @@ final class AtomicCache implements AtomicCacheInterface
         private readonly AtomicCachePoolInterface $adapter,
         private readonly CacheOptions $options,
         private CacheMetricsCollectorInterface $metrics,
-    ) {}
+    )
+    {}
 
     public static function fromAdapter(
         InternalCachePoolInterface $adapter,
@@ -38,7 +39,7 @@ final class AtomicCache implements AtomicCacheInterface
         string $key,
         mixed $expected,
         mixed $replacement,
-        null|int|DateInterval|DateTimeInterface $ttl = null,
+        DateInterval|DateTimeInterface|int|null $ttl = null,
     ): bool {
         CacheInput::key($key);
         $ttlSeconds = CacheInput::ttl($ttl);
@@ -80,7 +81,7 @@ final class AtomicCache implements AtomicCacheInterface
     public function setIfAbsent(
         string $key,
         mixed $value,
-        null|int|DateInterval|DateTimeInterface $ttl = null,
+        DateInterval|DateTimeInterface|int|null $ttl = null,
     ): bool {
         CacheInput::key($key);
         $ttlSeconds = CacheInput::ttl($ttl);
