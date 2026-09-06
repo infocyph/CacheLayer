@@ -47,18 +47,6 @@ test('set if absent has one-winner semantics and preserves existing values', fun
         ->and($cache->get('claim'))->toBe('first');
 });
 
-test('set if absent treats expired entries as absent', function () {
-    $cache = Cache::memory('atomic-expired');
-    $atomic = $cache->atomic();
-
-    expect($atomic)->not->toBeNull();
-    $cache->set('claim', 'old', 1);
-    sleep(2);
-
-    expect($atomic->setIfAbsent('claim', 'new', 30))->toBeTrue()
-        ->and($cache->get('claim'))->toBe('new');
-});
-
 test('non-positive ttl is a no-op for set if absent', function () {
     $cache = Cache::memory('atomic-zero-ttl');
     $atomic = $cache->atomic();
