@@ -115,10 +115,9 @@ test('atomic capability follows cache fail-open and metrics policy', function ()
         ->and($atomic->getAndDelete('claim'))->toBe('value');
 
     $snapshot = $cache->exportMetrics();
-    $adapter = Infocyph\CacheLayer\Cache\Adapter\ArrayCacheAdapter::class;
 
-    expect($snapshot[$adapter]['atomic_set_if_absent'] ?? 0)->toBe(1)
-        ->and($snapshot[$adapter]['atomic_set_if_absent_success'] ?? 0)->toBe(1)
-        ->and($snapshot[$adapter]['atomic_get_and_delete'] ?? 0)->toBe(1)
-        ->and($snapshot[$adapter]['atomic_get_and_delete_hit'] ?? 0)->toBe(1);
+    expect($snapshot['array']['atomic_set_if_absent'] ?? 0)->toBe(1)
+        ->and($snapshot['array']['atomic_set_if_absent_success'] ?? 0)->toBe(1)
+        ->and($snapshot['array']['atomic_get_and_delete'] ?? 0)->toBe(1)
+        ->and($snapshot['array']['atomic_get_and_delete_hit'] ?? 0)->toBe(1);
 });
