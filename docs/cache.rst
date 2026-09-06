@@ -20,15 +20,22 @@ The supported factories are ``memory()``, ``weakMap()``, ``nullStore()``,
 There are no compatibility aliases or runtime namespace/directory setters.
 Configuration is fixed when the cache is constructed.
 
-Keys, tags, and TTL
--------------------
+Keys, namespaces, tags, and TTL
+-------------------------------
 
 Keys, tags, and namespaces are 1--64 characters from ``A-Z``, ``a-z``, ``0-9``,
 ``_``, ``.``, and ``-``. Namespaces are validated without normalization, so
-distinct inputs can never collapse into one cache. Bulk input is completely
-validated before mutation. Zero or negative TTL deletes an ordinary cache
-entry; ``AtomicCacheInterface::setIfAbsent()`` instead treats a non-positive
-TTL as a no-op and returns ``false``.
+distinct inputs can never collapse into one cache. A namespace is configuration,
+not a prefix encoded into the logical key. For example, use
+``Cache::redis('mytm', ...)->get('user')`` rather than ``get('mytm:user')``.
+The ``:`` character remains reserved by PSR-6/PSR-16 and is rejected at the
+public cache-key boundary; adapters compose namespace/data/metadata prefixes
+internally. Bulk input is completely validated before mutation.
+
+Zero or negative TTL deletes an ordinary cache entry. Atomic claim/replace TTLs
+instead treat a non-positive resolved TTL as a no-op and return ``false``.
+Atomic TTLs accept relative integer seconds, ``DateInterval``, or an absolute
+``DateTimeInterface``.
 
 Tags are stored as opaque 128-bit generation snapshots inside each record.
 Invalidation replaces generations; a read fetches all required generations in
@@ -79,13 +86,24 @@ adapter class:
        // the conditional fallback.
    }
 
+   $advanced = $atomic->compareAndSet(
+       'workflow.state.42',
+       'pending',
+       'running',
+       300,
+   );
+
    $state = $atomic->getAndDelete('oauth.state.42');
 
 ``setIfAbsent()`` stores the complete encoded value and TTL as one conditional
 backend operation. Exactly one concurrent claimant can succeed within the
-backend's consistency domain. ``getAndDelete()`` returns and consumes one live
-value as one atomic backend operation. CacheLayer never implements either
-method as public ``has()/get()`` followed by ``set()/delete()``.
+backend's consistency domain. ``compareAndSet()`` replaces an existing live
+logical value only when it matches the expected value with PHP strict equality
+(``===``). Absence is distinct from a cached ``null`` value, so use
+``setIfAbsent()`` when absence itself is the condition. ``getAndDelete()``
+returns and consumes one live value as one atomic backend operation. CacheLayer
+never implements these methods as public ``has()/get()`` followed by
+``set()/delete()``.
 
 The supported facade backends are:
 
@@ -101,17 +119,20 @@ APCu               no      no full atomic consume primitive
 Memcached          no      no full atomic consume primitive
 PDO / SQLite       no      no cross-driver contract is claimed in 3.3
 File / PHP files   no      ordinary writers do not share an atomic key lock
-ScyllaDB           no      no full two-operation contract is exposed
+ScyllaDB           no      no full three-operation contract is exposed
 WeakMap            no      process-local object cache, not coordination
 Null store         no      non-authoritative sink
 Tiered cache       no      tiers cannot form one linearizable authority
 =================  ======  ================================================
 
-Use dedicated, untagged keys for replay claims, nonces, challenges, one-time
-state, and similar coordination. Tag invalidation is a separate cache
-coordination mechanism and is not part of the atomic linearization boundary.
-Existing stale tagged records are rejected where the backend can verify them,
-but callers should not use tag rotation as part of an atomic protocol.
+Use dedicated, untagged keys for portable replay claims, nonces, challenges,
+state transitions, one-time state, and similar coordination. Tag invalidation
+is a separate cache coordination mechanism and is not part of the portable
+atomic linearization boundary. Redis/Valkey, Redis Cluster, and MongoDB reject
+``compareAndSet()`` on tagged records because their tag metadata cannot join the
+same atomic replacement condition. Array memory and SharedMemory can validate
+tag generations inside their local atomic domain, but portable protocols should
+not depend on tagged CAS behavior.
 
 ``atomic()`` returns ``null`` rather than emulating missing backend primitives.
 This remains true for a tiered facade even when one or more individual tiers
@@ -120,8 +141,9 @@ support atomic operations.
 For security-sensitive coordination, prefer ``failOpen: false`` when the caller
 must distinguish a backend failure from an ordinary conditional miss. With
 ``failOpen: true``, atomic backend failures follow the normal CacheLayer runtime
-policy: ``setIfAbsent()`` returns ``false`` and ``getAndDelete()`` returns the
-provided default while ``backend_failure`` is recorded.
+policy: ``setIfAbsent()`` and ``compareAndSet()`` return ``false`` and
+``getAndDelete()`` returns the provided default while ``backend_failure`` is
+recorded.
 
 Immutable options
 -----------------
