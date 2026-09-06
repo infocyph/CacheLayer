@@ -27,6 +27,20 @@ use RuntimeException;
  */
 class RedisCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolInterface
 {
+    private const string COMPARE_AND_SET_SCRIPT = <<<'LUA'
+local current = redis.call('GET', KEYS[1])
+if not current or current ~= ARGV[1] then
+    return 0
+end
+local ttl = tonumber(ARGV[3])
+if ttl and ttl > 0 then
+    redis.call('SET', KEYS[1], ARGV[2], 'EX', ttl)
+else
+    redis.call('SET', KEYS[1], ARGV[2])
+end
+return 1
+LUA;
+
     private const string GET_AND_DELETE_SCRIPT = <<<'LUA'
 local value = redis.call('GET', KEYS[1])
 if not value then
@@ -73,6 +87,41 @@ LUA;
 
         $this->ns = CacheInput::namespace($namespace);
         $this->redis = $client ?? $this->connect($dsn);
+    }
+
+    public function atomicCompareAndSet(
+        string $key,
+        mixed $expected,
+        CacheItemInterface $replacement,
+    ): bool {
+        if (!$this->supportsItem($replacement)) {
+            throw new CacheInvalidArgumentException('The cache item belongs to another pool.');
+        }
+
+        $expiration = CachePayloadCodec::expirationFromItem($replacement);
+        $ttl = $expiration['ttl'];
+        if ($ttl !== null && $ttl <= 0) {
+            return false;
+        }
+
+        $mapped = $this->map($key);
+        $existing = $this->redis->get($mapped);
+        if (!is_string($existing)) {
+            return false;
+        }
+        $record = $this->decodeRecordFromBlob($existing);
+        if (!$record instanceof CacheRecord || $record->tags !== [] || $record->value !== $expected) {
+            return false;
+        }
+
+        $blob = $this->encodeItem($replacement, $expiration['expiresAt']);
+        $result = $this->redis->eval(
+            self::COMPARE_AND_SET_SCRIPT,
+            [$mapped, $existing, $blob, (string) ($ttl ?? 0)],
+            1,
+        );
+
+        return AdapterValueNormalizer::intOrZero($result) === 1;
     }
 
     public function atomicGetAndDelete(string $key): CacheItemInterface
@@ -122,11 +171,13 @@ LUA;
             return false;
         }
 
-        return (int) $this->redis->eval(
+        $result = $this->redis->eval(
             self::REPLACE_STALE_SCRIPT,
             [$key, $existing, $blob, (string) ($ttl ?? 0)],
             1,
-        ) === 1;
+        );
+
+        return AdapterValueNormalizer::intOrZero($result) === 1;
     }
 
     public function clear(): bool

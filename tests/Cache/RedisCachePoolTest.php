@@ -49,6 +49,12 @@ try {
     return;
 }
 
+$finishForkedTest = static function (bool $success): never {
+    pcntl_exec('/bin/sh', ['-c', $success ? 'true' : 'false']);
+
+    throw new RuntimeException('Unable to terminate forked Redis test process.');
+};
+
 /* ── bootstrap / teardown ────────────────────────────────────────── */
 beforeEach(function () use ($redisHost, $redisPort, $redisPassword) {
     $client = new Redis;
@@ -185,6 +191,28 @@ test('Redis setIfAbsent can replace a stale tagged physical record', function ()
         ->and($this->cache->get('claim'))->toBe('fresh');
 });
 
+test('Redis compareAndSet strictly replaces one live untagged value', function () {
+    $atomic = $this->cache->atomic();
+
+    expect($atomic)->not->toBeNull();
+    $this->cache->set('version', 1, 30);
+
+    expect($atomic->compareAndSet('version', '1', 2, 30))->toBeFalse()
+        ->and($atomic->compareAndSet('version', 1, 2, 30))->toBeTrue()
+        ->and($this->cache->get('version'))->toBe(2)
+        ->and($atomic->compareAndSet('version', 1, 3, 30))->toBeFalse();
+});
+
+test('Redis compareAndSet does not claim atomic tag coordination', function () {
+    $atomic = $this->cache->atomic();
+
+    expect($atomic)->not->toBeNull();
+    $this->cache->setTagged('tagged', 'old', ['group'], 30);
+
+    expect($atomic->compareAndSet('tagged', 'old', 'new', 30))->toBeFalse()
+        ->and($this->cache->get('tagged'))->toBe('old');
+});
+
 test('Redis getAndDelete consumes one value atomically', function () {
     $atomic = $this->cache->atomic();
 
@@ -196,7 +224,7 @@ test('Redis getAndDelete consumes one value atomically', function () {
         ->and($this->cache->has('one-time'))->toBeFalse();
 });
 
-test('Redis atomic claims have one winner under process contention', function () use ($redisHost, $redisPort, $redisPassword) {
+test('Redis atomic claims have one winner under process contention', function () use ($redisHost, $redisPort, $redisPassword, $finishForkedTest) {
     $atomic = $this->cache->atomic();
     expect($atomic)->not->toBeNull();
 
@@ -221,7 +249,7 @@ test('Redis atomic claims have one winner under process contention', function ()
                 $client->auth($redisPassword);
             }
             $cache = Cache::redis('tests', sprintf('redis://%s:%d', $redisHost, $redisPort), $client);
-            exit($cache->atomic()?->setIfAbsent('contended', (string) $worker, 30) === true ? 10 : 11);
+            $finishForkedTest($cache->atomic()?->setIfAbsent('contended', (string) $worker, 30) === true);
         }
         if ($pid > 0) {
             $children[] = $pid;
@@ -231,13 +259,57 @@ test('Redis atomic claims have one winner under process contention', function ()
     $wins = 0;
     foreach ($children as $pid) {
         pcntl_waitpid($pid, $status);
-        $wins += pcntl_wexitstatus($status) === 10 ? 1 : 0;
+        $wins += pcntl_wexitstatus($status) === 0 ? 1 : 0;
     }
 
     expect($wins)->toBe(1);
 });
 
-test('Redis atomic consumption has one winner under process contention', function () use ($redisHost, $redisPort, $redisPassword) {
+test('Redis atomic compare and set has one winner under process contention', function () use ($redisHost, $redisPort, $redisPassword, $finishForkedTest) {
+    $atomic = $this->cache->atomic();
+    expect($atomic)->not->toBeNull();
+    $this->cache->set('cas-contended', 0, 30);
+
+    if (!function_exists('pcntl_fork')) {
+        $wins = 0;
+        for ($attempt = 1; $attempt <= 16; ++$attempt) {
+            $wins += $atomic->compareAndSet('cas-contended', 0, $attempt, 30) ? 1 : 0;
+        }
+
+        expect($wins)->toBe(1);
+
+        return;
+    }
+
+    $children = [];
+    for ($worker = 1; $worker <= 8; ++$worker) {
+        $pid = pcntl_fork();
+        if ($pid === 0) {
+            $client = new Redis;
+            $client->connect($redisHost, $redisPort);
+            if ($redisPassword !== '') {
+                $client->auth($redisPassword);
+            }
+            $cache = Cache::redis('tests', sprintf('redis://%s:%d', $redisHost, $redisPort), $client);
+            $finishForkedTest($cache->atomic()?->compareAndSet('cas-contended', 0, $worker, 30) === true);
+        }
+        if ($pid > 0) {
+            $children[] = $pid;
+        }
+    }
+
+    $wins = 0;
+    foreach ($children as $pid) {
+        pcntl_waitpid($pid, $status);
+        $wins += pcntl_wexitstatus($status) === 0 ? 1 : 0;
+    }
+
+    expect($wins)->toBe(1)
+        ->and($this->cache->get('cas-contended'))->toBeGreaterThanOrEqual(1)
+        ->and($this->cache->get('cas-contended'))->toBeLessThanOrEqual(8);
+});
+
+test('Redis atomic consumption has one winner under process contention', function () use ($redisHost, $redisPort, $redisPassword, $finishForkedTest) {
     $atomic = $this->cache->atomic();
     expect($atomic)->not->toBeNull();
     $this->cache->set('consume-once', 'payload', 30);
@@ -263,7 +335,7 @@ test('Redis atomic consumption has one winner under process contention', functio
                 $client->auth($redisPassword);
             }
             $cache = Cache::redis('tests', sprintf('redis://%s:%d', $redisHost, $redisPort), $client);
-            exit($cache->atomic()?->getAndDelete('consume-once', '__missing__') === 'payload' ? 20 : 21);
+            $finishForkedTest($cache->atomic()?->getAndDelete('consume-once', '__missing__') === 'payload');
         }
         if ($pid > 0) {
             $children[] = $pid;
@@ -273,7 +345,7 @@ test('Redis atomic consumption has one winner under process contention', functio
     $wins = 0;
     foreach ($children as $pid) {
         pcntl_waitpid($pid, $status);
-        $wins += pcntl_wexitstatus($status) === 20 ? 1 : 0;
+        $wins += pcntl_wexitstatus($status) === 0 ? 1 : 0;
     }
 
     expect($wins)->toBe(1);

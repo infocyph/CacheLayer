@@ -54,6 +54,41 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         shm_detach($this->segment);
     }
 
+    public function atomicCompareAndSet(
+        string $key,
+        mixed $expected,
+        CacheItemInterface $replacement,
+    ): bool {
+        if (!$this->supportsItem($replacement)) {
+            return false;
+        }
+        $expiration = CachePayloadCodec::expirationFromItem($replacement);
+        if ($expiration['ttl'] !== null && $expiration['ttl'] <= 0) {
+            return false;
+        }
+
+        $mapped = $this->map($key);
+        $replacementBlob = $this->encodeItem($replacement, $expiration['expiresAt']);
+
+        return $this->withExclusiveLock(function () use ($mapped, $expected, $replacementBlob): bool {
+            $store = $this->loadStore();
+            $current = $store[$mapped] ?? null;
+            if (!is_string($current)) {
+                return false;
+            }
+            $record = $this->decodeRecordFromBlob($current);
+            if (!$record instanceof CacheRecord
+                || !$this->recordTagsAreCurrent($record, $store)
+                || $record->value !== $expected) {
+                return false;
+            }
+
+            $store[$mapped] = $replacementBlob;
+
+            return $this->store($store);
+        });
+    }
+
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
         $mapped = $this->map($key);

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Infocyph\CacheLayer\Cache;
 
+use DateInterval;
+use DateTimeInterface;
 use Infocyph\CacheLayer\Cache\Adapter\AtomicCachePoolInterface;
 use Infocyph\CacheLayer\Cache\Adapter\InternalCachePoolInterface;
 use Infocyph\CacheLayer\Cache\Metrics\CacheMetricsCollectorInterface;
@@ -32,6 +34,31 @@ final class AtomicCache implements AtomicCacheInterface
         return new self($adapter, $options, $metrics);
     }
 
+    public function compareAndSet(
+        string $key,
+        mixed $expected,
+        mixed $replacement,
+        null|int|DateInterval|DateTimeInterface $ttl = null,
+    ): bool {
+        CacheInput::key($key);
+        $ttlSeconds = CacheInput::ttl($ttl);
+        $this->metric('atomic_compare_and_set');
+        if ($ttlSeconds !== null && $ttlSeconds <= 0) {
+            $this->metric('atomic_compare_and_set_miss');
+
+            return false;
+        }
+
+        $item = $this->adapter->createItem($key)->set($replacement)->expiresAfter($ttlSeconds);
+        $stored = $this->backend(
+            fn(): bool => $this->adapter->atomicCompareAndSet($key, $expected, $item),
+            false,
+        );
+        $this->metric($stored ? 'atomic_compare_and_set_success' : 'atomic_compare_and_set_miss');
+
+        return $stored;
+    }
+
     public function getAndDelete(string $key, mixed $default = null): mixed
     {
         CacheInput::key($key);
@@ -50,8 +77,11 @@ final class AtomicCache implements AtomicCacheInterface
         return $item->get();
     }
 
-    public function setIfAbsent(string $key, mixed $value, mixed $ttl = null): bool
-    {
+    public function setIfAbsent(
+        string $key,
+        mixed $value,
+        null|int|DateInterval|DateTimeInterface $ttl = null,
+    ): bool {
         CacheInput::key($key);
         $ttlSeconds = CacheInput::ttl($ttl);
         $this->metric('atomic_set_if_absent');

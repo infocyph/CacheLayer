@@ -58,6 +58,41 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return new self($selected, $namespace);
     }
 
+    public function atomicCompareAndSet(
+        string $key,
+        mixed $expected,
+        CacheItemInterface $replacement,
+    ): bool {
+        if (!$this->supportsItem($replacement)) {
+            return false;
+        }
+
+        $expiration = CachePayloadCodec::expirationFromItem($replacement);
+        if ($expiration['ttl'] !== null && $expiration['ttl'] <= 0) {
+            return false;
+        }
+
+        $id = $this->mapData($key);
+        $row = AdapterValueNormalizer::fromJsonOrArrayLike(
+            $this->collection->findOne(['_id' => $id]),
+        );
+        if (!is_array($row) || !array_key_exists('payload', $row)) {
+            return false;
+        }
+
+        $record = $this->recordFromRow($row);
+        if (!$record instanceof CacheRecord || $record->tags !== [] || $record->value !== $expected) {
+            return false;
+        }
+
+        $result = $this->collection->updateOne(
+            ['_id' => $id, 'payload' => $row['payload']],
+            ['$set' => $this->atomicReplacement($replacement, $expiration['expiresAt'])],
+        );
+
+        return $this->matchedCount($result) === 1;
+    }
+
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
         $document = $this->collection->findOneAndDelete(['_id' => $this->mapData($key)]);
@@ -79,45 +114,16 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
             return false;
         }
 
-        $key = $item->getKey();
-        $id = $this->mapData($key);
-        $payload = $this->binaryValue($this->encodeItem($item, $expiration['expiresAt']));
-        $replacement = [
-            'ns' => $this->ns,
-            'kind' => 'data',
-            'payload' => $payload,
-            'expires' => $expiration['expiresAt'],
-        ];
-
-        for ($attempt = 0; $attempt < 3; $attempt++) {
-            try {
-                $this->collection->insertOne(['_id' => $id, ...$replacement]);
-
+        $id = $this->mapData($item->getKey());
+        $replacement = $this->atomicReplacement($item, $expiration['expiresAt']);
+        for ($attempt = 0; $attempt < 3; ++$attempt) {
+            if ($this->tryAtomicInsert($id, $replacement)) {
                 return true;
-            } catch (Throwable $failure) {
-                if (!$this->isDuplicateKeyFailure($failure)) {
-                    throw $failure;
-                }
             }
 
-            $document = $this->collection->findOne(['_id' => $id]);
-            $row = AdapterValueNormalizer::fromJsonOrArrayLike($document);
-            if (!is_array($row)) {
-                continue;
-            }
-            if ($this->recordFromRow($row) instanceof CacheRecord) {
-                return false;
-            }
-            if (!array_key_exists('payload', $row)) {
-                return false;
-            }
-
-            $result = $this->collection->updateOne(
-                ['_id' => $id, 'payload' => $row['payload']],
-                ['$set' => $replacement],
-            );
-            if ($this->matchedCount($result) > 0) {
-                return true;
+            $replaced = $this->tryReplaceInvalidAtomic($id, $replacement);
+            if ($replaced !== null) {
+                return $replaced;
             }
         }
 
@@ -363,6 +369,19 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return true;
     }
 
+    /**
+     * @return array{ns:string, kind:string, payload:mixed, expires:int|null}
+     */
+    private function atomicReplacement(CacheItemInterface $item, ?int $expiresAt): array
+    {
+        return [
+            'ns' => $this->ns,
+            'kind' => 'data',
+            'payload' => $this->binaryValue($this->encodeItem($item, $expiresAt)),
+            'expires' => $expiresAt,
+        ];
+    }
+
     private function binaryString(mixed $value): ?string
     {
         if (is_string($value)) {
@@ -388,7 +407,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
 
     private function isDuplicateKeyFailure(Throwable $failure): bool
     {
-        return in_array((int) $failure->getCode(), [11000, 11001, 12582], true)
+        return in_array(AdapterValueNormalizer::intOrZero($failure->getCode()), [11000, 11001, 12582], true)
             || str_contains($failure->getMessage(), 'E11000 duplicate key');
     }
 
@@ -408,7 +427,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
             return 0;
         }
 
-        return (int) $result->getMatchedCount();
+        return AdapterValueNormalizer::intOrZero($result->getMatchedCount());
     }
 
     /** @param array<string, mixed> $row */
@@ -440,5 +459,45 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         }
 
         return true;
+    }
+
+    /** @param array{ns:string, kind:string, payload:mixed, expires:int|null} $replacement */
+    private function tryAtomicInsert(string $id, array $replacement): bool
+    {
+        try {
+            $this->collection->insertOne(['_id' => $id, ...$replacement]);
+
+            return true;
+        } catch (Throwable $failure) {
+            if (!$this->isDuplicateKeyFailure($failure)) {
+                throw $failure;
+            }
+
+            return false;
+        }
+    }
+
+    /**
+     * @param array{ns:string, kind:string, payload:mixed, expires:int|null} $replacement
+     * @return bool|null True when replaced, false when a live/non-replaceable value exists, null on a race retry.
+     */
+    private function tryReplaceInvalidAtomic(string $id, array $replacement): ?bool
+    {
+        $row = AdapterValueNormalizer::fromJsonOrArrayLike(
+            $this->collection->findOne(['_id' => $id]),
+        );
+        if (!is_array($row)) {
+            return null;
+        }
+        if ($this->recordFromRow($row) instanceof CacheRecord || !array_key_exists('payload', $row)) {
+            return false;
+        }
+
+        $result = $this->collection->updateOne(
+            ['_id' => $id, 'payload' => $row['payload']],
+            ['$set' => $replacement],
+        );
+
+        return $this->matchedCount($result) > 0 ? true : null;
     }
 }

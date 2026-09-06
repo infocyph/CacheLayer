@@ -6,6 +6,7 @@ namespace Infocyph\CacheLayer\Cache;
 
 use DateInterval;
 use DateTimeImmutable;
+use DateTimeInterface;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 
 /** @internal */
@@ -104,7 +105,12 @@ final class CacheInput
 
             return $now->add($ttl)->getTimestamp() - $now->getTimestamp();
         }
+        if ($ttl instanceof DateTimeInterface) {
+            return $ttl->getTimestamp() - time();
+        }
 
-        throw new CacheInvalidArgumentException('TTL must be null, an integer, or DateInterval.');
+        throw new CacheInvalidArgumentException(
+            'TTL must be null, an integer, DateInterval, or DateTimeInterface.',
+        );
     }
 }
