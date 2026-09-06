@@ -104,7 +104,7 @@ final class PdoLockProvider implements LockProviderInterface
     /** @return array{int, int} */
     private static function advisoryKeys(string $value): array
     {
-        $digest = hash('sha256', $value);
+        $digest = hash('xxh128', $value);
 
         return [
             self::signedHex32(substr($digest, 0, 8)),
