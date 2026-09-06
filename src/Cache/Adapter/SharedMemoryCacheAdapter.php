@@ -72,14 +72,8 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
 
         return $this->withExclusiveLock(function () use ($mapped, $expected, $replacementBlob): bool {
             $store = $this->loadStore();
-            $current = $store[$mapped] ?? null;
-            if (!is_string($current)) {
-                return false;
-            }
-            $record = $this->decodeRecordFromBlob($current);
-            if (!$record instanceof CacheRecord
-                || !$this->recordTagsAreCurrent($record, $store)
-                || $record->value !== $expected) {
+            $record = $this->atomicRecord($store, $mapped);
+            if (!$record instanceof CacheRecord || $record->value !== $expected) {
                 return false;
             }
 
@@ -128,12 +122,8 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
 
         return $this->withExclusiveLock(function () use ($mapped, $blob): bool {
             $store = $this->loadStore();
-            $existing = $store[$mapped] ?? null;
-            if (is_string($existing)) {
-                $record = $this->decodeRecordFromBlob($existing);
-                if ($record instanceof CacheRecord && $this->recordTagsAreCurrent($record, $store)) {
-                    return false;
-                }
+            if ($this->atomicRecord($store, $mapped) instanceof CacheRecord) {
+                return false;
             }
 
             $store[$mapped] = $blob;
@@ -372,6 +362,21 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         }
 
         return $segment;
+    }
+
+    /** @param array<string, string> $store */
+    private function atomicRecord(array $store, string $mapped): ?CacheRecord
+    {
+        $blob = $store[$mapped] ?? null;
+        if (!is_string($blob)) {
+            return null;
+        }
+
+        $record = $this->decodeRecordFromBlob($blob);
+
+        return $record instanceof CacheRecord && $this->recordTagsAreCurrent($record, $store)
+            ? $record
+            : null;
     }
 
     private function createTokenFile(): string
