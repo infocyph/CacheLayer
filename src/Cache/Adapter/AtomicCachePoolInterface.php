@@ -16,10 +16,4 @@ interface AtomicCachePoolInterface extends InternalCachePoolInterface
     public function atomicSetIfAbsent(CacheItemInterface $item): bool;
 
     public function atomicGetAndDelete(string $key): CacheItemInterface;
-
-    public function atomicCompareAndSet(
-        string $key,
-        mixed $expected,
-        CacheItemInterface $replacement,
-    ): bool;
 }
