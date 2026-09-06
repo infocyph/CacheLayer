@@ -20,8 +20,7 @@ final class AtomicCache implements AtomicCacheInterface
         private readonly AtomicCachePoolInterface $adapter,
         private readonly CacheOptions $options,
         private CacheMetricsCollectorInterface $metrics,
-    )
-    {}
+    ) {}
 
     public static function fromAdapter(
         InternalCachePoolInterface $adapter,
