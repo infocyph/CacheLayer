@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Infocyph\CacheLayer\Cache\Adapter\ArrayCacheAdapter;
 use Infocyph\CacheLayer\Cache\AtomicCacheInterface;
 use Infocyph\CacheLayer\Cache\AtomicCacheProviderInterface;
 use Infocyph\CacheLayer\Cache\Cache;
@@ -15,6 +16,25 @@ test('cache exposes atomic capability only when the adapter guarantees it', func
     expect($memory)->toBeInstanceOf(AtomicCacheProviderInterface::class)
         ->and($memory->atomic())->toBeInstanceOf(AtomicCacheInterface::class)
         ->and($null->atomic())->toBeNull();
+});
+
+test('unsupported and composite stores do not advertise atomic capability', function () {
+    $sqliteFile = sys_get_temp_dir() . '/cachelayer-atomic-' . uniqid('', true) . '.sqlite';
+    $sqlite = Cache::sqlite('atomic-sqlite', $sqliteFile);
+    $tiered = Cache::tiered([
+        new ArrayCacheAdapter('atomic-tier-l1'),
+        new ArrayCacheAdapter('atomic-tier-l2'),
+    ], namespace: 'atomic-tiered');
+
+    try {
+        expect($sqlite->atomic())->toBeNull()
+            ->and($tiered->atomic())->toBeNull();
+    } finally {
+        unset($sqlite);
+        if (is_file($sqliteFile)) {
+            unlink($sqliteFile);
+        }
+    }
 });
 
 test('set if absent has one-winner semantics and preserves existing values', function () {
