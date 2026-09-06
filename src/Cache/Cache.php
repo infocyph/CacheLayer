@@ -6,7 +6,6 @@ namespace Infocyph\CacheLayer\Cache;
 
 use Closure;
 use Infocyph\CacheLayer\Cache\Adapter\AbstractCacheAdapter;
-use Infocyph\CacheLayer\Cache\Adapter\AtomicCachePoolInterface;
 use Infocyph\CacheLayer\Cache\Adapter\InternalCachePoolInterface;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Cache\Lock\FileLockProvider;
@@ -316,11 +315,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
 
     public function atomic(): ?AtomicCacheInterface
     {
-        if (!$this->adapter instanceof AtomicCachePoolInterface) {
-            return null;
-        }
-
-        return $this->atomicCapability ??= new AtomicCache($this->adapter, $this->options, $this->metrics);
+        return $this->atomicCapability ??= AtomicCache::fromAdapter($this->adapter, $this->options, $this->metrics);
     }
 
     public function authenticationStateLock(): ?LockProviderInterface
