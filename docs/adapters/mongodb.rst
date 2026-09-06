@@ -21,16 +21,26 @@ Highlights:
 * TTL-aware read-time pruning; production deployments should also install a
   TTL index on the expiration field for background cleanup
 * native ``$in`` reads and ``bulkWrite()`` mutations
+* atomic coordination via ``Cache::atomic()``
+* ``setIfAbsent()`` uses the unique document ``_id`` as the claim authority
+* stale/expired records are reclaimed with an exact-payload conditional update
+* ``getAndDelete()`` uses the collection's atomic ``findOneAndDelete()``
 
 Supported injected collection methods:
 
 * ``findOne``
+* ``findOneAndDelete``
 * ``find``
+* ``insertOne``
 * ``updateOne``
 * ``deleteOne``
 * ``deleteMany``
 * ``bulkWrite``
 * ``countDocuments``
+
+Atomic coordination requires an authoritative primary collection. Use dedicated,
+untagged coordination keys rather than coupling an atomic protocol to tag
+rotation.
 
 Example
 -------
@@ -47,3 +57,6 @@ Example
    );
 
    $cache->set('dashboard.kpi', ['orders' => 120, 'refunds' => 4], 120);
+
+   $atomic = $cache->atomic();
+   $claimed = $atomic?->setIfAbsent('job.claim.42', true, 300);
