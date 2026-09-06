@@ -27,7 +27,7 @@ interface AtomicCacheInterface
         string $key,
         mixed $expected,
         mixed $replacement,
-        null|int|DateInterval|DateTimeInterface $ttl = null,
+        DateInterval|DateTimeInterface|int|null $ttl = null,
     ): bool;
 
     /**
@@ -47,6 +47,6 @@ interface AtomicCacheInterface
     public function setIfAbsent(
         string $key,
         mixed $value,
-        null|int|DateInterval|DateTimeInterface $ttl = null,
+        DateInterval|DateTimeInterface|int|null $ttl = null,
     ): bool;
 }
