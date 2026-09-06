@@ -56,6 +56,29 @@ beforeEach(function () {
                 return [$generation, $value];
             }
 
+            if (str_contains($script, 'cachelayer:atomic-compare-and-set')) {
+                $expectedGeneration = $arguments[2] ?? null;
+                $expectedExisting = $arguments[3] ?? null;
+                $blob = $arguments[4] ?? null;
+                $ttl = (int) ($arguments[5] ?? 0);
+                if (!is_string($expectedGeneration) || !is_string($expectedExisting) || !is_string($blob)) {
+                    return false;
+                }
+                if ($this->get($generationKey) !== $expectedGeneration) {
+                    return -1;
+                }
+                if ($this->get($dataKey) !== $expectedExisting) {
+                    return 0;
+                }
+
+                $this->values[$dataKey] = [
+                    'value' => $blob,
+                    'expires' => $ttl > 0 ? time() + $ttl : null,
+                ];
+
+                return 1;
+            }
+
             if (!str_contains($script, 'cachelayer:atomic-set-if-absent')) {
                 return false;
             }
@@ -255,6 +278,41 @@ test('redis cluster exposes atomic capability with one-winner semantics', functi
         ->and($atomic->setIfAbsent('claim', 'first', 30))->toBeTrue()
         ->and($atomic->setIfAbsent('claim', 'second', 30))->toBeFalse()
         ->and($this->cache->get('claim'))->toBe('first');
+});
+
+test('redis cluster atomic compare-and-set uses strict live-value semantics', function () {
+    $atomic = $this->cache->atomic();
+    expect($atomic)->not->toBeNull();
+    $this->cache->set('cas', 1, 30);
+
+    expect($atomic->compareAndSet('cas', '1', 2, 30))->toBeFalse()
+        ->and($atomic->compareAndSet('cas', 1, 2, 30))->toBeTrue()
+        ->and($atomic->compareAndSet('cas', 1, 3, 30))->toBeFalse()
+        ->and($this->cache->get('cas'))->toBe(2);
+});
+
+test('redis cluster atomic compare-and-set rejects tagged and cleared values', function () {
+    $atomic = $this->cache->atomic();
+    expect($atomic)->not->toBeNull();
+
+    $this->cache->setTagged('tagged', 'v1', ['group'], 30);
+    expect($atomic->compareAndSet('tagged', 'v1', 'v2', 30))->toBeFalse();
+
+    $this->cache->set('cleared', 'v1', 30);
+    $this->cache->clear();
+
+    expect($atomic->compareAndSet('cleared', 'v1', 'v2', 30))->toBeFalse();
+});
+
+test('redis cluster atomic compare-and-set replacement honors ttl', function () {
+    $atomic = $this->cache->atomic();
+    expect($atomic)->not->toBeNull();
+    $this->cache->set('cas-ttl', 'v1', 30);
+
+    expect($atomic->compareAndSet('cas-ttl', 'v1', 'v2', 1))->toBeTrue();
+    usleep(2_000_000);
+
+    expect($this->cache->get('cas-ttl'))->toBeNull();
 });
 
 test('redis cluster atomic consume returns a value once', function () {
