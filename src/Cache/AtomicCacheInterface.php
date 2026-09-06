@@ -5,10 +5,11 @@ declare(strict_types=1);
 namespace Infocyph\CacheLayer\Cache;
 
 /**
- * Optional cache capability for linearizable conditional/consuming operations.
+ * Optional cache capability for atomic conditional/consuming operations.
  *
- * Implementations must not emulate these methods with ordinary read-then-write
- * cache calls unless the lower layer provides equivalent atomic semantics.
+ * Implementations must provide atomic semantics inside the backend's
+ * documented consistency domain. These methods must not be emulated with
+ * ordinary read-then-write cache calls.
  */
 interface AtomicCacheInterface
 {
@@ -27,18 +28,4 @@ interface AtomicCacheInterface
      * fail-open backend cannot complete the operation.
      */
     public function getAndDelete(string $key, mixed $default = null): mixed;
-
-    /**
-     * Atomically replace an existing live value when it strictly matches the
-     * expected value.
-     *
-     * Comparison uses strict PHP value equality (===). A non-positive TTL
-     * performs an atomic compare-and-delete when the expected value matches.
-     */
-    public function compareAndSet(
-        string $key,
-        mixed $expected,
-        mixed $replacement,
-        mixed $ttl = null,
-    ): bool;
 }
