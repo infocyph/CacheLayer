@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Infocyph\CacheLayer\Cache;
 
 use Infocyph\CacheLayer\Cache\Adapter\AtomicCachePoolInterface;
+use Infocyph\CacheLayer\Cache\Adapter\InternalCachePoolInterface;
 use Infocyph\CacheLayer\Cache\Metrics\CacheMetricsCollectorInterface;
 use Infocyph\CacheLayer\Exceptions\CacheBackendException;
 use Psr\Cache\CacheItemInterface;
@@ -18,6 +19,18 @@ final class AtomicCache implements AtomicCacheInterface
         private readonly CacheOptions $options,
         private CacheMetricsCollectorInterface $metrics,
     ) {}
+
+    public static function fromAdapter(
+        InternalCachePoolInterface $adapter,
+        CacheOptions $options,
+        CacheMetricsCollectorInterface $metrics,
+    ): ?self {
+        if (!$adapter instanceof AtomicCachePoolInterface) {
+            return null;
+        }
+
+        return new self($adapter, $options, $metrics);
+    }
 
     public function getAndDelete(string $key, mixed $default = null): mixed
     {
