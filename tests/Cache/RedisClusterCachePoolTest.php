@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Infocyph\CacheLayer\Cache\AtomicCacheInterface;
 use Infocyph\CacheLayer\Cache\Cache;
 
 beforeEach(function () {
@@ -34,6 +35,52 @@ beforeEach(function () {
             }
 
             return $deleted;
+        }
+
+        /** @param list<mixed> $arguments */
+        public function eval(string $script, array $arguments, int $numKeys): mixed
+        {
+            if ($numKeys !== 2 || !is_string($arguments[0] ?? null) || !is_string($arguments[1] ?? null)) {
+                return false;
+            }
+            $generationKey = $arguments[0];
+            $dataKey = $arguments[1];
+
+            if (str_contains($script, 'cachelayer:atomic-get-and-delete')) {
+                $generation = $this->get($generationKey);
+                $value = $this->get($dataKey);
+                if ($value !== false) {
+                    unset($this->values[$dataKey]);
+                }
+
+                return [$generation, $value];
+            }
+
+            if (!str_contains($script, 'cachelayer:atomic-set-if-absent')) {
+                return false;
+            }
+            $expectedGeneration = $arguments[2] ?? null;
+            $blob = $arguments[3] ?? null;
+            $ttl = (int) ($arguments[4] ?? 0);
+            $replaceStale = ($arguments[5] ?? '0') === '1';
+            $expectedExisting = $arguments[6] ?? null;
+            if (!is_string($expectedGeneration) || !is_string($blob)) {
+                return false;
+            }
+            if ($this->get($generationKey) !== $expectedGeneration) {
+                return -1;
+            }
+            $current = $this->get($dataKey);
+            if ($current !== false && (!$replaceStale || $current !== $expectedExisting)) {
+                return 0;
+            }
+
+            $this->values[$dataKey] = [
+                'value' => $blob,
+                'expires' => $ttl > 0 ? time() + $ttl : null,
+            ];
+
+            return 1;
         }
 
         public function exists(string $key): int
@@ -199,4 +246,52 @@ test('missing bucket generation cannot resurrect data written before clear', fun
     $this->cluster->dropGenerationFor('old');
 
     expect($this->cache->get('old'))->toBeNull();
+});
+
+test('redis cluster exposes atomic capability with one-winner semantics', function () {
+    $atomic = $this->cache->atomic();
+
+    expect($atomic)->toBeInstanceOf(AtomicCacheInterface::class)
+        ->and($atomic->setIfAbsent('claim', 'first', 30))->toBeTrue()
+        ->and($atomic->setIfAbsent('claim', 'second', 30))->toBeFalse()
+        ->and($this->cache->get('claim'))->toBe('first');
+});
+
+test('redis cluster atomic consume returns a value once', function () {
+    $atomic = $this->cache->atomic();
+    expect($atomic)->not->toBeNull();
+    $this->cache->set('consume', ['ok' => true], 30);
+
+    expect($atomic->getAndDelete('consume', 'missing'))->toBe(['ok' => true])
+        ->and($atomic->getAndDelete('consume', 'missing'))->toBe('missing');
+});
+
+test('redis cluster atomic set replaces data invalidated by clear', function () {
+    $atomic = $this->cache->atomic();
+    expect($atomic)->not->toBeNull();
+    $this->cache->set('claim', 'stale', 30);
+    $this->cache->clear();
+
+    expect($atomic->setIfAbsent('claim', 'fresh', 30))->toBeTrue()
+        ->and($this->cache->get('claim'))->toBe('fresh');
+});
+
+test('redis cluster atomic consume rejects data invalidated by clear', function () {
+    $atomic = $this->cache->atomic();
+    expect($atomic)->not->toBeNull();
+    $this->cache->set('consume', 'stale', 30);
+    $this->cache->clear();
+
+    expect($atomic->getAndDelete('consume', 'missing'))->toBe('missing')
+        ->and($this->cache->get('consume'))->toBeNull();
+});
+
+test('redis cluster atomic ttl expires before the next claim', function () {
+    $atomic = $this->cache->atomic();
+    expect($atomic)->not->toBeNull()
+        ->and($atomic->setIfAbsent('claim', 'first', 1))->toBeTrue();
+    usleep(2_000_000);
+
+    expect($atomic->setIfAbsent('claim', 'second', 30))->toBeTrue()
+        ->and($this->cache->get('claim'))->toBe('second');
 });
