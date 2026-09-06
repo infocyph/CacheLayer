@@ -5,12 +5,45 @@ declare(strict_types=1);
 namespace Infocyph\CacheLayer\Cache\Adapter;
 
 use Infocyph\CacheLayer\Cache\CacheInput;
+use Infocyph\CacheLayer\Cache\CacheRecord;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Psr\Cache\CacheItemInterface;
 use RuntimeException;
 
-final class RedisClusterCacheAdapter extends AbstractCacheAdapter
+final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolInterface
 {
+    private const string ATOMIC_GET_AND_DELETE_SCRIPT = <<<'LUA'
+-- cachelayer:atomic-get-and-delete
+local generation = redis.call('GET', KEYS[1])
+local value = redis.call('GET', KEYS[2])
+if not value then
+    return {generation or false, false}
+end
+redis.call('DEL', KEYS[2])
+return {generation or false, value}
+LUA;
+
+    private const string ATOMIC_SET_IF_ABSENT_SCRIPT = <<<'LUA'
+-- cachelayer:atomic-set-if-absent
+local generation = redis.call('GET', KEYS[1])
+if generation ~= ARGV[1] then
+    return -1
+end
+local current = redis.call('GET', KEYS[2])
+if current then
+    if ARGV[4] ~= '1' or current ~= ARGV[5] then
+        return 0
+    end
+end
+local ttl = tonumber(ARGV[3])
+if ttl and ttl > 0 then
+    redis.call('SET', KEYS[2], ARGV[2], 'EX', ttl)
+else
+    redis.call('SET', KEYS[2], ARGV[2])
+end
+return 1
+LUA;
+
     private const int BUCKET_COUNT = 128;
 
     private const int PIPELINE_MODE = 2;
@@ -34,13 +67,100 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter
             }
             $client = new \RedisCluster(null, $seeds, $timeout, $readTimeout, $persistent);
         }
-        foreach (['del', 'exists', 'get', 'mget', 'mset', 'multi', 'set', 'setex'] as $method) {
+        foreach (['del', 'eval', 'exists', 'get', 'mget', 'mset', 'multi', 'set', 'setex'] as $method) {
             if (!method_exists($client, $method)) {
                 throw new RuntimeException("Redis Cluster client must expose {$method}().");
             }
         }
         $this->namespace = CacheInput::namespace($namespace);
         $this->cluster = $client;
+    }
+
+    public function atomicGetAndDelete(string $key): CacheItemInterface
+    {
+        $bucket = $this->bucket($key);
+        $result = $this->call(
+            'eval',
+            self::ATOMIC_GET_AND_DELETE_SCRIPT,
+            [$this->generationKey($bucket), $this->mapData($key)],
+            2,
+        );
+        if (!is_array($result)) {
+            return $this->genericMiss($key);
+        }
+
+        $generation = self::normalizeGeneration($result[0] ?? null);
+        $blob = $result[1] ?? null;
+        if ($generation === null || !is_string($blob)) {
+            return $this->genericMiss($key);
+        }
+
+        $record = $this->decodeRecordFromBlob($blob);
+        if (!$record instanceof CacheRecord
+            || $record->namespaceGeneration !== $generation
+            || !$this->recordTagsAreCurrent($record)) {
+            return $this->genericMiss($key);
+        }
+
+        return $this->genericItemFromRecord($key, $record);
+    }
+
+    public function atomicSetIfAbsent(CacheItemInterface $item): bool
+    {
+        if (!$this->supportsItem($item)) {
+            return false;
+        }
+        $expiration = CachePayloadCodec::expirationFromItem($item);
+        if ($expiration['ttl'] !== null && $expiration['ttl'] <= 0) {
+            return false;
+        }
+
+        $key = $item->getKey();
+        $bucket = $this->bucket($key);
+        $generationKey = $this->generationKey($bucket);
+        $dataKey = $this->mapData($key);
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            $values = $this->call('mget', [$generationKey, $dataKey]);
+            $values = is_array($values) ? array_values($values) : [];
+            $generation = $this->namespaceGeneration($bucket, $values[0] ?? null);
+            $existing = $values[1] ?? null;
+            $replaceStale = false;
+            $expectedExisting = '';
+            if (is_string($existing)) {
+                $record = $this->decodeRecordFromBlob($existing);
+                if ($record instanceof CacheRecord
+                    && $record->namespaceGeneration === $generation
+                    && $this->recordTagsAreCurrent($record)) {
+                    return false;
+                }
+                $replaceStale = true;
+                $expectedExisting = $existing;
+            }
+
+            $blob = $this->encodeItem($item, $expiration['expiresAt'], $generation);
+            $result = (int) $this->call(
+                'eval',
+                self::ATOMIC_SET_IF_ABSENT_SCRIPT,
+                [
+                    $generationKey,
+                    $dataKey,
+                    $generation,
+                    $blob,
+                    (string) ($expiration['ttl'] ?? 0),
+                    $replaceStale ? '1' : '0',
+                    $expectedExisting,
+                ],
+                2,
+            );
+            if ($result === 1) {
+                return true;
+            }
+            if ($result === 0) {
+                return false;
+            }
+        }
+
+        return false;
     }
 
     public function clear(): bool
@@ -322,6 +442,22 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter
     private function prefix(int $bucket): string
     {
         return $this->namespace . ':{' . $this->namespace . '-' . $bucket . '}';
+    }
+
+    private function recordTagsAreCurrent(CacheRecord $record): bool
+    {
+        if ($record->tags === []) {
+            return true;
+        }
+
+        $current = $this->getTagGenerations(array_keys($record->tags));
+        foreach ($record->tags as $tag => $generation) {
+            if (($current[$tag] ?? null) !== $generation) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /** @param list<CacheItemInterface> $items */
