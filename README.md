@@ -24,7 +24,7 @@ CacheLayer
 └── Process-local Memoization
 ```
 
-The ordinary cache is disposable storage. Cluster Cache distributes invalidations, not values. Atomic cache coordination is an optional backend capability for claim/consume workflows; unsupported stores return no capability rather than emulating it. Atomic counters remain outside the cache contract because numeric mutation requires a different stronger contract. Memoization stays process-local.
+The ordinary cache is disposable storage. Cluster Cache distributes invalidations, not values. Atomic cache coordination is an optional backend capability for conditional claim/replace/consume workflows; unsupported stores return no capability rather than emulating it. Atomic counters remain outside the cache contract because numeric mutation requires a different stronger contract. Memoization stays process-local.
 
 ## Installation
 
@@ -51,6 +51,15 @@ $cache->deleteMultiple(['profile.1', 'profile.2']);
 ```
 
 `Cache` implements PSR-6, PSR-16, `ArrayAccess`, and capability-provider interfaces. It intentionally does not implement `Countable`, magic property access, runtime namespace mutation, or compatibility aliases. Keys and tags must be 1–64 characters and match `[A-Za-z0-9_.-]+`; invalid bulk input is rejected before storage is changed.
+
+Namespaces are configured separately from logical keys. Do not encode a namespace as `namespace:key`: `:` is reserved by PSR-6/PSR-16 and remains invalid at CacheLayer's public key boundary. For example:
+
+```php
+$cache = Cache::redis('mytm', client: $redis);
+$cache->set('user', $user); // namespace = mytm, logical key = user
+```
+
+Adapters map that pair into their own internal metadata/data key space. The internal physical representation is an implementation detail and must not be supplied as a public cache key.
 
 A callable passed as the PSR-16 `get()` default is returned as a value. Use the explicit `remember()` API to compute and persist a miss:
 
@@ -80,11 +89,14 @@ if (!$atomic->setIfAbsent('webhook.claim.42', true, 300)) {
     // Already claimed, or a fail-open backend failure returned the fallback.
 }
 
+// Replace only the existing live value that strictly matches with PHP ===.
+$advanced = $atomic->compareAndSet('workflow.state.42', 'pending', 'running', 300);
+
 // One caller receives and consumes this state.
 $state = $atomic->getAndDelete('oauth.state.42');
 ```
 
-`setIfAbsent()` stores the encoded value and TTL as one conditional backend operation. `getAndDelete()` returns and consumes one live value atomically. CacheLayer never emulates either primitive with public `has()/get()` plus `set()/delete()`.
+`setIfAbsent()` stores the encoded value and TTL as one conditional backend operation. `compareAndSet()` replaces an existing live logical value only when the decoded value matches the expected value with PHP strict equality (`===`); absence is distinct from a cached `null`, so use `setIfAbsent()` when absence is the condition. `getAndDelete()` returns and consumes one live value atomically. CacheLayer never emulates these primitives with public `has()/get()` plus `set()/delete()` calls. Atomic replacement/claim TTL accepts relative seconds, `DateInterval`, or an absolute `DateTimeInterface`; a non-positive resolved TTL is a no-op and returns `false`.
 
 | Backend | Atomic cache coordination | Scope |
 |---|---|---|
@@ -96,12 +108,12 @@ $state = $atomic->getAndDelete('oauth.state.42');
 | APCu / Memcached | No | no full atomic consume primitive |
 | PDO / SQLite | No | no cross-driver atomic contract in 3.3 |
 | File / PHP files | No | ordinary writers do not share one atomic key lock |
-| ScyllaDB | No | no full two-operation contract exposed |
+| ScyllaDB | No | no full three-operation contract exposed |
 | WeakMap / Null / Tiered | No | not one authoritative coordination domain |
 
-Use dedicated, untagged keys for replay claims, nonces, challenges and one-time state. Tag rotation is a separate invalidation mechanism and is not part of the atomic linearization boundary. Tiered caches remain non-atomic even when an individual tier supports the capability.
+Use dedicated, untagged keys for portable replay claims, nonces, challenges, state transitions, and one-time state. Tag rotation is a separate invalidation mechanism and is not part of the portable atomic linearization boundary. Redis/Valkey, Redis Cluster, and MongoDB therefore reject `compareAndSet()` on tagged records. Array memory and SharedMemory can validate tag generations inside their own local atomic domain, but callers should not depend on tagged CAS when code must be portable across backends. Tiered caches remain non-atomic even when an individual tier supports the capability.
 
-For security-sensitive coordination, use `failOpen: false` when the caller must distinguish a backend outage from a normal conditional miss. With fail-open enabled, `setIfAbsent()` falls back to `false`, `getAndDelete()` returns the supplied default, and `backend_failure` is recorded.
+For security-sensitive coordination, use `failOpen: false` when the caller must distinguish a backend outage from a normal conditional miss. With fail-open enabled, `setIfAbsent()` and `compareAndSet()` fall back to `false`, `getAndDelete()` returns the supplied default, and `backend_failure` is recorded.
 
 ## Tags and expiration
 
@@ -218,13 +230,13 @@ Failed local invalidation stops consumption without advancing the cursor; operat
 
 ## Atomic counters and memoization
 
-`AtomicCounters` uses an `AtomicCounterStoreInterface`; Redis/Valkey is the distributed implementation. Counters are never emulated with cache `get()` plus `set()`. Atomic counters are separate from `Cache::atomic()`: counters mutate numeric state, while the cache capability provides claim and consume primitives for encoded cache records.
+`AtomicCounters` uses an `AtomicCounterStoreInterface`; Redis/Valkey is the distributed implementation. Counters are never emulated with cache `get()` plus `set()`. Atomic counters are separate from `Cache::atomic()`: counters mutate numeric state, while the cache capability provides conditional claim/replace/consume primitives for encoded cache records.
 
 The `memoize()`, `remember(object: ...)`, and `once()` helpers plus `MemoizeTrait` provide bounded process-local memoization. Their state survives requests in persistent workers until evicted or reset with `flush_memoizers()`; call that reset at request boundaries when cross-request reuse is not intended. They are independent of persistent backend caching.
 
 ## Metrics and benchmarks
 
-Metrics distinguish calls from key volume: `get_batch`, `get_batch_keys`, hits/misses, set/delete batch counts, tag-generation fetches, promotions, lock outcomes, atomic claim/consume outcomes, and backend failures. `exportMetrics()` returns a snapshot and can invoke an export hook.
+Metrics distinguish calls from key volume: `get_batch`, `get_batch_keys`, hits/misses, set/delete batch counts, tag-generation fetches, promotions, lock outcomes, atomic claim/compare/consume outcomes, and backend failures. `exportMetrics()` returns a snapshot and can invoke an export hook.
 
 PHPBench scenarios in `benchmarks/` cover single operations, 10/100/1000-key bulk operations, tagged/plain records, tier and Node promotion, codec security/compression, and remember paths. Backend-focused tests separately verify operation counts for native bulk calls. These are microbenchmarks, not production throughput claims.
 
