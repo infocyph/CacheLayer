@@ -418,7 +418,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
 
     private function ownerIdentity(): string
     {
-        return hash('sha256', self::class . "\0" . $this->ns . "\0" . $this->tokenFile);
+        return hash('xxh128', self::class . "\0" . $this->ns . "\0" . $this->tokenFile);
     }
 
     private function prepareDirectory(string $directory): void
