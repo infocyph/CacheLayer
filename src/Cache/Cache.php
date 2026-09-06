@@ -23,7 +23,7 @@ use MongoDB\Client;
 use Psr\Cache\CacheItemInterface;
 use Throwable;
 
-final class Cache implements AuthenticationStateCacheInterface
+final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProviderInterface
 {
     private const float LOCK_LEASE_SECONDS = 30.0;
 
@@ -34,6 +34,8 @@ final class Cache implements AuthenticationStateCacheInterface
     private readonly bool $authoritative;
 
     private readonly CacheOptions $options;
+
+    private ?AtomicCache $atomicCapability = null;
 
     private bool $authenticationStateLockCapable;
 
@@ -309,6 +311,11 @@ final class Cache implements AuthenticationStateCacheInterface
             options: $options,
             namespace: $namespace,
         );
+    }
+
+    public function atomic(): ?AtomicCacheInterface
+    {
+        return $this->atomicCapability ??= AtomicCache::fromAdapter($this->adapter, $this->options, $this->metrics);
     }
 
     public function authenticationStateLock(): ?LockProviderInterface
@@ -616,6 +623,7 @@ final class Cache implements AuthenticationStateCacheInterface
     public function setMetricsCollector(CacheMetricsCollectorInterface $metrics): self
     {
         $this->metrics = $metrics;
+        $this->atomicCapability?->setMetricsCollector($metrics);
 
         return $this;
     }

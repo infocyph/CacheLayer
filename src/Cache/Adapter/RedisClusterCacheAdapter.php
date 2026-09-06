@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace Infocyph\CacheLayer\Cache\Adapter;
 
 use Infocyph\CacheLayer\Cache\CacheInput;
+use Infocyph\CacheLayer\Cache\CacheRecord;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Psr\Cache\CacheItemInterface;
 use RuntimeException;
 
-final class RedisClusterCacheAdapter extends AbstractCacheAdapter
+final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolInterface
 {
+    use RedisClusterAtomicOperations;
+
     private const int BUCKET_COUNT = 128;
 
     private const int PIPELINE_MODE = 2;
@@ -34,7 +37,7 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter
             }
             $client = new \RedisCluster(null, $seeds, $timeout, $readTimeout, $persistent);
         }
-        foreach (['del', 'exists', 'get', 'mget', 'mset', 'multi', 'set', 'setex'] as $method) {
+        foreach (['del', 'eval', 'exists', 'get', 'mget', 'mset', 'multi', 'set', 'setex'] as $method) {
             if (!method_exists($client, $method)) {
                 throw new RuntimeException("Redis Cluster client must expose {$method}().");
             }
@@ -45,7 +48,7 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter
 
     public function clear(): bool
     {
-        for ($bucket = 0; $bucket < self::BUCKET_COUNT; $bucket++) {
+        for ($bucket = 0; $bucket < self::BUCKET_COUNT; ++$bucket) {
             if (!$this->call('set', $this->generationKey($bucket), self::newGeneration())) {
                 return false;
             }
@@ -297,9 +300,7 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter
 
     private function namespaceGeneration(int $bucket, mixed $value = null): string
     {
-        if ($value === null) {
-            $value = $this->call('get', $this->generationKey($bucket));
-        }
+        $value ??= $this->call('get', $this->generationKey($bucket));
         $generation = self::normalizeGeneration($value);
         if ($generation !== null) {
             return $generation;
@@ -322,6 +323,22 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter
     private function prefix(int $bucket): string
     {
         return $this->namespace . ':{' . $this->namespace . '-' . $bucket . '}';
+    }
+
+    private function recordTagsAreCurrent(CacheRecord $record): bool
+    {
+        if ($record->tags === []) {
+            return true;
+        }
+
+        $current = $this->getTagGenerations(array_keys($record->tags));
+        foreach ($record->tags as $tag => $generation) {
+            if (($current[$tag] ?? null) !== $generation) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /** @param list<CacheItemInterface> $items */

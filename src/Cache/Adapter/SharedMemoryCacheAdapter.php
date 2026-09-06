@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace Infocyph\CacheLayer\Cache\Adapter;
 
 use Infocyph\CacheLayer\Cache\CacheInput;
+use Infocyph\CacheLayer\Cache\CacheRecord;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Psr\Cache\CacheItemInterface;
 use RuntimeException;
 
-final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements TagGenerationCacheInterface
+final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolInterface, TagGenerationCacheInterface
 {
     use SecuresFilesystemDirectories;
 
@@ -51,6 +52,84 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Tag
     {
         fclose($this->lockHandle);
         shm_detach($this->segment);
+    }
+
+    public function atomicCompareAndSet(
+        string $key,
+        mixed $expected,
+        CacheItemInterface $replacement,
+    ): bool {
+        if (!$this->supportsItem($replacement)) {
+            return false;
+        }
+        $expiration = CachePayloadCodec::expirationFromItem($replacement);
+        if ($expiration['ttl'] !== null && $expiration['ttl'] <= 0) {
+            return false;
+        }
+
+        $mapped = $this->map($key);
+        $replacementBlob = $this->encodeItem($replacement, $expiration['expiresAt']);
+
+        return $this->withExclusiveLock(function () use ($mapped, $expected, $replacementBlob): bool {
+            $store = $this->loadStore();
+            $record = $this->cachedRecord($store, $mapped);
+            if (!$record instanceof CacheRecord || $record->value !== $expected) {
+                return false;
+            }
+
+            $store[$mapped] = $replacementBlob;
+
+            return $this->store($store);
+        });
+    }
+
+    public function atomicGetAndDelete(string $key): CacheItemInterface
+    {
+        $mapped = $this->map($key);
+
+        return $this->withExclusiveLock(function () use ($key, $mapped): CacheItemInterface {
+            $store = $this->loadStore();
+            $blob = $store[$mapped] ?? null;
+            if (!is_string($blob)) {
+                return $this->genericMiss($key);
+            }
+
+            $record = $this->decodeRecordFromBlob($blob);
+            unset($store[$mapped]);
+            if (!$this->store($store)) {
+                throw new RuntimeException('Unable to persist shared-memory atomic consume.');
+            }
+            if (!$record instanceof CacheRecord || !$this->recordTagsAreCurrent($record, $store)) {
+                return $this->genericMiss($key);
+            }
+
+            return $this->genericItemFromRecord($key, $record);
+        });
+    }
+
+    public function atomicSetIfAbsent(CacheItemInterface $item): bool
+    {
+        if (!$this->supportsItem($item)) {
+            return false;
+        }
+        $expiration = CachePayloadCodec::expirationFromItem($item);
+        if ($expiration['ttl'] !== null && $expiration['ttl'] <= 0) {
+            return false;
+        }
+
+        $mapped = $this->map($item->getKey());
+        $blob = $this->encodeItem($item, $expiration['expiresAt']);
+
+        return $this->withExclusiveLock(function () use ($mapped, $blob): bool {
+            $store = $this->loadStore();
+            if ($this->cachedRecord($store, $mapped) instanceof CacheRecord) {
+                return false;
+            }
+
+            $store[$mapped] = $blob;
+
+            return $this->store($store);
+        });
     }
 
     public function clear(): bool
@@ -285,6 +364,21 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Tag
         return $segment;
     }
 
+    /** @param array<string, string> $store */
+    private function cachedRecord(array $store, string $mapped): ?CacheRecord
+    {
+        $blob = $store[$mapped] ?? null;
+        if (!is_string($blob)) {
+            return null;
+        }
+
+        $record = $this->decodeRecordFromBlob($blob);
+
+        return $record instanceof CacheRecord && $this->recordTagsAreCurrent($record, $store)
+            ? $record
+            : null;
+    }
+
     private function createTokenFile(): string
     {
         $directory = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR)
@@ -364,7 +458,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Tag
 
     private function ownerIdentity(): string
     {
-        return hash('sha256', self::class . "\0" . $this->ns . "\0" . $this->tokenFile);
+        return hash('xxh128', self::class . "\0" . $this->ns . "\0" . $this->tokenFile);
     }
 
     private function prepareDirectory(string $directory): void
@@ -377,6 +471,18 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Tag
             throw new RuntimeException('Shared-memory cache directory is not writable');
         }
         $this->assertSecureDirectory($directory, 'Shared-memory cache directory');
+    }
+
+    /** @param array<string, string> $store */
+    private function recordTagsAreCurrent(CacheRecord $record, array $store): bool
+    {
+        foreach ($record->tags as $tag => $generation) {
+            if (($store[$this->mapTag($tag)] ?? null) !== $generation) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**

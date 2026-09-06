@@ -20,7 +20,7 @@ final class AdapterValueNormalizer
 
     /**
      * @phpstan-return array<string, mixed>|null
- * @param mixed $value The value argument.
+     * @param mixed $value The value argument.
      */
     public static function fromArrayLikeOrToArray(mixed $value): ?array
     {
@@ -35,7 +35,7 @@ final class AdapterValueNormalizer
 
     /**
      * @phpstan-return array<string, mixed>|null
- * @param mixed $value The value argument.
+     * @param mixed $value The value argument.
      */
     public static function fromJsonOrArrayLike(mixed $value): ?array
     {
@@ -46,6 +46,15 @@ final class AdapterValueNormalizer
         }
 
         return self::fromArrayLikeOrToArray($value);
+    }
+
+    public static function intOrZero(mixed $value): int
+    {
+        return match (true) {
+            is_int($value) => $value,
+            is_numeric($value) => (int) $value,
+            default => 0,
+        };
     }
 
     /**
@@ -67,7 +76,7 @@ final class AdapterValueNormalizer
 
     /**
      * @phpstan-return array<string, mixed>|null
- * @param object $value The value argument.
+     * @param object $value The value argument.
      */
     private static function normalizeFromToArray(object $value): ?array
     {

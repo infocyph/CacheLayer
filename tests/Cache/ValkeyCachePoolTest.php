@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Infocyph\CacheLayer\Cache\AtomicCacheInterface;
 use Infocyph\CacheLayer\Cache\Cache;
 
 if (! class_exists(Redis::class)) {
@@ -64,4 +65,51 @@ test('valkey adapter supports remember lock path', function () {
     expect($v1)->toBe('value')
         ->and($v2)->toBe('value')
         ->and($runs)->toBe(1);
+});
+
+test('valkey exposes Redis-compatible atomic capability', function () {
+    $atomic = $this->cache->atomic();
+
+    expect($atomic)->toBeInstanceOf(AtomicCacheInterface::class)
+        ->and($atomic->setIfAbsent('claim', 'first', 30))->toBeTrue()
+        ->and($atomic->setIfAbsent('claim', 'second', 30))->toBeFalse()
+        ->and($atomic->getAndDelete('claim', 'missing'))->toBe('first')
+        ->and($atomic->getAndDelete('claim', 'missing'))->toBe('missing');
+});
+
+test('valkey atomic compare-and-set is strict and rejects tagged state', function () {
+    $atomic = $this->cache->atomic();
+    expect($atomic)->not->toBeNull();
+    $this->cache->set('cas', 1, 30);
+
+    expect($atomic->compareAndSet('cas', '1', 2, 30))->toBeFalse()
+        ->and($atomic->compareAndSet('cas', 1, 2, 30))->toBeTrue()
+        ->and($atomic->compareAndSet('cas', 1, 3, 30))->toBeFalse()
+        ->and($this->cache->get('cas'))->toBe(2);
+
+    $this->cache->setTagged('tagged', 'v1', ['group'], 30);
+
+    expect($atomic->compareAndSet('tagged', 'v1', 'v2', 30))->toBeFalse()
+        ->and($this->cache->get('tagged'))->toBe('v1');
+});
+
+test('valkey atomic compare-and-set replacement honors ttl', function () {
+    $atomic = $this->cache->atomic();
+    expect($atomic)->not->toBeNull();
+    $this->cache->set('cas-ttl', 'v1', 30);
+
+    expect($atomic->compareAndSet('cas-ttl', 'v1', 'v2', 1))->toBeTrue();
+    usleep(2_000_000);
+
+    expect($this->cache->get('cas-ttl'))->toBeNull();
+});
+
+test('valkey atomic ttl permits a later claim', function () {
+    $atomic = $this->cache->atomic();
+    expect($atomic)->not->toBeNull()
+        ->and($atomic->setIfAbsent('claim', 'first', 1))->toBeTrue();
+    usleep(2_000_000);
+
+    expect($atomic->setIfAbsent('claim', 'second', 30))->toBeTrue()
+        ->and($this->cache->get('claim'))->toBe('second');
 });

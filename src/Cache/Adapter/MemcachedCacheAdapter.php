@@ -239,9 +239,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter
 
     private function namespaceGeneration(mixed $value = null): string
     {
-        if ($value === null) {
-            $value = $this->client->get($this->generationKey());
-        }
+        $value ??= $this->client->get($this->generationKey());
         $generation = self::normalizeGeneration($value);
         if ($generation !== null) {
             return $generation;

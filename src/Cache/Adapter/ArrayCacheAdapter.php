@@ -5,10 +5,11 @@ declare(strict_types=1);
 namespace Infocyph\CacheLayer\Cache\Adapter;
 
 use Infocyph\CacheLayer\Cache\CacheInput;
+use Infocyph\CacheLayer\Cache\CacheRecord;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Psr\Cache\CacheItemInterface;
 
-final class ArrayCacheAdapter extends AbstractCacheAdapter implements TagGenerationCacheInterface
+final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolInterface, TagGenerationCacheInterface
 {
     private readonly string $ns;
 
@@ -21,6 +22,65 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements TagGenerat
     public function __construct(string $namespace = 'default')
     {
         $this->ns = CacheInput::namespace($namespace);
+    }
+
+    public function atomicCompareAndSet(
+        string $key,
+        mixed $expected,
+        CacheItemInterface $replacement,
+    ): bool {
+        if (!$this->supportsItem($replacement)) {
+            return false;
+        }
+
+        $expiration = CachePayloadCodec::expirationFromItem($replacement);
+        if ($expiration['ttl'] !== null && $expiration['ttl'] <= 0) {
+            return false;
+        }
+
+        $mapped = $this->map($key);
+        $record = $this->atomicRecord($mapped);
+        if (!$record instanceof CacheRecord || $record->value !== $expected) {
+            return false;
+        }
+
+        $this->store[$mapped] = $this->encodeItem($replacement, $expiration['expiresAt']);
+
+        return true;
+    }
+
+    public function atomicGetAndDelete(string $key): CacheItemInterface
+    {
+        $mapped = $this->map($key);
+        $record = $this->atomicRecord($mapped);
+        if (!$record instanceof CacheRecord) {
+            return $this->genericMiss($key);
+        }
+
+        unset($this->store[$mapped]);
+
+        return $this->genericItemFromRecord($key, $record);
+    }
+
+    public function atomicSetIfAbsent(CacheItemInterface $item): bool
+    {
+        if (!$this->supportsItem($item)) {
+            return false;
+        }
+
+        $expiration = CachePayloadCodec::expirationFromItem($item);
+        if ($expiration['ttl'] !== null && $expiration['ttl'] <= 0) {
+            return false;
+        }
+
+        $mapped = $this->map($item->getKey());
+        if ($this->atomicRecord($mapped) instanceof CacheRecord) {
+            return false;
+        }
+
+        $this->store[$mapped] = $this->encodeItem($item, $expiration['expiresAt']);
+
+        return true;
     }
 
     public function clear(): bool
@@ -186,8 +246,36 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements TagGenerat
         return true;
     }
 
+    private function atomicRecord(string $mapped): ?CacheRecord
+    {
+        $blob = $this->store[$mapped] ?? null;
+        if (!is_string($blob)) {
+            return null;
+        }
+
+        $record = $this->decodeRecordFromBlob($blob);
+        if (!$record instanceof CacheRecord || !$this->recordTagsAreCurrent($record)) {
+            unset($this->store[$mapped]);
+
+            return null;
+        }
+
+        return $record;
+    }
+
     private function map(string $key): string
     {
         return $this->ns . ':d:' . $key;
+    }
+
+    private function recordTagsAreCurrent(CacheRecord $record): bool
+    {
+        foreach ($record->tags as $tag => $generation) {
+            if (($this->metadata[$tag] ?? null) !== $generation) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

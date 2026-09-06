@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Infocyph\CacheLayer\Cache\Adapter\MongoDbCacheAdapter;
+use Infocyph\CacheLayer\Cache\AtomicCacheInterface;
 use Infocyph\CacheLayer\Cache\Cache;
 
 beforeEach(function () {
@@ -17,19 +18,21 @@ beforeEach(function () {
 
         public function countDocuments(array $filter): int
         {
-            $count = 0;
+            $id = $filter['_id'] ?? null;
             $now = time();
+            $count = 0;
 
-            foreach ($this->docs as $doc) {
-                if (($doc['ns'] ?? null) !== ($filter['ns'] ?? null)) {
+            foreach ($this->docs as $key => $doc) {
+                if (is_string($id) && $key !== $id) {
                     continue;
                 }
-
+                if (isset($filter['ns']) && ($doc['ns'] ?? null) !== $filter['ns']) {
+                    continue;
+                }
                 $expires = is_numeric($doc['expires'] ?? null) ? (int) $doc['expires'] : null;
                 if ($expires !== null && $expires <= $now) {
                     continue;
                 }
-
                 $count++;
             }
 
@@ -58,6 +61,15 @@ beforeEach(function () {
             return $this->docs[$filter['_id']] ?? null;
         }
 
+        public function findOneAndDelete(array $filter): ?array
+        {
+            $id = $filter['_id'];
+            $document = $this->docs[$id] ?? null;
+            unset($this->docs[$id]);
+
+            return $document;
+        }
+
         /** @return list<array<string, mixed>> */
         public function find(array $filter): array
         {
@@ -70,16 +82,44 @@ beforeEach(function () {
             ));
         }
 
-        public function updateOne(array $filter, array $update, array $options = []): void
+        public function insertOne(array $document): object
         {
-            unset($options);
+            $id = $document['_id'];
+            if (isset($this->docs[$id])) {
+                throw new RuntimeException('E11000 duplicate key', 11000);
+            }
+            $this->docs[$id] = $document;
+
+            return new class
+            {
+                public function getInsertedCount(): int
+                {
+                    return 1;
+                }
+            };
+        }
+
+        public function updateOne(array $filter, array $update, array $options = []): object
+        {
             $id = $filter['_id'];
-            $document = $this->docs[$id] ?? ['_id' => $id];
+            $existing = $this->docs[$id] ?? null;
+            if (array_key_exists('payload', $filter)
+                && (!is_array($existing) || ($existing['payload'] ?? null) !== $filter['payload'])) {
+                return $this->writeResult(0);
+            }
+            if ($existing === null && !($options['upsert'] ?? false)) {
+                return $this->writeResult(0);
+            }
+
+            $matched = $existing === null ? 0 : 1;
+            $document = $existing ?? ['_id' => $id];
             $document = [...$document, ...($update['$setOnInsert'] ?? []), ...($update['$set'] ?? [])];
             foreach ($update['$inc'] ?? [] as $field => $amount) {
                 $document[$field] = (int) ($document[$field] ?? 0) + (int) $amount;
             }
             $this->docs[$id] = $document;
+
+            return $this->writeResult($matched);
         }
 
         public function bulkWrite(array $operations, array $options = []): void
@@ -90,6 +130,19 @@ beforeEach(function () {
                 [$filter, $update, $writeOptions] = $operation['updateOne'];
                 $this->updateOne($filter, $update, $writeOptions);
             }
+        }
+
+        private function writeResult(int $matched): object
+        {
+            return new class($matched)
+            {
+                public function __construct(private readonly int $matched) {}
+
+                public function getMatchedCount(): int
+                {
+                    return $this->matched;
+                }
+            };
         }
     };
 
@@ -126,4 +179,73 @@ test('mongodb uses one native bulk write and one $in read', function () {
         ->and($this->collection->bulkWrites)->toBe($writes)
         ->and($this->collection->findCalls)->toBe($reads + 1)
         ->and($writes)->toBeGreaterThanOrEqual(1);
+});
+
+test('mongodb exposes atomic cache capability with one-winner semantics', function () {
+    $atomic = $this->cache->atomic();
+
+    expect($atomic)->toBeInstanceOf(AtomicCacheInterface::class)
+        ->and($atomic->setIfAbsent('claim', 'first', 30))->toBeTrue()
+        ->and($atomic->setIfAbsent('claim', 'second', 30))->toBeFalse()
+        ->and($this->cache->get('claim'))->toBe('first');
+});
+
+test('mongodb atomic compare-and-set uses strict live-value semantics', function () {
+    $atomic = $this->cache->atomic();
+    expect($atomic)->not->toBeNull();
+    $this->cache->set('cas', 1, 30);
+
+    expect($atomic->compareAndSet('cas', '1', 2, 30))->toBeFalse()
+        ->and($atomic->compareAndSet('cas', 1, 2, 30))->toBeTrue()
+        ->and($atomic->compareAndSet('cas', 1, 3, 30))->toBeFalse()
+        ->and($this->cache->get('cas'))->toBe(2);
+});
+
+test('mongodb atomic compare-and-set rejects tagged state', function () {
+    $atomic = $this->cache->atomic();
+    expect($atomic)->not->toBeNull();
+    $this->cache->setTagged('tagged', 'v1', ['group'], 30);
+
+    expect($atomic->compareAndSet('tagged', 'v1', 'v2', 30))->toBeFalse()
+        ->and($this->cache->get('tagged'))->toBe('v1');
+});
+
+test('mongodb atomic compare-and-set replacement honors ttl', function () {
+    $atomic = $this->cache->atomic();
+    expect($atomic)->not->toBeNull();
+    $this->cache->set('cas-ttl', 'v1', 30);
+
+    expect($atomic->compareAndSet('cas-ttl', 'v1', 'v2', 1))->toBeTrue();
+    usleep(2_000_000);
+
+    expect($this->cache->get('cas-ttl'))->toBeNull();
+});
+
+test('mongodb atomic set replaces expired state', function () {
+    $atomic = $this->cache->atomic();
+    expect($atomic)->not->toBeNull();
+    $this->cache->set('claim', 'old', 1);
+    usleep(2_000_000);
+
+    expect($atomic->setIfAbsent('claim', 'new', 30))->toBeTrue()
+        ->and($this->cache->get('claim'))->toBe('new');
+});
+
+test('mongodb atomic consume returns one live value', function () {
+    $atomic = $this->cache->atomic();
+    expect($atomic)->not->toBeNull();
+    $this->cache->set('consume', ['ok' => true], 30);
+
+    expect($atomic->getAndDelete('consume', 'missing'))->toBe(['ok' => true])
+        ->and($atomic->getAndDelete('consume', 'missing'))->toBe('missing');
+});
+
+test('mongodb atomic set can reclaim tag-invalidated state', function () {
+    $atomic = $this->cache->atomic();
+    expect($atomic)->not->toBeNull();
+    $this->cache->setTagged('claim', 'old', ['group'], 30);
+    $this->cache->invalidateTag('group');
+
+    expect($atomic->setIfAbsent('claim', 'new', 30))->toBeTrue()
+        ->and($this->cache->get('claim'))->toBe('new');
 });
