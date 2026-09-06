@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Infocyph\CacheLayer\Cache\AtomicCacheInterface;
 use Infocyph\CacheLayer\Cache\Cache;
 
 if (! class_exists(Redis::class)) {
@@ -64,4 +65,24 @@ test('valkey adapter supports remember lock path', function () {
     expect($v1)->toBe('value')
         ->and($v2)->toBe('value')
         ->and($runs)->toBe(1);
+});
+
+test('valkey exposes Redis-compatible atomic capability', function () {
+    $atomic = $this->cache->atomic();
+
+    expect($atomic)->toBeInstanceOf(AtomicCacheInterface::class)
+        ->and($atomic->setIfAbsent('claim', 'first', 30))->toBeTrue()
+        ->and($atomic->setIfAbsent('claim', 'second', 30))->toBeFalse()
+        ->and($atomic->getAndDelete('claim', 'missing'))->toBe('first')
+        ->and($atomic->getAndDelete('claim', 'missing'))->toBe('missing');
+});
+
+test('valkey atomic ttl permits a later claim', function () {
+    $atomic = $this->cache->atomic();
+    expect($atomic)->not->toBeNull()
+        ->and($atomic->setIfAbsent('claim', 'first', 1))->toBeTrue();
+    usleep(2_000_000);
+
+    expect($atomic->setIfAbsent('claim', 'second', 30))->toBeTrue()
+        ->and($this->cache->get('claim'))->toBe('second');
 });
