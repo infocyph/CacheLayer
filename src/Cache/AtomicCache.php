@@ -19,25 +19,6 @@ final class AtomicCache implements AtomicCacheInterface
         private CacheMetricsCollectorInterface $metrics,
     ) {}
 
-    public function compareAndSet(
-        string $key,
-        mixed $expected,
-        mixed $replacement,
-        mixed $ttl = null,
-    ): bool {
-        CacheInput::key($key);
-        $ttlSeconds = CacheInput::ttl($ttl);
-        $item = $this->adapter->createItem($key)->set($replacement)->expiresAfter($ttlSeconds);
-        $updated = $this->backend(
-            fn(): bool => $this->adapter->atomicCompareAndSet($key, $expected, $item),
-            false,
-        );
-        $this->metric('atomic_compare_and_set');
-        $this->metric($updated ? 'atomic_compare_and_set_success' : 'atomic_compare_and_set_miss');
-
-        return $updated;
-    }
-
     public function getAndDelete(string $key, mixed $default = null): mixed
     {
         CacheInput::key($key);
