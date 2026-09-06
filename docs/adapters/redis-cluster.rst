@@ -19,19 +19,24 @@ Highlights:
 * 128 fixed hash-tag buckets for cross-slot-safe grouped operations
 * namespace clear replaces each opaque bucket generation
 * no permanent key index, stale membership, or cluster-wide scan
-* atomic ``setIfAbsent()`` and ``getAndDelete()`` through the cache facade's
-  optional atomic capability
+* atomic ``setIfAbsent()``, ``compareAndSet()``, and ``getAndDelete()`` through
+  the cache facade's optional atomic capability
 * atomic operations keep each data key and its bucket-generation key in the
   same Redis Cluster hash slot and use generation-aware Lua scripts
+* ``compareAndSet()`` checks the current bucket generation and exact observed
+  raw blob in the same Lua execution after PHP ``===`` logical comparison
+* tagged ``compareAndSet()`` is rejected because tag-generation keys are
+  separate metadata and cannot join that same conditional replacement
 
 Atomic capability
 -----------------
 
 ``Cache::redisCluster(...)->atomic()`` returns an atomic capability when the
 adapter is available. ``setIfAbsent()`` provides one-winner conditional insert
-with TTL, and ``getAndDelete()`` consumes a value at most once. Both operations
-honor the current bucket generation so a namespace clear cannot resurrect or
-consume stale state.
+with TTL, ``compareAndSet()`` conditionally advances one existing live value,
+and ``getAndDelete()`` consumes a value at most once. All three operations
+honor the current bucket generation so a namespace clear cannot resurrect,
+replace, or consume stale state.
 
 Use dedicated untagged coordination keys for these primitives. If a backend
 failure must be distinguishable from an ordinary conditional miss, construct
@@ -52,3 +57,6 @@ Example
    );
 
    $cache->set('cart.token.abc', ['items' => 3], 1200);
+
+   $atomic = $cache->atomic();
+   $advanced = $atomic?->compareAndSet('checkout.state.42', 'pending', 'paid', 300);
