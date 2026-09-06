@@ -24,33 +24,6 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
         $this->ns = CacheInput::namespace($namespace);
     }
 
-    public function atomicCompareAndSet(
-        string $key,
-        mixed $expected,
-        CacheItemInterface $replacement,
-    ): bool {
-        if (!$this->supportsItem($replacement)) {
-            return false;
-        }
-
-        $mapped = $this->map($key);
-        $current = $this->atomicRecord($mapped);
-        if (!$current instanceof CacheRecord || $current->value !== $expected) {
-            return false;
-        }
-
-        $expiration = CachePayloadCodec::expirationFromItem($replacement);
-        if ($expiration['ttl'] !== null && $expiration['ttl'] <= 0) {
-            unset($this->store[$mapped]);
-
-            return true;
-        }
-
-        $this->store[$mapped] = $this->encodeItem($replacement, $expiration['expiresAt']);
-
-        return true;
-    }
-
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
         $mapped = $this->map($key);
