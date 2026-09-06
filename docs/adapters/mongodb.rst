@@ -24,6 +24,10 @@ Highlights:
 * atomic coordination via ``Cache::atomic()``
 * ``setIfAbsent()`` uses the unique document ``_id`` as the claim authority
 * stale/expired records are reclaimed with an exact-payload conditional update
+* ``compareAndSet()`` compares the decoded live value with PHP ``===`` and
+  performs ``updateOne()`` guarded by the exact observed stored payload
+* tagged ``compareAndSet()`` is rejected because tag-generation documents
+  cannot join that single-document conditional replacement
 * ``getAndDelete()`` uses the collection's atomic ``findOneAndDelete()``
 
 Supported injected collection methods:
@@ -60,3 +64,4 @@ Example
 
    $atomic = $cache->atomic();
    $claimed = $atomic?->setIfAbsent('job.claim.42', true, 300);
+   $advanced = $atomic?->compareAndSet('job.state.42', 'queued', 'running', 300);
