@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Infocyph\CacheLayer\Cache\Adapter;
 
 use Infocyph\CacheLayer\Cache\CacheInput;
+use Infocyph\CacheLayer\Cache\CacheRecord;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 use Infocyph\CacheLayer\Support\RedisConnection;
@@ -24,8 +25,30 @@ use RuntimeException;
      * @param string $dsn The Redis connection DSN (e.g., 'redis://127.0.0.1:6379').
      * @param \Redis|null $client Optional pre-configured Redis client instance.
  */
-class RedisCacheAdapter extends AbstractCacheAdapter
+class RedisCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolInterface
 {
+    private const string GET_AND_DELETE_SCRIPT = <<<'LUA'
+local value = redis.call('GET', KEYS[1])
+if not value then
+    return false
+end
+redis.call('DEL', KEYS[1])
+return value
+LUA;
+
+    private const string REPLACE_STALE_SCRIPT = <<<'LUA'
+local current = redis.call('GET', KEYS[1])
+if current and current ~= ARGV[1] then
+    return 0
+end
+if tonumber(ARGV[3]) > 0 then
+    redis.call('SET', KEYS[1], ARGV[2], 'EX', tonumber(ARGV[3]))
+else
+    redis.call('SET', KEYS[1], ARGV[2])
+end
+return 1
+LUA;
+
     private readonly string $ns;
 
     private readonly \Redis $redis;
@@ -50,6 +73,60 @@ class RedisCacheAdapter extends AbstractCacheAdapter
 
         $this->ns = CacheInput::namespace($namespace);
         $this->redis = $client ?? $this->connect($dsn);
+    }
+
+    public function atomicGetAndDelete(string $key): CacheItemInterface
+    {
+        $raw = $this->redis->eval(self::GET_AND_DELETE_SCRIPT, [$this->map($key)], 1);
+        if (!is_string($raw)) {
+            return $this->genericMiss($key);
+        }
+
+        $record = $this->decodeRecordFromBlob($raw);
+        if (!$record instanceof CacheRecord || !$this->recordTagsAreCurrent($record)) {
+            return $this->genericMiss($key);
+        }
+
+        return $this->genericItemFromRecord($key, $record);
+    }
+
+    public function atomicSetIfAbsent(CacheItemInterface $item): bool
+    {
+        if (!$this->supportsItem($item)) {
+            throw new CacheInvalidArgumentException('The cache item belongs to another pool.');
+        }
+
+        $expiration = CachePayloadCodec::expirationFromItem($item);
+        $ttl = $expiration['ttl'];
+        if ($ttl !== null && $ttl <= 0) {
+            return false;
+        }
+
+        $key = $this->map($item->getKey());
+        $blob = $this->encodeItem($item, $expiration['expiresAt']);
+        $options = ['nx'];
+        if ($ttl !== null) {
+            $options['ex'] = max(1, $ttl);
+        }
+        if ($this->redis->set($key, $blob, $options)) {
+            return true;
+        }
+
+        $existing = $this->redis->get($key);
+        if (!is_string($existing)) {
+            return (bool) $this->redis->set($key, $blob, $options);
+        }
+
+        $record = $this->decodeRecordFromBlob($existing);
+        if ($record instanceof CacheRecord && $this->recordTagsAreCurrent($record)) {
+            return false;
+        }
+
+        return (int) $this->redis->eval(
+            self::REPLACE_STALE_SCRIPT,
+            [$key, $existing, $blob, (string) ($ttl ?? 0)],
+            1,
+        ) === 1;
     }
 
     public function clear(): bool
@@ -300,6 +377,22 @@ class RedisCacheAdapter extends AbstractCacheAdapter
     private function mapTag(string $tag): string
     {
         return $this->ns . ':m:tag:' . $tag;
+    }
+
+    private function recordTagsAreCurrent(CacheRecord $record): bool
+    {
+        if ($record->tags === []) {
+            return true;
+        }
+
+        $current = $this->getTagGenerations(array_keys($record->tags));
+        foreach ($record->tags as $tag => $generation) {
+            if (($current[$tag] ?? null) !== $generation) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /** @param list<array{0:string, 1:int, 2:string}> $records */
