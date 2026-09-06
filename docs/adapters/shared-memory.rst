@@ -17,8 +17,10 @@ Highlights:
 * shared locks for reads and exclusive locks for mutation
 * atomic coordination via ``Cache::atomic()`` using the existing exclusive
   cross-process lock around the complete shared store mutation
-* tag metadata and values share the same locked store, so stale-tag checks can
-  be completed inside the same critical section
+* ``setIfAbsent()``, strict ``compareAndSet()``, and ``getAndDelete()`` share
+  that same lock domain
+* tag metadata and values share the same locked store, so current/stale tag
+  generations can be validated inside the same compare-and-set critical section
 * an owner marker that rejects accidental ``ftok`` segment collisions
 * good for host-local IPC cache use cases
 
@@ -27,8 +29,8 @@ Notes:
 * atomicity is host-local; it does not coordinate separate machines
 * data is not portable across hosts
 * capacity is limited by the shared memory segment size
-* use dedicated, untagged keys for replay/state coordination even though stale
-  tagged records are recognized inside the shared-memory lock
+* tagged compare-and-set can be validated safely in this adapter's local lock
+  domain, but portable atomic protocols should still use dedicated untagged keys
 
 Example
 -------
@@ -42,3 +44,4 @@ Example
 
    $atomic = $cache->atomic();
    $claimed = $atomic?->setIfAbsent('worker.claim.1', true, 15);
+   $advanced = $atomic?->compareAndSet('worker.state.1', 'idle', 'running', 15);
