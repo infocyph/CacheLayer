@@ -14,6 +14,7 @@ CacheLayer
 │   ├── PSR-6 and PSR-16
 │   ├── generation-tagged records
 │   ├── bounded stampede protection
+│   ├── optional atomic coordination
 │   └── tiering
 ├── Node Cache
 │   └── APCu L1 → SQLite L2
@@ -23,7 +24,7 @@ CacheLayer
 └── Process-local Memoization
 ```
 
-The ordinary cache is disposable storage. Cluster Cache distributes invalidations, not values. Atomic counters remain outside the cache contract because they require stronger semantics. Memoization stays process-local.
+The ordinary cache is disposable storage. Cluster Cache distributes invalidations, not values. Atomic cache coordination is an optional backend capability for claim/consume workflows; unsupported stores return no capability rather than emulating it. Atomic counters remain outside the cache contract because numeric mutation requires a different stronger contract. Memoization stays process-local.
 
 ## Installation
 
@@ -49,7 +50,7 @@ $profiles = $cache->getMultiple(['profile.1', 'profile.2', 'profile.3']);
 $cache->deleteMultiple(['profile.1', 'profile.2']);
 ```
 
-`Cache` implements PSR-6, PSR-16, and `ArrayAccess`. It intentionally does not implement `Countable`, magic property access, runtime namespace mutation, or compatibility aliases. Keys and tags must be 1–64 characters and match `[A-Za-z0-9_.-]+`; invalid bulk input is rejected before storage is changed.
+`Cache` implements PSR-6, PSR-16, `ArrayAccess`, and capability-provider interfaces. It intentionally does not implement `Countable`, magic property access, runtime namespace mutation, or compatibility aliases. Keys and tags must be 1–64 characters and match `[A-Za-z0-9_.-]+`; invalid bulk input is rejected before storage is changed.
 
 A callable passed as the PSR-16 `get()` default is returned as a value. Use the explicit `remember()` API to compute and persist a miss:
 
@@ -63,6 +64,44 @@ $user = $cache->remember(
 ```
 
 `remember()` follows get → miss → lock → recheck → resolve → save → release. Lock waiting is bounded; a timeout computes fail-open and records the unlocked computation. No lock operation occurs on a hit.
+
+## Atomic cache coordination
+
+Atomic operations are an optional capability, not part of PSR-6/PSR-16 or the base `CacheInterface`:
+
+```php
+$atomic = $cache->atomic();
+if ($atomic === null) {
+    throw new RuntimeException('Selected cache backend cannot coordinate atomically.');
+}
+
+// Exactly one concurrent claimant can create a live claim.
+if (!$atomic->setIfAbsent('webhook.claim.42', true, 300)) {
+    // Already claimed, or a fail-open backend failure returned the fallback.
+}
+
+// One caller receives and consumes this state.
+$state = $atomic->getAndDelete('oauth.state.42');
+```
+
+`setIfAbsent()` stores the encoded value and TTL as one conditional backend operation. `getAndDelete()` returns and consumes one live value atomically. CacheLayer never emulates either primitive with public `has()/get()` plus `set()/delete()`.
+
+| Backend | Atomic cache coordination | Scope |
+|---|---|---|
+| Array memory | Yes | one PHP process |
+| Shared memory | Yes | one host / shared SysV segment |
+| Redis / Valkey | Yes | supplied authoritative Redis-compatible store |
+| Redis Cluster | Yes | stable CacheLayer hash-slot bucket |
+| MongoDB | Yes | supplied authoritative collection |
+| APCu / Memcached | No | no full atomic consume primitive |
+| PDO / SQLite | No | no cross-driver atomic contract in 3.3 |
+| File / PHP files | No | ordinary writers do not share one atomic key lock |
+| ScyllaDB | No | no full two-operation contract exposed |
+| WeakMap / Null / Tiered | No | not one authoritative coordination domain |
+
+Use dedicated, untagged keys for replay claims, nonces, challenges and one-time state. Tag rotation is a separate invalidation mechanism and is not part of the atomic linearization boundary. Tiered caches remain non-atomic even when an individual tier supports the capability.
+
+For security-sensitive coordination, use `failOpen: false` when the caller must distinguish a backend outage from a normal conditional miss. With fail-open enabled, `setIfAbsent()` falls back to `false`, `getAndDelete()` returns the supplied default, and `backend_failure` is recorded.
 
 ## Tags and expiration
 
@@ -109,7 +148,7 @@ Cache::sqlite();       Cache::mongodb();      Cache::scylla();
 Cache::tiered([...]);
 ```
 
-Data and internal metadata use physically separate key spaces. Adapters are public for PSR-6 use, but tagging, stampede protection, policy-aware error handling, and metrics are facade responsibilities; use `Cache` for consistent CacheLayer semantics. SQL-like stores can install schema explicitly with `PdoCacheSchema::install()` and pass `initializeSchema: false` to `PdoCacheAdapter` in deployment-controlled environments.
+Data and internal metadata use physically separate key spaces. Adapters are public for PSR-6 use, but tagging, stampede protection, policy-aware error handling, atomic capability discovery, and metrics are facade responsibilities; use `Cache` for consistent CacheLayer semantics. SQL-like stores can install schema explicitly with `PdoCacheSchema::install()` and pass `initializeSchema: false` to `PdoCacheAdapter` in deployment-controlled environments.
 
 `phpFiles` creates executable PHP files and is only appropriate for a trusted directory and trusted payloads. Never point SQLite at NFS, SMB, or another shared network filesystem.
 
@@ -122,7 +161,7 @@ $cache = Cache::tiered([
 ]);
 ```
 
-A bulk read asks L1 for the full batch, asks later tiers only for remaining keys, and promotes hits upward in batches. Writes and deletes are one batch per participating tier.
+A bulk read asks L1 for the full batch, asks later tiers only for remaining keys, and promotes hits upward in batches. Writes and deletes are one batch per participating tier. The tiered facade intentionally does not expose atomic cache coordination because multiple tiers cannot form one linearizable authority.
 
 ## Immutable security and failure policy
 
@@ -179,13 +218,13 @@ Failed local invalidation stops consumption without advancing the cursor; operat
 
 ## Atomic counters and memoization
 
-`AtomicCounters` uses an `AtomicCounterStoreInterface`; Redis/Valkey is the distributed implementation. Counters are never emulated with cache `get()` plus `set()`.
+`AtomicCounters` uses an `AtomicCounterStoreInterface`; Redis/Valkey is the distributed implementation. Counters are never emulated with cache `get()` plus `set()`. Atomic counters are separate from `Cache::atomic()`: counters mutate numeric state, while the cache capability provides claim and consume primitives for encoded cache records.
 
 The `memoize()`, `remember(object: ...)`, and `once()` helpers plus `MemoizeTrait` provide bounded process-local memoization. Their state survives requests in persistent workers until evicted or reset with `flush_memoizers()`; call that reset at request boundaries when cross-request reuse is not intended. They are independent of persistent backend caching.
 
 ## Metrics and benchmarks
 
-Metrics distinguish calls from key volume: `get_batch`, `get_batch_keys`, hits/misses, set/delete batch counts, tag-generation fetches, promotions, lock outcomes, and backend failures. `exportMetrics()` returns a snapshot and can invoke an export hook.
+Metrics distinguish calls from key volume: `get_batch`, `get_batch_keys`, hits/misses, set/delete batch counts, tag-generation fetches, promotions, lock outcomes, atomic claim/consume outcomes, and backend failures. `exportMetrics()` returns a snapshot and can invoke an export hook.
 
 PHPBench scenarios in `benchmarks/` cover single operations, 10/100/1000-key bulk operations, tagged/plain records, tier and Node promotion, codec security/compression, and remember paths. Backend-focused tests separately verify operation counts for native bulk calls. These are microbenchmarks, not production throughput claims.
 
@@ -204,7 +243,6 @@ Integration suites self-skip when their optional service or extension is unavail
 Do not disclose suspected vulnerabilities in a public issue, discussion or pull request. Follow [SECURITY.md](SECURITY.md) and use [GitHub private vulnerability reporting](https://github.com/infocyph/CacheLayer/security/advisories/new).
 
 CacheLayer is protected by [PHPForge](https://github.com/infocyph/PHPForge), which provides automated tests, static and taint analysis, dependency auditing, architecture checks and release-readiness gates. Automated controls do not replace responsible disclosure or manual review.
-
 
 ---
 
