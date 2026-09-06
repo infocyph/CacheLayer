@@ -6,6 +6,7 @@ namespace Infocyph\CacheLayer\Cache;
 
 use Closure;
 use Infocyph\CacheLayer\Cache\Adapter\AbstractCacheAdapter;
+use Infocyph\CacheLayer\Cache\Adapter\AtomicCachePoolInterface;
 use Infocyph\CacheLayer\Cache\Adapter\InternalCachePoolInterface;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Cache\Lock\FileLockProvider;
@@ -23,7 +24,7 @@ use MongoDB\Client;
 use Psr\Cache\CacheItemInterface;
 use Throwable;
 
-final class Cache implements AuthenticationStateCacheInterface
+final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProviderInterface
 {
     private const float LOCK_LEASE_SECONDS = 30.0;
 
@@ -34,6 +35,8 @@ final class Cache implements AuthenticationStateCacheInterface
     private readonly bool $authoritative;
 
     private readonly CacheOptions $options;
+
+    private ?AtomicCache $atomicCapability = null;
 
     private bool $authenticationStateLockCapable;
 
@@ -309,6 +312,15 @@ final class Cache implements AuthenticationStateCacheInterface
             options: $options,
             namespace: $namespace,
         );
+    }
+
+    public function atomic(): ?AtomicCacheInterface
+    {
+        if (!$this->adapter instanceof AtomicCachePoolInterface) {
+            return null;
+        }
+
+        return $this->atomicCapability ??= new AtomicCache($this->adapter, $this->options, $this->metrics);
     }
 
     public function authenticationStateLock(): ?LockProviderInterface
@@ -616,6 +628,7 @@ final class Cache implements AuthenticationStateCacheInterface
     public function setMetricsCollector(CacheMetricsCollectorInterface $metrics): self
     {
         $this->metrics = $metrics;
+        $this->atomicCapability?->setMetricsCollector($metrics);
 
         return $this;
     }
