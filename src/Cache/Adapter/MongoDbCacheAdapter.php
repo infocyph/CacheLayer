@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace Infocyph\CacheLayer\Cache\Adapter;
 
 use Infocyph\CacheLayer\Cache\CacheInput;
+use Infocyph\CacheLayer\Cache\CacheRecord;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Psr\Cache\CacheItemInterface;
 use RuntimeException;
+use Throwable;
 
-final class MongoDbCacheAdapter extends AbstractCacheAdapter implements TagGenerationCacheInterface
+final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolInterface, TagGenerationCacheInterface
 {
     private readonly string $ns;
 
@@ -19,7 +21,19 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements TagGener
     ) {
         $this->ns = CacheInput::namespace($namespace);
 
-        foreach (['findOne', 'find', 'updateOne', 'bulkWrite', 'deleteOne', 'deleteMany', 'countDocuments'] as $method) {
+        foreach (
+            [
+                'findOne',
+                'findOneAndDelete',
+                'find',
+                'insertOne',
+                'updateOne',
+                'bulkWrite',
+                'deleteOne',
+                'deleteMany',
+                'countDocuments',
+            ] as $method
+        ) {
             if (!method_exists($this->collection, $method)) {
                 throw new RuntimeException(
                     sprintf('MongoDbCacheAdapter requires collection method `%s()`.', $method),
@@ -42,6 +56,72 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements TagGener
         $selected = $client->selectCollection($database, $collection);
 
         return new self($selected, $namespace);
+    }
+
+    public function atomicGetAndDelete(string $key): CacheItemInterface
+    {
+        $document = $this->collection->findOneAndDelete(['_id' => $this->mapData($key)]);
+        $row = AdapterValueNormalizer::fromJsonOrArrayLike($document);
+        $record = is_array($row) ? $this->recordFromRow($row) : null;
+
+        return $record instanceof CacheRecord
+            ? $this->genericItemFromRecord($key, $record)
+            : $this->genericMiss($key);
+    }
+
+    public function atomicSetIfAbsent(CacheItemInterface $item): bool
+    {
+        if (!$this->supportsItem($item)) {
+            return false;
+        }
+        $expiration = CachePayloadCodec::expirationFromItem($item);
+        if ($expiration['ttl'] !== null && $expiration['ttl'] <= 0) {
+            return false;
+        }
+
+        $key = $item->getKey();
+        $id = $this->mapData($key);
+        $payload = $this->binaryValue($this->encodeItem($item, $expiration['expiresAt']));
+        $replacement = [
+            'ns' => $this->ns,
+            'kind' => 'data',
+            'payload' => $payload,
+            'expires' => $expiration['expiresAt'],
+        ];
+
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            try {
+                $this->collection->insertOne(['_id' => $id, ...$replacement]);
+
+                return true;
+            } catch (Throwable $failure) {
+                if (!$this->isDuplicateKeyFailure($failure)) {
+                    throw $failure;
+                }
+            }
+
+            $document = $this->collection->findOne(['_id' => $id]);
+            $row = AdapterValueNormalizer::fromJsonOrArrayLike($document);
+            if (!is_array($row)) {
+                continue;
+            }
+            if ($this->recordFromRow($row) instanceof CacheRecord) {
+                return false;
+            }
+            if (!array_key_exists('payload', $row)) {
+                return false;
+            }
+
+            $result = $this->collection->updateOne(
+                ['_id' => $id, 'payload' => $row['payload']],
+                ['$set' => $replacement],
+            );
+            if ($this->matchedCount($result) > 0) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public function clear(): bool
@@ -306,6 +386,12 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements TagGener
         return $value;
     }
 
+    private function isDuplicateKeyFailure(Throwable $failure): bool
+    {
+        return in_array((int) $failure->getCode(), [11000, 11001, 12582], true)
+            || str_contains($failure->getMessage(), 'E11000 duplicate key');
+    }
+
     private function mapData(string $key): string
     {
         return $this->ns . ':d:' . $key;
@@ -314,5 +400,45 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements TagGener
     private function mapTag(string $tag): string
     {
         return $this->ns . ':m:tag:' . $tag;
+    }
+
+    private function matchedCount(mixed $result): int
+    {
+        if (!is_object($result) || !is_callable([$result, 'getMatchedCount'])) {
+            return 0;
+        }
+
+        return (int) $result->getMatchedCount();
+    }
+
+    /** @param array<string, mixed> $row */
+    private function recordFromRow(array $row): ?CacheRecord
+    {
+        $payload = $this->binaryString($row['payload'] ?? null);
+        if (!is_string($payload)) {
+            return null;
+        }
+        $record = $this->decodeRecordFromBlob($payload);
+        if (!$record instanceof CacheRecord || !$this->recordTagsAreCurrent($record)) {
+            return null;
+        }
+
+        return $record;
+    }
+
+    private function recordTagsAreCurrent(CacheRecord $record): bool
+    {
+        if ($record->tags === []) {
+            return true;
+        }
+
+        $current = $this->getTagGenerations(array_keys($record->tags));
+        foreach ($record->tags as $tag => $generation) {
+            if (($current[$tag] ?? null) !== $generation) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }
