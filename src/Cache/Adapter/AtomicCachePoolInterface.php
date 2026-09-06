@@ -13,7 +13,7 @@ use Psr\Cache\CacheItemInterface;
  */
 interface AtomicCachePoolInterface extends InternalCachePoolInterface
 {
-    public function atomicSetIfAbsent(CacheItemInterface $item): bool;
-
     public function atomicGetAndDelete(string $key): CacheItemInterface;
+
+    public function atomicSetIfAbsent(CacheItemInterface $item): bool;
 }
