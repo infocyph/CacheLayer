@@ -190,6 +190,37 @@ test('mongodb exposes atomic cache capability with one-winner semantics', functi
         ->and($this->cache->get('claim'))->toBe('first');
 });
 
+test('mongodb atomic compare-and-set uses strict live-value semantics', function () {
+    $atomic = $this->cache->atomic();
+    expect($atomic)->not->toBeNull();
+    $this->cache->set('cas', 1, 30);
+
+    expect($atomic->compareAndSet('cas', '1', 2, 30))->toBeFalse()
+        ->and($atomic->compareAndSet('cas', 1, 2, 30))->toBeTrue()
+        ->and($atomic->compareAndSet('cas', 1, 3, 30))->toBeFalse()
+        ->and($this->cache->get('cas'))->toBe(2);
+});
+
+test('mongodb atomic compare-and-set rejects tagged state', function () {
+    $atomic = $this->cache->atomic();
+    expect($atomic)->not->toBeNull();
+    $this->cache->setTagged('tagged', 'v1', ['group'], 30);
+
+    expect($atomic->compareAndSet('tagged', 'v1', 'v2', 30))->toBeFalse()
+        ->and($this->cache->get('tagged'))->toBe('v1');
+});
+
+test('mongodb atomic compare-and-set replacement honors ttl', function () {
+    $atomic = $this->cache->atomic();
+    expect($atomic)->not->toBeNull();
+    $this->cache->set('cas-ttl', 'v1', 30);
+
+    expect($atomic->compareAndSet('cas-ttl', 'v1', 'v2', 1))->toBeTrue();
+    usleep(2_000_000);
+
+    expect($this->cache->get('cas-ttl'))->toBeNull();
+});
+
 test('mongodb atomic set replaces expired state', function () {
     $atomic = $this->cache->atomic();
     expect($atomic)->not->toBeNull();
