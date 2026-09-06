@@ -12,13 +12,30 @@ Requirements:
 
 * RedisCluster support via ``ext-redis``, or
 * injected client exposing ``get``, ``set``, ``setex``, ``del``, ``exists``,
-  ``incr``, ``mget``, and ``mset``
+  ``incr``, ``mget``, ``mset``, and ``eval``
 
 Highlights:
 
 * 128 fixed hash-tag buckets for cross-slot-safe grouped operations
 * namespace clear replaces each opaque bucket generation
 * no permanent key index, stale membership, or cluster-wide scan
+* atomic ``setIfAbsent()`` and ``getAndDelete()`` through the cache facade's
+  optional atomic capability
+* atomic operations keep each data key and its bucket-generation key in the
+  same Redis Cluster hash slot and use generation-aware Lua scripts
+
+Atomic capability
+-----------------
+
+``Cache::redisCluster(...)->atomic()`` returns an atomic capability when the
+adapter is available. ``setIfAbsent()`` provides one-winner conditional insert
+with TTL, and ``getAndDelete()`` consumes a value at most once. Both operations
+honor the current bucket generation so a namespace clear cannot resurrect or
+consume stale state.
+
+Use dedicated untagged coordination keys for these primitives. If a backend
+failure must be distinguishable from an ordinary conditional miss, construct
+the cache with ``failOpen: false``.
 
 Useful when using Redis Cluster topology.
 
