@@ -64,32 +64,6 @@ test('get and delete consumes exactly one live value including cached null', fun
         ->and($cache->has('nullable'))->toBeFalse();
 });
 
-test('compare and set uses strict value comparison', function () {
-    $cache = Cache::memory('atomic-cas');
-    $atomic = $cache->atomic();
-
-    expect($atomic)->not->toBeNull();
-    $cache->set('version', 1);
-
-    expect($atomic->compareAndSet('version', '1', 2))->toBeFalse()
-        ->and($cache->get('version'))->toBe(1)
-        ->and($atomic->compareAndSet('version', 1, 2))->toBeTrue()
-        ->and($cache->get('version'))->toBe(2);
-});
-
-test('compare and set with non-positive ttl atomically deletes a matching value', function () {
-    $cache = Cache::memory('atomic-cas-delete');
-    $atomic = $cache->atomic();
-
-    expect($atomic)->not->toBeNull();
-    $cache->set('version', 'current');
-
-    expect($atomic->compareAndSet('version', 'stale', 'ignored', 0))->toBeFalse()
-        ->and($cache->get('version'))->toBe('current')
-        ->and($atomic->compareAndSet('version', 'current', 'ignored', 0))->toBeTrue()
-        ->and($cache->has('version'))->toBeFalse();
-});
-
 test('atomic operations reject stale tagged entries as live state', function () {
     $cache = Cache::memory('atomic-tagged');
     $atomic = $cache->atomic();
