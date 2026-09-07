@@ -36,7 +36,9 @@ test('file and PHP-file stores support the full atomic cache contract', function
     foreach (['file', 'phpFiles'] as $factory) {
         $directory = sys_get_temp_dir() . '/cachelayer-atomic-' . strtolower($factory) . '-' . uniqid('', true);
         try {
-            $cache = Cache::{$factory}('atomic-files', $directory);
+            $cache = $factory === 'file'
+                ? Cache::file('atomic-files', $directory)
+                : Cache::phpFiles('atomic-files', $directory);
             $atomic = $cache->atomic();
 
             expect($atomic)->toBeInstanceOf(AtomicCacheInterface::class)
