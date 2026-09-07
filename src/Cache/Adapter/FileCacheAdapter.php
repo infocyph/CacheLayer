@@ -327,6 +327,7 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
     private function throwCreationError(string $prefix): void
     {
         $err = error_get_last()['message'] ?? 'unknown error';
+
         throw new RuntimeException($prefix . ": $err");
     }
 
