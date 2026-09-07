@@ -12,30 +12,36 @@ use Infocyph\CacheLayer\Cache\Metrics\InMemoryCacheMetricsCollector;
 
 test('cache exposes atomic capability only when the adapter guarantees it', function () {
     $memory = Cache::memory('atomic-memory');
+    $weakMap = Cache::weakMap('atomic-weak-map');
     $null = Cache::nullStore();
 
     expect($memory)->toBeInstanceOf(AtomicCacheProviderInterface::class)
         ->and($memory->atomic())->toBeInstanceOf(AtomicCacheInterface::class)
+        ->and($weakMap->atomic())->toBeInstanceOf(AtomicCacheInterface::class)
         ->and($null->atomic())->toBeNull();
 });
 
-test('unsupported and composite stores do not advertise atomic capability', function () {
+test('supported SQLite PDO store advertises atomic capability', function () {
     $sqliteFile = sys_get_temp_dir() . '/cachelayer-atomic-' . uniqid('', true) . '.sqlite';
     $sqlite = Cache::sqlite('atomic-sqlite', $sqliteFile);
-    $tiered = Cache::tiered([
-        new ArrayCacheAdapter('atomic-tier-l1'),
-        new ArrayCacheAdapter('atomic-tier-l2'),
-    ], namespace: 'atomic-tiered');
 
     try {
-        expect($sqlite->atomic())->toBeNull()
-            ->and($tiered->atomic())->toBeNull();
+        expect($sqlite->atomic())->toBeInstanceOf(AtomicCacheInterface::class);
     } finally {
         unset($sqlite);
         if (is_file($sqliteFile)) {
             unlink($sqliteFile);
         }
     }
+});
+
+test('composite stores do not advertise atomic capability', function () {
+    $tiered = Cache::tiered([
+        new ArrayCacheAdapter('atomic-tier-l1'),
+        new ArrayCacheAdapter('atomic-tier-l2'),
+    ], namespace: 'atomic-tiered');
+
+    expect($tiered->atomic())->toBeNull();
 });
 
 test('set if absent has one-winner semantics and preserves existing values', function () {
