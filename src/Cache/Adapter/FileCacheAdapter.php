@@ -98,6 +98,7 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
         return $this->withKeyLock($key, fn(): bool => $this->deleteItemUnlocked($key));
     }
 
+    /** @param list<string> $keys */
     public function deleteItems(array $keys): bool
     {
         $ok = true;
@@ -118,6 +119,10 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
         return new CacheItem($this, $key);
     }
 
+    /**
+     * @param list<string> $tags
+     * @return array<string, string>
+     */
     #[\Override]
     public function getTagGenerations(array $tags): array
     {
@@ -142,6 +147,10 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
         return $this->getItem($key)->isHit();
     }
 
+    /**
+     * @param list<string> $keys
+     * @return array<string, CacheItem>
+     */
     public function multiFetch(array $keys): array
     {
         $items = [];
@@ -152,6 +161,7 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
         return $items;
     }
 
+    /** @param list<string> $tags */
     #[\Override]
     public function rotateTagGenerations(array $tags): bool
     {
@@ -174,6 +184,7 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
         return $this->persistItem($item);
     }
 
+    /** @param array<string, CacheItemInterface> $items */
     public function saveItems(array $items): bool
     {
         if (!$this->supportsItems($items)) {
@@ -270,11 +281,17 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
             return false;
         }
         if (file_put_contents($tmp, $blob, LOCK_EX) === false) {
-            @unlink($tmp);
+            if (is_file($tmp)) {
+                unlink($tmp);
+            }
+
             return false;
         }
         if (!rename($tmp, $this->fileFor($item->getKey()))) {
-            @unlink($tmp);
+            if (is_file($tmp)) {
+                unlink($tmp);
+            }
+
             return false;
         }
 
@@ -313,7 +330,11 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
         throw new RuntimeException($prefix . ": $err");
     }
 
-    /** @template T @param callable():T $callback @return T */
+    /**
+     * @template T
+     * @param callable(): T $callback
+     * @return T
+     */
     private function withKeyLock(string $key, callable $callback): mixed
     {
         $path = $this->lockDirectory . hash('xxh128', $key) . '.lock';
