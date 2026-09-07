@@ -5,28 +5,24 @@ declare(strict_types=1);
 namespace Infocyph\CacheLayer\Cache\Adapter;
 
 use Infocyph\CacheLayer\Cache\CacheInput;
+use Infocyph\CacheLayer\Cache\CacheRecord;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use PDO;
 use PDOException;
 use Psr\Cache\CacheItemInterface;
 use RuntimeException;
+use Throwable;
 
-final class PdoCacheAdapter extends AbstractCacheAdapter
+final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalAtomicCachePoolInterface
 {
     private const int BATCH_SIZE = 250;
-
     private const string DEFAULT_SQLITE_DIR = 'cachelayer/pdo';
-
     private const string KIND_DATA = 'data';
-
     private const string KIND_TAG = 'tag';
 
     private readonly string $driver;
-
     private readonly string $namespace;
-
     private readonly PDO $pdo;
-
     private readonly string $table;
 
     public function __construct(
@@ -55,6 +51,87 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
         if ($initializeSchema) {
             PdoCacheSchema::install($this->pdo, $this->table);
         }
+    }
+
+    public function atomicCompareAndSet(string $key, mixed $expected, CacheItemInterface $replacement): bool
+    {
+        if (!$this->supportsAtomicCache() || !$this->supportsItem($replacement)) {
+            return false;
+        }
+        $expiration = CachePayloadCodec::expirationFromItem($replacement);
+        if ($expiration['ttl'] !== null && $expiration['ttl'] <= 0) {
+            return false;
+        }
+
+        return $this->atomicTransaction(function () use ($key, $expected, $replacement, $expiration): bool {
+            $row = $this->atomicFetchRow($key);
+            $record = is_array($row) ? $this->recordFromRow($row) : null;
+            if (!$record instanceof CacheRecord
+                || !$this->recordTagsAreCurrent($record)
+                || $record->value !== $expected) {
+                return false;
+            }
+
+            return $this->atomicUpdateExisting(
+                $key,
+                $this->encodeItem($replacement, $expiration['expiresAt']),
+                $expiration['expiresAt'],
+            );
+        });
+    }
+
+    public function atomicGetAndDelete(string $key): CacheItemInterface
+    {
+        if (!$this->supportsAtomicCache()) {
+            return $this->genericMiss($key);
+        }
+
+        return $this->atomicTransaction(function () use ($key): CacheItemInterface {
+            $row = $this->atomicFetchRow($key);
+            if (!is_array($row)) {
+                return $this->genericMiss($key);
+            }
+
+            $record = $this->recordFromRow($row);
+            $this->deleteDataRow($key);
+            if (!$record instanceof CacheRecord || !$this->recordTagsAreCurrent($record)) {
+                return $this->genericMiss($key);
+            }
+
+            return $this->genericItemFromRecord($key, $record);
+        });
+    }
+
+    public function atomicSetIfAbsent(CacheItemInterface $item): bool
+    {
+        if (!$this->supportsAtomicCache() || !$this->supportsItem($item)) {
+            return false;
+        }
+        $expiration = CachePayloadCodec::expirationFromItem($item);
+        if ($expiration['ttl'] !== null && $expiration['ttl'] <= 0) {
+            return false;
+        }
+
+        return $this->atomicTransaction(function () use ($item, $expiration): bool {
+            $key = $item->getKey();
+            $row = $this->atomicFetchRow($key);
+            $record = is_array($row) ? $this->recordFromRow($row) : null;
+            if ($record instanceof CacheRecord && $this->recordTagsAreCurrent($record)) {
+                return false;
+            }
+
+            $payload = $this->encodeItem($item, $expiration['expiresAt']);
+            if (is_array($row)) {
+                return $this->atomicUpdateExisting($key, $payload, $expiration['expiresAt']);
+            }
+
+            return $this->atomicInsertIfMissing($key, $payload, $expiration['expiresAt']);
+        });
+    }
+
+    public function supportsAtomicCache(): bool
+    {
+        return in_array($this->driver, ['sqlite', 'pgsql', 'mysql', 'mariadb'], true);
     }
 
     public static function defaultSqliteFileForNamespace(string $namespace): string
@@ -87,14 +164,9 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
 
     public function deleteItem(string $key): bool
     {
-        $statement = $this->pdo->prepare(
-            "DELETE FROM {$this->table} WHERE namespace = ? AND kind = ? AND cache_key = ?",
-        );
-
-        return $statement->execute([$this->namespace, self::KIND_DATA, $key]);
+        return $this->deleteDataRow($key);
     }
 
-    /** @param list<string> $keys */
     public function deleteItems(array $keys): bool
     {
         return $this->deleteByKind(self::KIND_DATA, $keys);
@@ -122,10 +194,6 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
         return $this->genericMiss($key);
     }
 
-    /**
-     * @param list<string> $tags
-     * @return array<string, string>
-     */
     #[\Override]
     public function getTagGenerations(array $tags): array
     {
@@ -157,10 +225,6 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
         return $this->getItem($key)->isHit();
     }
 
-    /**
-     * @param list<string> $keys
-     * @return array<string, CacheItem>
-     */
     public function multiFetch(array $keys): array
     {
         $rows = $this->fetchRows(self::KIND_DATA, $keys);
@@ -199,7 +263,6 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
         return $this->deleteByKind(self::KIND_DATA, $keys) ? count($keys) : 0;
     }
 
-    /** @param list<string> $tags */
     #[\Override]
     public function rotateTagGenerations(array $tags): bool
     {
@@ -229,7 +292,6 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
         ]]);
     }
 
-    /** @param array<string, CacheItemInterface> $items */
     public function saveItems(array $items): bool
     {
         $rows = [];
@@ -241,21 +303,90 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
             $expiration = CachePayloadCodec::expirationFromItem($item);
             if ($expiration['ttl'] !== null && $expiration['ttl'] <= 0) {
                 $expired[] = $item->getKey();
-
                 continue;
             }
-            $rows[] = [
-                self::KIND_DATA,
-                $item->getKey(),
-                $this->encodeItem($item, $expiration['expiresAt']),
-                $expiration['expiresAt'],
-            ];
+            $rows[] = [self::KIND_DATA, $item->getKey(), $this->encodeItem($item, $expiration['expiresAt']), $expiration['expiresAt']];
         }
 
         return $this->deleteByKind(self::KIND_DATA, $expired) && $this->upsertRows($rows);
     }
 
-    /** @param list<string> $keys */
+    private function atomicFetchRow(string $key): ?array
+    {
+        $suffix = in_array($this->driver, ['pgsql', 'mysql', 'mariadb'], true) ? ' FOR UPDATE' : '';
+        $statement = $this->pdo->prepare(
+            "SELECT payload, expires FROM {$this->table} WHERE namespace = ? AND kind = ? AND cache_key = ?{$suffix}",
+        );
+        $statement->execute([$this->namespace, self::KIND_DATA, $key]);
+        $row = $statement->fetch(PDO::FETCH_ASSOC);
+        if (!is_array($row)) {
+            return null;
+        }
+        $payload = $row['payload'] ?? null;
+        if (is_resource($payload)) {
+            $payload = stream_get_contents($payload);
+        }
+        if (!is_string($payload)) {
+            return null;
+        }
+
+        return ['payload' => $payload, 'expires' => is_numeric($row['expires'] ?? null) ? (int) $row['expires'] : null];
+    }
+
+    private function atomicInsertIfMissing(string $key, string $payload, ?int $expires): bool
+    {
+        if (in_array($this->driver, ['pgsql', 'sqlite'], true)) {
+            $sql = "INSERT INTO {$this->table} (namespace, kind, cache_key, payload, expires) VALUES (?, ?, ?, ?, ?) "
+                . 'ON CONFLICT (namespace, kind, cache_key) DO NOTHING';
+        } else {
+            $sql = "INSERT IGNORE INTO {$this->table} (namespace, kind, cache_key, payload, expires) VALUES (?, ?, ?, ?, ?)";
+        }
+        $statement = $this->pdo->prepare($sql);
+        $statement->execute([$this->namespace, self::KIND_DATA, $key, $payload, $expires]);
+
+        return $statement->rowCount() === 1;
+    }
+
+    private function atomicTransaction(callable $callback): mixed
+    {
+        if ($this->pdo->inTransaction()) {
+            throw new RuntimeException('Atomic PDO cache operations require ownership of the PDO transaction.');
+        }
+        $sqlite = $this->driver === 'sqlite';
+        if ($sqlite) {
+            $this->pdo->exec('BEGIN IMMEDIATE');
+        } else {
+            $this->pdo->beginTransaction();
+        }
+
+        try {
+            $result = $callback();
+            $sqlite ? $this->pdo->exec('COMMIT') : $this->pdo->commit();
+            return $result;
+        } catch (Throwable $failure) {
+            if ($this->pdo->inTransaction()) {
+                $sqlite ? $this->pdo->exec('ROLLBACK') : $this->pdo->rollBack();
+            }
+            throw $failure;
+        }
+    }
+
+    private function atomicUpdateExisting(string $key, string $payload, ?int $expires): bool
+    {
+        $statement = $this->pdo->prepare(
+            "UPDATE {$this->table} SET payload = ?, expires = ? WHERE namespace = ? AND kind = ? AND cache_key = ?",
+        );
+        return $statement->execute([$payload, $expires, $this->namespace, self::KIND_DATA, $key]);
+    }
+
+    private function deleteDataRow(string $key): bool
+    {
+        $statement = $this->pdo->prepare(
+            "DELETE FROM {$this->table} WHERE namespace = ? AND kind = ? AND cache_key = ?",
+        );
+        return $statement->execute([$this->namespace, self::KIND_DATA, $key]);
+    }
+
     private function deleteByKind(string $kind, array $keys): bool
     {
         foreach (array_chunk($keys, self::BATCH_SIZE) as $chunk) {
@@ -271,18 +402,13 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
         return true;
     }
 
-    /**
-     * @param list<string> $keys
-     * @return array<string, array{payload:string, expires:int|null}>
-     */
     private function fetchRows(string $kind, array $keys): array
     {
         $rows = [];
         foreach (array_chunk($keys, self::BATCH_SIZE) as $chunk) {
             $marks = implode(',', array_fill(0, count($chunk), '?'));
             $statement = $this->pdo->prepare(
-                "SELECT cache_key, payload, expires FROM {$this->table} "
-                . "WHERE namespace = ? AND kind = ? AND cache_key IN ({$marks})",
+                "SELECT cache_key, payload, expires FROM {$this->table} WHERE namespace = ? AND kind = ? AND cache_key IN ({$marks})",
             );
             $statement->execute([$this->namespace, $kind, ...$chunk]);
             foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
@@ -306,19 +432,41 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
         return $rows;
     }
 
-    /** @param array{payload:string, expires:int|null} $row */
     private function hydrate(string $key, array $row): ?CacheItem
     {
         if (CachePayloadCodec::isExpired($row['expires'])) {
             return null;
         }
-
         $record = $this->decodeRecordFromBlob($row['payload']);
 
         return $record === null ? null : $this->genericItemFromRecord($key, $record);
     }
 
-    /** @param list<array{0:string, 1:string, 2:string, 3:int|null}> $rows */
+    private function recordFromRow(array $row): ?CacheRecord
+    {
+        if (CachePayloadCodec::isExpired($row['expires'])) {
+            return null;
+        }
+        $record = $this->decodeRecordFromBlob($row['payload']);
+
+        return $record instanceof CacheRecord ? $record : null;
+    }
+
+    private function recordTagsAreCurrent(CacheRecord $record): bool
+    {
+        if ($record->tags === []) {
+            return true;
+        }
+        $rows = $this->fetchRows(self::KIND_TAG, array_keys($record->tags));
+        foreach ($record->tags as $tag => $generation) {
+            if (($rows[$tag]['payload'] ?? null) !== $generation) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private function upsertChunk(array $rows): bool
     {
         if (!in_array($this->driver, ['pgsql', 'sqlite', 'mysql', 'mariadb'], true)) {
@@ -327,8 +475,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
 
         $values = implode(',', array_fill(0, count($rows), '(?, ?, ?, ?, ?)'));
         $suffix = in_array($this->driver, ['pgsql', 'sqlite'], true)
-            ? 'ON CONFLICT (namespace, kind, cache_key) DO UPDATE SET '
-                . 'payload = EXCLUDED.payload, expires = EXCLUDED.expires'
+            ? 'ON CONFLICT (namespace, kind, cache_key) DO UPDATE SET payload = EXCLUDED.payload, expires = EXCLUDED.expires'
             : 'ON DUPLICATE KEY UPDATE payload = VALUES(payload), expires = VALUES(expires)';
         $parameters = [];
         foreach ($rows as [$kind, $key, $payload, $expires]) {
@@ -336,21 +483,17 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
         }
 
         return $this->pdo->prepare(
-            "INSERT INTO {$this->table} (namespace, kind, cache_key, payload, expires) "
-            . "VALUES {$values} {$suffix}",
+            "INSERT INTO {$this->table} (namespace, kind, cache_key, payload, expires) VALUES {$values} {$suffix}",
         )->execute($parameters);
     }
 
-    /** @param list<array{0:string, 1:string, 2:string, 3:int|null}> $rows */
     private function upsertGenericRows(array $rows): bool
     {
         $this->pdo->beginTransaction();
-
         try {
             foreach ($rows as [$kind, $key, $payload, $expires]) {
                 $update = $this->pdo->prepare(
-                    "UPDATE {$this->table} SET payload = ?, expires = ? "
-                    . 'WHERE namespace = ? AND kind = ? AND cache_key = ?',
+                    "UPDATE {$this->table} SET payload = ?, expires = ? WHERE namespace = ? AND kind = ? AND cache_key = ?",
                 );
                 $update->execute([$payload, $expires, $this->namespace, $kind, $key]);
                 if ($update->rowCount() === 0) {
@@ -362,23 +505,19 @@ final class PdoCacheAdapter extends AbstractCacheAdapter
                         continue;
                     }
                     $this->pdo->prepare(
-                        "INSERT INTO {$this->table} (namespace, kind, cache_key, payload, expires) "
-                        . 'VALUES (?, ?, ?, ?, ?)',
+                        "INSERT INTO {$this->table} (namespace, kind, cache_key, payload, expires) VALUES (?, ?, ?, ?, ?)",
                     )->execute([$this->namespace, $kind, $key, $payload, $expires]);
                 }
             }
-
             return $this->pdo->commit();
         } catch (PDOException $failure) {
             if ($this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
-
             throw $failure;
         }
     }
 
-    /** @param list<array{0:string, 1:string, 2:string, 3:int|null}> $rows */
     private function upsertRows(array $rows): bool
     {
         foreach (array_chunk($rows, self::BATCH_SIZE) as $chunk) {
