@@ -343,6 +343,7 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
             if (is_resource($handle)) {
                 fclose($handle);
             }
+
             throw new RuntimeException('Unable to acquire file cache key lock.');
         }
 
