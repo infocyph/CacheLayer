@@ -335,6 +335,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
             if (is_resource($handle)) {
                 fclose($handle);
             }
+
             throw new RuntimeException('Unable to acquire PHP-file cache key lock.');
         }
 
