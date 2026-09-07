@@ -7,6 +7,7 @@ namespace Infocyph\CacheLayer\Cache;
 use DateInterval;
 use DateTimeInterface;
 use Infocyph\CacheLayer\Cache\Adapter\AtomicCachePoolInterface;
+use Infocyph\CacheLayer\Cache\Adapter\ConditionalAtomicCachePoolInterface;
 use Infocyph\CacheLayer\Cache\Adapter\InternalCachePoolInterface;
 use Infocyph\CacheLayer\Cache\Metrics\CacheMetricsCollectorInterface;
 use Infocyph\CacheLayer\Exceptions\CacheBackendException;
@@ -28,6 +29,9 @@ final class AtomicCache implements AtomicCacheInterface
         CacheMetricsCollectorInterface $metrics,
     ): ?self {
         if (!$adapter instanceof AtomicCachePoolInterface) {
+            return null;
+        }
+        if ($adapter instanceof ConditionalAtomicCachePoolInterface && !$adapter->supportsAtomicCache()) {
             return null;
         }
 
