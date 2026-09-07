@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace Infocyph\CacheLayer\Cache\Adapter;
 
 use Infocyph\CacheLayer\Cache\CacheInput;
+use Infocyph\CacheLayer\Cache\CacheRecord;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Psr\Cache\CacheItemInterface;
 use RuntimeException;
 
-final class PhpFilesCacheAdapter extends AbstractCacheAdapter
+final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolInterface
 {
     use SecuresFilesystemDirectories;
 
@@ -17,11 +18,65 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
 
     private string $dataDirectory;
 
+    private string $lockDirectory;
+
     private string $metadataDirectory;
 
     public function __construct(string $namespace = 'default', ?string $baseDir = null)
     {
         $this->createDirectory($namespace, $baseDir);
+    }
+
+    public function atomicCompareAndSet(string $key, mixed $expected, CacheItemInterface $replacement): bool
+    {
+        if (!$this->supportsItem($replacement)) {
+            return false;
+        }
+        $expiration = CachePayloadCodec::expirationFromItem($replacement);
+        if ($expiration['ttl'] !== null && $expiration['ttl'] <= 0) {
+            return false;
+        }
+
+        return $this->withKeyLock($key, function () use ($key, $expected, $replacement): bool {
+            $record = $this->readLiveRecordUnlocked($key);
+            if (!$record instanceof CacheRecord || $record->value !== $expected) {
+                return false;
+            }
+
+            return $this->persistItemUnlocked($replacement);
+        });
+    }
+
+    public function atomicGetAndDelete(string $key): CacheItemInterface
+    {
+        return $this->withKeyLock($key, function () use ($key): CacheItemInterface {
+            $record = $this->readLiveRecordUnlocked($key);
+            if (!$record instanceof CacheRecord) {
+                return $this->genericMiss($key);
+            }
+            $this->deleteItemUnlocked($key);
+
+            return $this->genericItemFromRecord($key, $record);
+        });
+    }
+
+    public function atomicSetIfAbsent(CacheItemInterface $item): bool
+    {
+        if (!$this->supportsItem($item)) {
+            return false;
+        }
+        $expiration = CachePayloadCodec::expirationFromItem($item);
+        if ($expiration['ttl'] !== null && $expiration['ttl'] <= 0) {
+            return false;
+        }
+
+        return $this->withKeyLock($item->getKey(), function () use ($item): bool {
+            if ($this->readLiveRecordUnlocked($item->getKey()) instanceof CacheRecord) {
+                return false;
+            }
+
+            return $this->persistItemUnlocked($item);
+        });
     }
 
     public function clear(): bool
@@ -34,7 +89,6 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
         foreach (glob($this->metadataDirectory . '*') ?: [] as $file) {
             $ok = (!is_file($file) || unlink($file)) && $ok;
         }
-
         $this->deferred = [];
 
         return $ok;
@@ -42,16 +96,9 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
 
     public function deleteItem(string $key): bool
     {
-        $file = $this->fileFor($key);
-        $this->invalidateOpcache($file);
-
-        return !is_file($file) || unlink($file);
+        return $this->withKeyLock($key, fn(): bool => $this->deleteItemUnlocked($key));
     }
 
-    /**
-     * @param array $keys The keys argument.
-     * @phpstan-param list<string> $keys
-     */
     public function deleteItems(array $keys): bool
     {
         $ok = true;
@@ -64,27 +111,14 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
 
     public function getItem(string $key): CacheItem
     {
-        $file = $this->fileFor($key);
-        if (!is_file($file)) {
-            return $this->genericMiss($key);
+        $record = $this->readLiveRecordUnlocked($key);
+        if ($record instanceof CacheRecord) {
+            return $this->genericItemFromRecord($key, $record);
         }
 
-        $row = require $file;
-        $payload = is_array($row) && is_string($row['p'] ?? null)
-            ? $row['p']
-            : null;
-        if (!is_string($payload)) {
-            return $this->genericDeleteAndMiss($key);
-        }
-
-        return $this->genericFromBase64WithInvalidator(
-            $key,
-            $payload,
-            fn(): bool => $this->deleteItem($key),
-        );
+        return $this->genericMiss($key);
     }
 
-    /** @param list<string> $tags */
     #[\Override]
     public function getTagGenerations(array $tags): array
     {
@@ -109,38 +143,16 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
         return $this->getItem($key)->isHit();
     }
 
-    /**
-     * @param array $keys The keys argument.
-     * @phpstan-param list<string> $keys
-     * @phpstan-return array<string, CacheItem>
-     */
     public function multiFetch(array $keys): array
     {
         $items = [];
-        $stale = [];
         foreach ($keys as $key) {
-            $file = $this->fileFor($key);
-            if (!is_file($file)) {
-                $items[$key] = $this->genericMiss($key);
-
-                continue;
-            }
-            $row = require $file;
-            $payload = is_array($row) && is_string($row['p'] ?? null) ? $row['p'] : null;
-            $item = $this->genericFromBase64WithInvalidator($key, $payload, static fn(): bool => true);
-            if (!$item->isHit()) {
-                $stale[] = $key;
-            }
-            $items[$key] = $item;
-        }
-        if ($stale !== []) {
-            $this->deleteItems($stale);
+            $items[$key] = $this->getItem($key);
         }
 
         return $items;
     }
 
-    /** @param list<string> $tags */
     #[\Override]
     public function rotateTagGenerations(array $tags): bool
     {
@@ -162,7 +174,6 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
         return $this->persistItem($item);
     }
 
-    /** @param array<string, CacheItemInterface> $items */
     public function saveItems(array $items): bool
     {
         if (!$this->supportsItems($items)) {
@@ -184,33 +195,18 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
         $root = $baseDir . DIRECTORY_SEPARATOR . 'cache_' . $ns . DIRECTORY_SEPARATOR;
         $this->dataDirectory = $root . 'data' . DIRECTORY_SEPARATOR;
         $this->metadataDirectory = $root . 'meta' . DIRECTORY_SEPARATOR;
+        $this->lockDirectory = $root . 'locks' . DIRECTORY_SEPARATOR;
 
-        $this->assertPathNotSymlink($baseDir, 'PHP cache base directory');
-        $this->assertPathNotSymlink($this->dataDirectory, 'PHP cache data directory');
-        $this->assertPathNotSymlink($this->metadataDirectory, 'PHP cache metadata directory');
-
-        if (!is_dir($baseDir) && !mkdir($baseDir, 0700, true) && !is_dir($baseDir)) {
-            throw new RuntimeException("Unable to create PHP cache base directory: {$baseDir}");
+        foreach ([$baseDir, $this->dataDirectory, $this->metadataDirectory, $this->lockDirectory] as $directory) {
+            $this->assertPathNotSymlink($directory, 'PHP cache directory');
+            if (!is_dir($directory) && !mkdir($directory, 0700, true) && !is_dir($directory)) {
+                throw new RuntimeException("Unable to create PHP cache directory: {$directory}");
+            }
+            $this->assertSecureDirectory($directory, 'PHP cache directory');
         }
-
-        if (!is_dir($this->dataDirectory)
-            && !mkdir($this->dataDirectory, 0700, true)
-            && !is_dir($this->dataDirectory)) {
-            throw new RuntimeException("Unable to create PHP cache data directory: {$this->dataDirectory}");
-        }
-        if (!is_dir($this->metadataDirectory)
-            && !mkdir($this->metadataDirectory, 0700, true)
-            && !is_dir($this->metadataDirectory)) {
-            throw new RuntimeException("Unable to create PHP cache metadata directory: {$this->metadataDirectory}");
-        }
-
-        $this->assertSecureDirectory($baseDir, 'PHP cache base directory');
-        if (!is_writable($this->dataDirectory) || !is_writable($this->metadataDirectory)) {
+        if (!is_writable($this->dataDirectory) || !is_writable($this->metadataDirectory) || !is_writable($this->lockDirectory)) {
             throw new RuntimeException('PHP cache directories are not writable.');
         }
-
-        $this->assertSecureDirectory($this->dataDirectory, 'PHP cache data directory');
-        $this->assertSecureDirectory($this->metadataDirectory, 'PHP cache metadata directory');
     }
 
     private function defaultBaseDirectory(): string
@@ -218,6 +214,14 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
         return rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR)
             . DIRECTORY_SEPARATOR
             . str_replace('/', DIRECTORY_SEPARATOR, self::DEFAULT_BASE_DIR);
+    }
+
+    private function deleteItemUnlocked(string $key): bool
+    {
+        $file = $this->fileFor($key);
+        $this->invalidateOpcache($file);
+
+        return !is_file($file) || unlink($file);
     }
 
     private function fileFor(string $key): string
@@ -239,39 +243,85 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter
 
     private function persistItem(CacheItemInterface $item): bool
     {
+        return $this->withKeyLock($item->getKey(), fn(): bool => $this->persistItemUnlocked($item));
+    }
 
+    private function persistItemUnlocked(CacheItemInterface $item): bool
+    {
         $expires = CachePayloadCodec::expirationFromItem($item);
         if ($expires['ttl'] !== null && $expires['ttl'] <= 0) {
-            return $this->deleteItem($item->getKey());
+            return $this->deleteItemUnlocked($item->getKey());
         }
 
         $blob = $this->encodeItem($item, $expires['expiresAt']);
         $payload = var_export(base64_encode($blob), true);
         $code = "<?php\n\nreturn ['p' => {$payload}];\n";
-
         $file = $this->fileFor($item->getKey());
         $tmp = tempnam($this->dataDirectory, 'pc_');
         if ($tmp === false) {
             return false;
         }
-
         if (file_put_contents($tmp, $code, LOCK_EX) === false) {
-            if (is_file($tmp)) {
-                unlink($tmp);
-            }
-
+            @unlink($tmp);
             return false;
         }
-
         $this->invalidateOpcache($file);
         if (!rename($tmp, $file)) {
-            if (is_file($tmp)) {
-                unlink($tmp);
-            }
-
+            @unlink($tmp);
             return false;
         }
 
         return true;
+    }
+
+    private function readLiveRecordUnlocked(string $key): ?CacheRecord
+    {
+        $file = $this->fileFor($key);
+        if (!is_file($file)) {
+            return null;
+        }
+        $row = require $file;
+        $payload = is_array($row) && is_string($row['p'] ?? null) ? $row['p'] : null;
+        $blob = is_string($payload) ? base64_decode($payload, true) : false;
+        $record = is_string($blob) ? $this->decodeRecordFromBlob($blob) : null;
+        if (!$record instanceof CacheRecord || !$this->recordTagsAreCurrent($record)) {
+            return null;
+        }
+
+        return $record;
+    }
+
+    private function recordTagsAreCurrent(CacheRecord $record): bool
+    {
+        foreach ($record->tags as $tag => $generation) {
+            $current = is_file($this->metadataFileFor($tag))
+                ? file_get_contents($this->metadataFileFor($tag))
+                : false;
+            if (!is_string($current) || strtolower($current) !== $generation) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /** @template T @param callable():T $callback @return T */
+    private function withKeyLock(string $key, callable $callback): mixed
+    {
+        $path = $this->lockDirectory . hash('xxh128', $key) . '.lock';
+        $handle = fopen($path, 'c');
+        if (!is_resource($handle) || !flock($handle, LOCK_EX)) {
+            if (is_resource($handle)) {
+                fclose($handle);
+            }
+            throw new RuntimeException('Unable to acquire PHP-file cache key lock.');
+        }
+
+        try {
+            return $callback();
+        } finally {
+            flock($handle, LOCK_UN);
+            fclose($handle);
+        }
     }
 }
