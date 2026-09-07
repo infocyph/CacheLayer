@@ -99,11 +99,12 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         return $this->withKeyLock($key, fn(): bool => $this->deleteItemUnlocked($key));
     }
 
+    /** @param list<string> $keys */
     public function deleteItems(array $keys): bool
     {
         $ok = true;
         foreach ($keys as $key) {
-            $ok = $this->deleteItem((string) $key) && $ok;
+            $ok = $this->deleteItem($key) && $ok;
         }
 
         return $ok;
@@ -119,6 +120,10 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         return $this->genericMiss($key);
     }
 
+    /**
+     * @param list<string> $tags
+     * @return array<string, string>
+     */
     #[\Override]
     public function getTagGenerations(array $tags): array
     {
@@ -143,6 +148,10 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         return $this->getItem($key)->isHit();
     }
 
+    /**
+     * @param list<string> $keys
+     * @return array<string, CacheItem>
+     */
     public function multiFetch(array $keys): array
     {
         $items = [];
@@ -153,6 +162,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         return $items;
     }
 
+    /** @param list<string> $tags */
     #[\Override]
     public function rotateTagGenerations(array $tags): bool
     {
@@ -174,6 +184,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         return $this->persistItem($item);
     }
 
+    /** @param array<string, CacheItemInterface> $items */
     public function saveItems(array $items): bool
     {
         if (!$this->supportsItems($items)) {
@@ -262,12 +273,18 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
             return false;
         }
         if (file_put_contents($tmp, $code, LOCK_EX) === false) {
-            @unlink($tmp);
+            if (is_file($tmp)) {
+                unlink($tmp);
+            }
+
             return false;
         }
         $this->invalidateOpcache($file);
         if (!rename($tmp, $file)) {
-            @unlink($tmp);
+            if (is_file($tmp)) {
+                unlink($tmp);
+            }
+
             return false;
         }
 
@@ -305,7 +322,11 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         return true;
     }
 
-    /** @template T @param callable():T $callback @return T */
+    /**
+     * @template T
+     * @param callable(): T $callback
+     * @return T
+     */
     private function withKeyLock(string $key, callable $callback): mixed
     {
         $path = $this->lockDirectory . hash('xxh128', $key) . '.lock';
