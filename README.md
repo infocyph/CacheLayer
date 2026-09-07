@@ -101,15 +101,22 @@ $state = $atomic->getAndDelete('oauth.state.42');
 | Backend | Atomic cache coordination | Scope |
 |---|---|---|
 | Array memory | Yes | one PHP process |
+| WeakMap | Yes | one PHP process / adapter instance |
 | Shared memory | Yes | one host / shared SysV segment |
 | Redis / Valkey | Yes | supplied authoritative Redis-compatible store |
 | Redis Cluster | Yes | stable CacheLayer hash-slot bucket |
 | MongoDB | Yes | supplied authoritative collection |
-| APCu / Memcached | No | no full atomic consume primitive |
-| PDO / SQLite | No | no cross-driver atomic contract in 3.3 |
-| File / PHP files | No | ordinary writers do not share one atomic key lock |
-| ScyllaDB | No | no full three-operation contract exposed |
-| WeakMap / Null / Tiered | No | not one authoritative coordination domain |
+| Memcached | Yes | supplied Memcached key/CAS domain |
+| SQLite PDO | Yes | supplied SQLite database |
+| PostgreSQL PDO | Yes | supplied PostgreSQL database |
+| MySQL / MariaDB PDO | Yes | supplied transactional database |
+| File / PHP files | Yes | one reliable filesystem lock domain |
+| APCu | No | no arbitrary-value CAS / consume primitive |
+| Generic / unknown PDO | No | no portable cross-driver atomic contract |
+| ScyllaDB | No | ordinary cache writes do not use the LWT architecture required for the full contract |
+| Null / Tiered | No | no single retained authoritative coordination domain |
+
+Memcached uses native `add()`/CAS primitives and a reserved tombstone for linearizable logical consumption. File and PHP-file caches route ordinary key writers and atomic mutations through the same deterministic per-key `flock()`; their guarantee is therefore limited to a filesystem where that lock domain is reliable. PDO capability is runtime-qualified: SQLite, PostgreSQL, and MySQL/MariaDB expose it, while unknown PDO drivers do not. SQLite coordinates writers with `BEGIN IMMEDIATE`; PostgreSQL and MySQL/MariaDB use transactional row locking. Atomic PDO calls require CacheLayer to own the transaction and reject execution inside a caller-owned active transaction.
 
 Use dedicated, untagged keys for portable replay claims, nonces, challenges, state transitions, and one-time state. Tag rotation is a separate invalidation mechanism and is not part of the portable atomic linearization boundary. Redis/Valkey, Redis Cluster, and MongoDB therefore reject `compareAndSet()` on tagged records. Array memory and SharedMemory can validate tag generations inside their own local atomic domain, but callers should not depend on tagged CAS when code must be portable across backends. Tiered caches remain non-atomic even when an individual tier supports the capability.
 

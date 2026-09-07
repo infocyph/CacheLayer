@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace Infocyph\CacheLayer\Cache\Adapter;
 
 use Infocyph\CacheLayer\Cache\CacheInput;
+use Infocyph\CacheLayer\Cache\CacheRecord;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Psr\Cache\CacheItemInterface;
 use RuntimeException;
 
-final class MemcachedCacheAdapter extends AbstractCacheAdapter
+final class MemcachedCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolInterface
 {
+    private const string ATOMIC_TOMBSTONE = "\0cachelayer:atomic:tombstone:v1\0";
+
     private readonly \Memcached $client;
 
     private readonly string $namespace;
@@ -31,6 +34,117 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter
         if ($client === null) {
             $this->client->addServers($servers);
         }
+    }
+
+    public function atomicCompareAndSet(
+        string $key,
+        mixed $expected,
+        CacheItemInterface $replacement,
+    ): bool {
+        if (!$this->supportsItem($replacement)) {
+            return false;
+        }
+
+        $expiration = CachePayloadCodec::expirationFromItem($replacement);
+        $ttl = $expiration['ttl'];
+        if ($ttl !== null && $ttl <= 0) {
+            return false;
+        }
+
+        $mapped = $this->mapData($key);
+        $extended = $this->extendedGet($mapped);
+        if ($extended === null) {
+            return false;
+        }
+
+        $blob = $extended['value'];
+        if ($blob === self::ATOMIC_TOMBSTONE) {
+            return false;
+        }
+
+        $record = $this->decodeRecordFromBlob($blob);
+        if (!$record instanceof CacheRecord
+            || $record->namespaceGeneration !== $this->namespaceGeneration()
+            || $record->tags !== []
+            || $record->value !== $expected) {
+            return false;
+        }
+
+        $replacementBlob = $this->encodeItem(
+            $replacement,
+            $expiration['expiresAt'],
+            $this->namespaceGeneration(),
+        );
+
+        return $this->client->cas(
+            $extended['cas'],
+            $mapped,
+            $replacementBlob,
+            $ttl ?? 0,
+        );
+    }
+
+    public function atomicGetAndDelete(string $key): CacheItemInterface
+    {
+        $mapped = $this->mapData($key);
+        $extended = $this->extendedGet($mapped);
+        if ($extended === null || $extended['value'] === self::ATOMIC_TOMBSTONE) {
+            return $this->genericMiss($key);
+        }
+
+        $record = $this->decodeRecordFromBlob($extended['value']);
+        if (!$record instanceof CacheRecord
+            || $record->namespaceGeneration !== $this->namespaceGeneration()
+            || !$this->recordTagsAreCurrent($record)) {
+            return $this->genericMiss($key);
+        }
+
+        if (!$this->client->cas($extended['cas'], $mapped, self::ATOMIC_TOMBSTONE, 1)) {
+            return $this->genericMiss($key);
+        }
+
+        return $this->genericItemFromRecord($key, $record);
+    }
+
+    public function atomicSetIfAbsent(CacheItemInterface $item): bool
+    {
+        if (!$this->supportsItem($item)) {
+            return false;
+        }
+
+        $expiration = CachePayloadCodec::expirationFromItem($item);
+        $ttl = $expiration['ttl'];
+        if ($ttl !== null && $ttl <= 0) {
+            return false;
+        }
+
+        $mapped = $this->mapData($item->getKey());
+        $blob = $this->encodeItem(
+            $item,
+            $expiration['expiresAt'],
+            $this->namespaceGeneration(),
+        );
+
+        if ($this->client->add($mapped, $blob, $ttl ?? 0)) {
+            return true;
+        }
+
+        $extended = $this->extendedGet($mapped);
+        if ($extended === null) {
+            return $this->client->add($mapped, $blob, $ttl ?? 0);
+        }
+
+        $current = $extended['value'];
+        $record = $current === self::ATOMIC_TOMBSTONE
+            ? null
+            : $this->decodeRecordFromBlob($current);
+        if ($record instanceof CacheRecord
+            && $record->namespaceGeneration === $this->namespaceGeneration()
+            && $this->recordTagsAreCurrent($record)) {
+            return false;
+        }
+
+        return $this->client->cas($extended['cas'], $mapped, $blob, $ttl ?? 0);
     }
 
     public function clear(): bool
@@ -80,6 +194,9 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter
         $stored = is_array($stored) ? $stored : [];
         $generation = $this->namespaceGeneration($stored[$this->generationKey()] ?? null);
         $blob = $stored[$mapped] ?? null;
+        if ($blob === self::ATOMIC_TOMBSTONE) {
+            return $this->genericMiss($key);
+        }
         $record = is_string($blob) ? $this->decodeRecordFromBlob($blob) : null;
         if ($record !== null && $record->namespaceGeneration === $generation) {
             return $this->genericItemFromRecord($key, $record);
@@ -139,6 +256,11 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter
         foreach ($keys as $key) {
             $mapped = $this->mapData($key);
             $blob = $stored[$mapped] ?? null;
+            if ($blob === self::ATOMIC_TOMBSTONE) {
+                $items[$key] = $this->genericMiss($key);
+
+                continue;
+            }
             $record = is_string($blob) ? $this->decodeRecordFromBlob($blob) : null;
             if ($record === null || $record->namespaceGeneration !== $generation) {
                 $items[$key] = $this->genericMiss($key);
@@ -222,6 +344,21 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter
         return true;
     }
 
+    /** @return array{value:string, cas:int|float}|null */
+    private function extendedGet(string $key): ?array
+    {
+        $value = $this->client->get($key, null, \Memcached::GET_EXTENDED);
+        if (!is_array($value) || !is_string($value['value'] ?? null)) {
+            return null;
+        }
+        $cas = $value['cas'] ?? null;
+        if (!is_int($cas) && !is_float($cas)) {
+            return null;
+        }
+
+        return ['value' => $value['value'], 'cas' => $cas];
+    }
+
     private function generationKey(): string
     {
         return $this->namespace . ':m:generation';
@@ -258,6 +395,22 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter
         }
 
         return $generation;
+    }
+
+    private function recordTagsAreCurrent(CacheRecord $record): bool
+    {
+        if ($record->tags === []) {
+            return true;
+        }
+
+        $current = $this->getTagGenerations(array_keys($record->tags));
+        foreach ($record->tags as $tag => $generation) {
+            if (($current[$tag] ?? null) !== $generation) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function tagGeneration(string $key, mixed $value): string

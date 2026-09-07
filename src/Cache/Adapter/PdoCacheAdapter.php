@@ -11,8 +11,10 @@ use PDOException;
 use Psr\Cache\CacheItemInterface;
 use RuntimeException;
 
-final class PdoCacheAdapter extends AbstractCacheAdapter
+final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalAtomicCachePoolInterface
 {
+    use PdoAtomicOperations;
+
     private const int BATCH_SIZE = 250;
 
     private const string DEFAULT_SQLITE_DIR = 'cachelayer/pdo';

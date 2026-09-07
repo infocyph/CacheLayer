@@ -10,7 +10,7 @@ use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Psr\Cache\CacheItemInterface;
 use WeakReference;
 
-final class WeakMapCacheAdapter extends AbstractCacheAdapter
+final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolInterface
 {
     private readonly string $ns;
 
@@ -29,6 +29,58 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter
     public function __construct(string $namespace = 'default')
     {
         $this->ns = CacheInput::namespace($namespace);
+    }
+
+    public function atomicCompareAndSet(
+        string $key,
+        mixed $expected,
+        CacheItemInterface $replacement,
+    ): bool {
+        if (!$this->supportsItem($replacement)) {
+            return false;
+        }
+
+        $expiration = CachePayloadCodec::expirationFromItem($replacement);
+        if ($expiration['ttl'] !== null && $expiration['ttl'] <= 0) {
+            return false;
+        }
+
+        $current = $this->getItem($key);
+        if (!$current->isHit() || $current->get() !== $expected) {
+            return false;
+        }
+
+        return $this->persistItem($replacement, $expiration);
+    }
+
+    public function atomicGetAndDelete(string $key): CacheItemInterface
+    {
+        $current = $this->getItem($key);
+        if (!$current->isHit()) {
+            return $current;
+        }
+
+        $this->deleteItem($key);
+
+        return $current;
+    }
+
+    public function atomicSetIfAbsent(CacheItemInterface $item): bool
+    {
+        if (!$this->supportsItem($item)) {
+            return false;
+        }
+
+        $expiration = CachePayloadCodec::expirationFromItem($item);
+        if ($expiration['ttl'] !== null && $expiration['ttl'] <= 0) {
+            return false;
+        }
+
+        if ($this->getItem($item->getKey())->isHit()) {
+            return false;
+        }
+
+        return $this->persistItem($item, $expiration);
     }
 
     public function clear(): bool
