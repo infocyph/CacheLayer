@@ -107,32 +107,54 @@ never implements these methods as public ``has()/get()`` followed by
 
 The supported facade backends are:
 
-=================  ======  ================================================
-Backend            Atomic  Consistency domain
-=================  ======  ================================================
-Array memory       yes     one PHP process
-Shared memory      yes     one host / shared SysV segment
-Redis / Valkey     yes     the supplied authoritative Redis-compatible store
-Redis Cluster      yes     the key's stable CacheLayer hash-slot bucket
-MongoDB            yes     the supplied authoritative MongoDB collection
-APCu               no      no full atomic consume primitive
-Memcached          no      no full atomic consume primitive
-PDO / SQLite       no      no cross-driver contract is claimed in 3.3
-File / PHP files   no      ordinary writers do not share an atomic key lock
-ScyllaDB           no      no full three-operation contract is exposed
-WeakMap            no      process-local object cache, not coordination
-Null store         no      non-authoritative sink
-Tiered cache       no      tiers cannot form one linearizable authority
-=================  ======  ================================================
+==========================  ======  ====================================================
+Backend                     Atomic  Consistency domain
+==========================  ======  ====================================================
+Array memory                yes     one PHP process
+WeakMap                     yes     one PHP process / adapter instance
+Shared memory               yes     one host / shared SysV segment
+Redis / Valkey              yes     the supplied authoritative Redis-compatible store
+Redis Cluster               yes     the key's stable CacheLayer hash-slot bucket
+MongoDB                     yes     the supplied authoritative MongoDB collection
+Memcached                   yes     the supplied authoritative Memcached CAS domain
+PDO: SQLite                 yes     the supplied SQLite database
+PDO: PostgreSQL             yes     the supplied PostgreSQL database
+PDO: MySQL / MariaDB        yes     the supplied transactional database
+File                        yes     one reliable filesystem ``flock()`` domain
+PHP files                   yes     one reliable filesystem ``flock()`` domain
+APCu                        no      no arbitrary-value CAS/consume primitive
+PDO: other drivers          no      no portable transaction/locking contract is claimed
+ScyllaDB                    no      LWT is not mixed with ordinary cache writes
+Null store                  no      non-authoritative sink
+Tiered cache                no      tiers cannot form one linearizable authority
+==========================  ======  ====================================================
+
+Memcached uses native CAS tokens for replacement. Atomic consume linearizes by
+CAS-replacing the value with an internal short-lived tombstone; ordinary reads
+treat the tombstone as a miss, while ``setIfAbsent()`` can immediately reclaim
+it through CAS. The tombstone is never exposed as a logical cache value.
+
+File and PHP-file stores use deterministic per-key ``flock()`` files. Ordinary
+``save()`` and ``deleteItem()`` mutations take the same key lock as atomic
+operations, while reads remain lock-free over atomic rename replacement. Their
+atomic guarantee therefore applies only inside a filesystem domain where
+``flock()`` semantics are reliable.
+
+PDO atomic capability is driver-qualified. SQLite uses an immediate writer
+transaction; PostgreSQL and MySQL/MariaDB use transactional row locking plus
+conflict-safe inserts. Other PDO drivers return no atomic capability rather than
+claiming a cross-driver guarantee. Atomic PDO operations require ownership of
+the PDO transaction and reject execution inside an already-active caller
+transaction.
 
 Use dedicated, untagged keys for portable replay claims, nonces, challenges,
 state transitions, one-time state, and similar coordination. Tag invalidation
 is a separate cache coordination mechanism and is not part of the portable
-atomic linearization boundary. Redis/Valkey, Redis Cluster, and MongoDB reject
-``compareAndSet()`` on tagged records because their tag metadata cannot join the
-same atomic replacement condition. Array memory and SharedMemory can validate
-tag generations inside their local atomic domain, but portable protocols should
-not depend on tagged CAS behavior.
+atomic linearization boundary. Redis/Valkey, Redis Cluster, MongoDB, and
+Memcached reject ``compareAndSet()`` on tagged records because their tag
+metadata cannot join the same atomic replacement condition. Process-local and
+single-lock-domain backends can validate tag generations inside their atomic
+domain, but portable protocols should not depend on tagged CAS behavior.
 
 ``atomic()`` returns ``null`` rather than emulating missing backend primitives.
 This remains true for a tiered facade even when one or more individual tiers
