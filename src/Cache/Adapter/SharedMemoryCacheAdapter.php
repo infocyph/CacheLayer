@@ -195,7 +195,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         return $this->genericFromBlobWithInvalidator(
             $key,
             $blob,
-            fn(): bool => $this->deleteItem($key),
+            static fn(): bool => true,
         );
     }
 
@@ -231,10 +231,9 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
      */
     public function multiFetch(array $keys): array
     {
-        [$items, $invalid] = $this->withSharedLock(function () use ($keys): array {
+        $items = $this->withSharedLock(function () use ($keys): array {
             $store = $this->loadStore();
             $items = [];
-            $invalid = [];
             foreach ($keys as $key) {
                 $mapped = $this->map($key);
                 $blob = $store[$mapped] ?? null;
@@ -242,16 +241,10 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
                 $items[$key] = $record === null
                     ? $this->genericMiss($key)
                     : $this->genericItemFromRecord($key, $record);
-                if ($blob !== null && $record === null) {
-                    $invalid[] = $key;
-                }
             }
 
-            return [$items, $invalid];
+            return $items;
         });
-        if ($invalid !== []) {
-            $this->deleteItems($invalid);
-        }
 
         return $items;
     }
