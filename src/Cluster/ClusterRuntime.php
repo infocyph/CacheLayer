@@ -17,6 +17,7 @@ use Infocyph\CacheLayer\Cluster\Recovery\ClusterRecoveryManager;
 use Infocyph\CacheLayer\Cluster\Transport\InvalidationTransportInspectorInterface;
 use Infocyph\CacheLayer\Cluster\Transport\InvalidationTransportInterface;
 use Infocyph\CacheLayer\Cluster\Transport\TransactionalInvalidationTransportInterface;
+use Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration;
 use PDO;
 
 final readonly class ClusterRuntime
@@ -63,6 +64,29 @@ final readonly class ClusterRuntime
             $total += $processed;
             if ($processed < $limit) {
                 break;
+            }
+        }
+
+        return $total;
+    }
+
+    public function poll(
+        ?int $limit = null,
+        int $cycles = 1,
+        float $idleSeconds = 0.1,
+    ): int {
+        $limit ??= $this->consumerBatchSize;
+        if ($limit < 1 || $cycles < 1 || !is_finite($idleSeconds) || $idleSeconds < 0.0 || $idleSeconds > 60.0) {
+            throw new ClusterCacheException('Cluster polling requires a positive limit/cycle count and a 0-60 second idle interval.');
+        }
+
+        $total = 0;
+        for ($cycle = 0; $cycle < $cycles; ++$cycle) {
+            RunwireIntegration::checkpoint();
+            $processed = $this->consumer->consume($limit);
+            $total += $processed;
+            if ($cycle + 1 < $cycles && $processed < $limit && $idleSeconds > 0.0) {
+                RunwireIntegration::sleep($idleSeconds);
             }
         }
 
