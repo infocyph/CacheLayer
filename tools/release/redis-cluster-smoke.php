@@ -12,7 +12,7 @@ if (!is_string($rawSeeds) || $rawSeeds === '') {
     throw new RuntimeException('CACHELAYER_REDIS_CLUSTER_SEEDS is required.');
 }
 
-$seeds = array_values(array_filter(array_map('trim', explode(',', $rawSeeds))));
+$seeds = array_values(array_filter(array_map(trim(...), explode(',', $rawSeeds))));
 if (count($seeds) < 3) {
     throw new RuntimeException('Real Redis Cluster verification requires at least three seeds.');
 }
