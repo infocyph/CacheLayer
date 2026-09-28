@@ -338,6 +338,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
     {
         $operations = [];
         foreach ($generations as $tag => $generation) {
+            $tag = (string) $tag;
             if (!self::isGeneration($generation)) {
                 return false;
             }
