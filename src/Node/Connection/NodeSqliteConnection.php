@@ -49,15 +49,8 @@ final class NodeSqliteConnection
         }
     }
 
-    private static function prepareDirectory(string $file): void
+    private static function assertSecureDirectory(string $directory): void
     {
-        self::assertTrustedFilePath($file);
-
-        $directory = dirname($file);
-        if (!is_dir($directory) && !mkdir($directory, 0750, true) && !is_dir($directory)) {
-            throw new NodeCacheConfigurationException("Unable to create SQLite cache directory: {$directory}");
-        }
-        self::assertTrustedFilePath($file);
         if (!is_writable($directory)) {
             throw new NodeCacheConfigurationException("SQLite cache directory is not writable: {$directory}");
         }
@@ -66,11 +59,35 @@ final class NodeSqliteConnection
         if ($permissions !== false && (($permissions & 0x0002) === 0x0002)) {
             throw new NodeCacheConfigurationException("SQLite cache directory must not be world-writable: {$directory}");
         }
-        if (is_file($file)) {
-            $filePermissions = fileperms($file);
-            if ($filePermissions !== false && (($filePermissions & 0x0002) === 0x0002)) {
-                throw new NodeCacheConfigurationException("SQLite cache file must not be world-writable: {$file}");
-            }
+    }
+
+    private static function assertSecureFile(string $file): void
+    {
+        if (!is_file($file)) {
+            return;
         }
+
+        $permissions = fileperms($file);
+        if ($permissions !== false && (($permissions & 0x0002) === 0x0002)) {
+            throw new NodeCacheConfigurationException("SQLite cache file must not be world-writable: {$file}");
+        }
+    }
+
+    private static function ensureDirectory(string $directory): void
+    {
+        if (!is_dir($directory) && !mkdir($directory, 0750, true) && !is_dir($directory)) {
+            throw new NodeCacheConfigurationException("Unable to create SQLite cache directory: {$directory}");
+        }
+    }
+
+    private static function prepareDirectory(string $file): void
+    {
+        self::assertTrustedFilePath($file);
+
+        $directory = dirname($file);
+        self::ensureDirectory($directory);
+        self::assertTrustedFilePath($file);
+        self::assertSecureDirectory($directory);
+        self::assertSecureFile($file);
     }
 }
