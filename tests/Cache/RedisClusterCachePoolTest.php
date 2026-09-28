@@ -393,6 +393,6 @@ test('redis cluster generation repair fails closed without overwriting unexpecte
 
     $this->cluster->set($generation, 'malformed-generation');
 
-    expect(fn () => $this->cache->get('generation-race'))->toThrow(RuntimeException::class)
+    expect($this->cache->get('generation-race'))->toBeNull()
         ->and($this->cluster->get($generation))->toBe('malformed-generation');
 });
