@@ -24,8 +24,8 @@ use Infocyph\CacheLayer\Tests\Cluster\Support\RejectingClusterCacheAdapter;
 beforeEach(function () {
     $this->clusterDirectory = sys_get_temp_dir() . '/cachelayer-cluster-' . uniqid();
     $this->transport = new InMemoryInvalidationTransport();
-    $this->clusterConfigA = new ClusterCacheConfig('test-cluster', 'node-a');
-    $this->clusterConfigB = new ClusterCacheConfig('test-cluster', 'node-b');
+    $this->clusterConfigA = new ClusterCacheConfig('test-cluster', 'node-a', 'memory-primary');
+    $this->clusterConfigB = new ClusterCacheConfig('test-cluster', 'node-b', 'memory-primary');
     $this->nodeConfigA = new NodeCacheConfig(
         $this->clusterDirectory . '/node-a.sqlite',
         'application',
@@ -117,7 +117,7 @@ test('cluster bulk tag invalidation publishes each unique tag once', function ()
 test('cursor progress is isolated by namespace on the same node and SQLite store', function () {
     $transport = new InMemoryInvalidationTransport();
     $sqliteFile = $this->clusterDirectory . '/shared-node.sqlite';
-    $cluster = new ClusterCacheConfig('scope-cluster', 'shared-node');
+    $cluster = new ClusterCacheConfig('scope-cluster', 'shared-node', 'memory-scope');
     $alpha = ClusterCache::create(
         new NodeCacheConfig($sqliteFile, 'alpha', apcuEnabled: false),
         $cluster,
@@ -139,6 +139,99 @@ test('cursor progress is isolated by namespace on the same node and SQLite store
         ->and($beta->cache()->get('shared'))->toBeNull()
         ->and($beta->status()->cursor)->toBe('1');
 });
+
+test('cursor progress is isolated by transport identity on the same node scope', function () {
+    $transportA = new InMemoryInvalidationTransport();
+    $transportB = new InMemoryInvalidationTransport();
+    $sqliteFile = $this->clusterDirectory . '/shared-transport-node.sqlite';
+    $node = new NodeCacheConfig($sqliteFile, 'application', apcuEnabled: false);
+    $runtimeA = ClusterCache::create(
+        $node,
+        new ClusterCacheConfig('transport-cluster', 'shared-node', 'transport-a'),
+        $transportA,
+    );
+    $runtimeB = ClusterCache::create(
+        $node,
+        new ClusterCacheConfig('transport-cluster', 'shared-node', 'transport-b'),
+        $transportB,
+    );
+
+    $runtimeB->cache()->set('beta', 'stale', 300);
+    $transportA->publish(InvalidationEvent::key('transport-cluster', 'application', 'alpha', 'writer'));
+    $transportB->publish(InvalidationEvent::key('transport-cluster', 'application', 'beta', 'writer'));
+
+    expect($runtimeA->consume())->toBe(1)
+        ->and($runtimeA->status()->cursor)->toBe('1')
+        ->and($runtimeB->status()->cursor)->toBeNull()
+        ->and($runtimeB->consume())->toBe(1)
+        ->and($runtimeB->cache()->get('beta'))->toBeNull()
+        ->and($runtimeB->status()->cursor)->toBe('1');
+});
+
+test('legacy cursor migration clears the affected scope before establishing new progress', function () {
+    $sqliteFile = $this->clusterDirectory . '/legacy-cursor.sqlite';
+    $node = new NodeCacheConfig($sqliteFile, 'application', apcuEnabled: false);
+    $cache = \Infocyph\CacheLayer\Node\NodeCache::create($node);
+    $cache->set('stale', 'value', 300);
+
+    $pdo = new PDO('sqlite:' . $sqliteFile);
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $pdo->exec(
+        'CREATE TABLE cachelayer_cluster_cursors ('
+        . 'cluster_name TEXT NOT NULL, node_id TEXT NOT NULL, last_event_id TEXT, updated_at INTEGER NOT NULL, '
+        . 'PRIMARY KEY (cluster_name, node_id)) WITHOUT ROWID',
+    );
+    $statement = $pdo->prepare(
+        'INSERT INTO cachelayer_cluster_cursors (cluster_name, node_id, last_event_id, updated_at) VALUES (?, ?, ?, ?)',
+    );
+    $statement->execute(['migration-cluster', 'shared-node', '99', time()]);
+
+    $transport = new InMemoryInvalidationTransport();
+    $runtime = ClusterCache::create(
+        $node,
+        new ClusterCacheConfig('migration-cluster', 'shared-node', 'memory-migrated'),
+        $transport,
+    );
+
+    expect($runtime->status()->cursor)->toBeNull()
+        ->and($runtime->cache()->get('stale'))->toBe('value')
+        ->and($runtime->recoverIfRequired())->toBeTrue()
+        ->and($runtime->cache()->get('stale'))->toBeNull()
+        ->and($runtime->status()->cursor)->toBeNull()
+        ->and($runtime->recoverIfRequired())->toBeFalse();
+});
+
+test('namespace-scoped v2 cursor migration is isolated per transport identity', function () {
+    $sqliteFile = $this->clusterDirectory . '/v2-cursor.sqlite';
+    $node = new NodeCacheConfig($sqliteFile, 'application', apcuEnabled: false);
+    $cache = \Infocyph\CacheLayer\Node\NodeCache::create($node);
+    $cache->set('stale', 'value', 300);
+
+    $pdo = new PDO('sqlite:' . $sqliteFile);
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $pdo->exec(
+        'CREATE TABLE cachelayer_cluster_cursors_v2 ('
+        . 'cluster_name TEXT NOT NULL, node_id TEXT NOT NULL, namespace_name TEXT NOT NULL, '
+        . 'last_event_id TEXT, updated_at INTEGER NOT NULL, '
+        . 'PRIMARY KEY (cluster_name, node_id, namespace_name)) WITHOUT ROWID',
+    );
+    $statement = $pdo->prepare(
+        'INSERT INTO cachelayer_cluster_cursors_v2 '
+        . '(cluster_name, node_id, namespace_name, last_event_id, updated_at) VALUES (?, ?, ?, ?, ?)',
+    );
+    $statement->execute(['migration-cluster', 'shared-node', 'application', '42', time()]);
+
+    $runtime = ClusterCache::create(
+        $node,
+        new ClusterCacheConfig('migration-cluster', 'shared-node', 'transport-v3'),
+        new InMemoryInvalidationTransport(),
+    );
+
+    expect($runtime->recoverIfRequired())->toBeTrue()
+        ->and($runtime->cache()->get('stale'))->toBeNull()
+        ->and($runtime->recoverIfRequired())->toBeFalse();
+});
+
 
 test('cluster status reports cursor position, pending events, and consume results', function () {
     $this->transport->publish(InvalidationEvent::key('test-cluster', 'application', 'first', 'writer'));
@@ -253,9 +346,11 @@ test('invalidation events enforce identifier and timestamp invariants', function
 });
 
 test('cluster configuration and runtime inputs enforce transport bounds before publication', function () {
-    expect(fn() => new ClusterCacheConfig(str_repeat('c', 129), 'node'))
+    expect(fn() => new ClusterCacheConfig(str_repeat('c', 129), 'node', 'memory'))
         ->toThrow(\Infocyph\CacheLayer\Cluster\Exception\ClusterConfigurationException::class)
-        ->and(fn() => new ClusterCacheConfig('cluster', str_repeat('n', 256)))
+        ->and(fn() => new ClusterCacheConfig('cluster', str_repeat('n', 256), 'memory'))
+        ->toThrow(\Infocyph\CacheLayer\Cluster\Exception\ClusterConfigurationException::class)
+        ->and(fn() => new ClusterCacheConfig('cluster', 'node', str_repeat('t', 129)))
         ->toThrow(\Infocyph\CacheLayer\Cluster\Exception\ClusterConfigurationException::class)
         ->and(fn() => $this->nodeA->invalidateKey(str_repeat('k', 65)))
         ->toThrow(ClusterCacheException::class)
@@ -317,6 +412,7 @@ test('consumer keeps its cursor when local invalidation returns false', function
         'failed-cluster',
         'consumer',
         'application',
+        'memory-primary',
     );
     $recovery = new ClusterRecoveryManager($cache, $cursor, $transport, 'failed-cluster');
     $consumer = new InvalidationConsumer(
@@ -347,6 +443,7 @@ test('recovery keeps its cursor when the required clear returns false', function
         'recovery-failure',
         'consumer',
         'application',
+        'memory-primary',
     );
     $cursor->advance('1');
     $recovery = new ClusterRecoveryManager($cache, $cursor, $transport, 'recovery-failure');
