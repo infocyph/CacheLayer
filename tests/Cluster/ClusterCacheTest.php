@@ -233,6 +233,40 @@ test('namespace-scoped v2 cursor migration is isolated per transport identity', 
 });
 
 
+test('scoped cursor persists across runtime restart and reset', function () {
+    $transport = new InMemoryInvalidationTransport();
+    $sqliteFile = $this->clusterDirectory . '/restart-node.sqlite';
+    $node = new NodeCacheConfig($sqliteFile, 'application', apcuEnabled: false);
+    $cluster = new ClusterCacheConfig('restart-cluster', 'restart-node', 'memory-restart');
+
+    $transport->publish(InvalidationEvent::key('restart-cluster', 'application', 'first', 'writer'));
+    $firstRuntime = ClusterCache::create($node, $cluster, $transport);
+    expect($firstRuntime->consume())->toBe(1)
+        ->and($firstRuntime->status()->cursor)->toBe('1');
+
+    unset($firstRuntime);
+    $secondRuntime = ClusterCache::create($node, $cluster, $transport);
+    $transport->publish(InvalidationEvent::key('restart-cluster', 'application', 'second', 'writer'));
+
+    expect($secondRuntime->status()->cursor)->toBe('1')
+        ->and($secondRuntime->consume())->toBe(1)
+        ->and($secondRuntime->status()->cursor)->toBe('2');
+
+    $cursor = new SqliteCursorStore(
+        $sqliteFile,
+        'restart-cluster',
+        'restart-node',
+        'application',
+        'memory-restart',
+    );
+    $cursor->reset('1');
+    expect($cursor->current())->toBe('1');
+
+    $cursor->reset(null);
+    expect($cursor->current())->toBeNull()
+        ->and($cursor->requiresRecovery())->toBeFalse();
+});
+
 test('cluster status reports cursor position, pending events, and consume results', function () {
     $this->transport->publish(InvalidationEvent::key('test-cluster', 'application', 'first', 'writer'));
     $this->transport->publish(InvalidationEvent::key('test-cluster', 'application', 'second', 'writer'));
