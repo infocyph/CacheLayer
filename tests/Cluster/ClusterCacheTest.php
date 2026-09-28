@@ -114,6 +114,32 @@ test('cluster bulk tag invalidation publishes each unique tag once', function ()
         ->and($this->nodeB->cache()->get('search.list'))->toBeNull();
 });
 
+test('cursor progress is isolated by namespace on the same node and SQLite store', function () {
+    $transport = new InMemoryInvalidationTransport();
+    $sqliteFile = $this->clusterDirectory . '/shared-node.sqlite';
+    $cluster = new ClusterCacheConfig('scope-cluster', 'shared-node');
+    $alpha = ClusterCache::create(
+        new NodeCacheConfig($sqliteFile, 'alpha', apcuEnabled: false),
+        $cluster,
+        $transport,
+    );
+    $beta = ClusterCache::create(
+        new NodeCacheConfig($sqliteFile, 'beta', apcuEnabled: false),
+        $cluster,
+        $transport,
+    );
+
+    $beta->cache()->set('shared', 'stale', 300);
+    $transport->publish(InvalidationEvent::key('scope-cluster', 'beta', 'shared', 'writer'));
+
+    expect($alpha->consume())->toBe(1)
+        ->and($alpha->status()->cursor)->toBe('1')
+        ->and($beta->status()->cursor)->toBeNull()
+        ->and($beta->consume())->toBe(1)
+        ->and($beta->cache()->get('shared'))->toBeNull()
+        ->and($beta->status()->cursor)->toBe('1');
+});
+
 test('cluster status reports cursor position, pending events, and consume results', function () {
     $this->transport->publish(InvalidationEvent::key('test-cluster', 'application', 'first', 'writer'));
     $this->transport->publish(InvalidationEvent::key('test-cluster', 'application', 'second', 'writer'));
@@ -290,6 +316,7 @@ test('consumer keeps its cursor when local invalidation returns false', function
         $this->clusterDirectory . '/failed-cursor.sqlite',
         'failed-cluster',
         'consumer',
+        'application',
     );
     $recovery = new ClusterRecoveryManager($cache, $cursor, $transport, 'failed-cluster');
     $consumer = new InvalidationConsumer(
@@ -319,6 +346,7 @@ test('recovery keeps its cursor when the required clear returns false', function
         $this->clusterDirectory . '/recovery-failed-cursor.sqlite',
         'recovery-failure',
         'consumer',
+        'application',
     );
     $cursor->advance('1');
     $recovery = new ClusterRecoveryManager($cache, $cursor, $transport, 'recovery-failure');
