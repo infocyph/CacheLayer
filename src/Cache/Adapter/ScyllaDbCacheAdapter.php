@@ -66,6 +66,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
 
     public function deleteItem(string $key): bool
     {
+        $this->discardDeferredKey($key);
         $this->executeCql(
             "DELETE FROM {$this->qualifiedTable} WHERE ns = ? AND bucket = ? AND ckey = ?",
             [$this->ns, $this->bucket($key), $this->mapData($key)],
@@ -80,6 +81,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
      */
     public function deleteItems(array $keys): bool
     {
+        $this->discardDeferredKeys($keys);
         foreach ($this->groupByBucket($keys) as $bucket => $group) {
             $marks = implode(',', array_fill(0, count($group), '?'));
             $this->executeCql(
