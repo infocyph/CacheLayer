@@ -20,7 +20,7 @@ final class RunwireIntegration
 
     private const string ONCE_MEMOIZER_ATTRIBUTE = 'cachelayer.once-memoizer';
 
-    /** @var WeakMap<Fiber, RunwireExecutionContext>|null */
+    /** @var WeakMap<Fiber<mixed, mixed, mixed, mixed>, RunwireExecutionContext>|null */
     private static ?WeakMap $fiberContexts = null;
 
     private static ?RunwireExecutionContext $rootContext = null;
