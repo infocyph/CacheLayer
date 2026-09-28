@@ -27,7 +27,7 @@ jobs:
           tools: composer:v2
           extensions: mbstring, mongodb, pdo, pdo_sqlite, opcache
           coverage: none
-      - run: composer install --no-dev --no-interaction --prefer-dist --no-progress --classmap-authoritative
+      - run: composer install --no-dev --no-interaction --prefer-dist --no-progress --classmap-authoritative --ignore-platform-req=ext-mongodb
       - run: composer check-platform-reqs --no-dev
       - name: Core smoke without CLI OPcache
         run: php -d error_reporting=E_ALL -d opcache.enable_cli=0 tools/release/core-smoke.php
@@ -159,7 +159,7 @@ jobs:
 
   scylla-cql:
     name: Real Scylla CQL
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v7
       - uses: shivammathur/setup-php@v2
@@ -185,7 +185,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libuv1t64 libgmp10
           mkdir -p .ci/scylla-driver
-          curl -fsSL https://github.com/he4rt/scylladb-php-driver/releases/download/v1.5.1/manylinux_2_28_x86_64-php8.4-nts-scylladb.tar.gz -o .ci/scylla-driver/driver.tar.gz
+          curl -fsSL https://github.com/he4rt/scylladb-php-driver/releases/download/v1.5.1/ubuntu-22.04-php8.4-nts-scylladb.tar.gz -o .ci/scylla-driver/driver.tar.gz
           tar -xzf .ci/scylla-driver/driver.tar.gz -C .ci/scylla-driver
           php -d "extension=$PWD/.ci/scylla-driver/cassandra.so" -r 'if (!class_exists("Cassandra")) { throw new RuntimeException("Cassandra extension did not load."); }'
       - name: Exercise CacheLayer against real CQL
