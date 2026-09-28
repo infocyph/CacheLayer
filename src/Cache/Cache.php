@@ -442,6 +442,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
     public function getMultiple(iterable $keys, mixed $default = null): iterable
     {
         $keys = CacheInput::materializeKeys($keys);
+
         return CacheBatchResults::values($keys, $this->getItems($keys), $default);
     }
 
