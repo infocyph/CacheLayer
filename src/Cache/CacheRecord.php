@@ -8,7 +8,7 @@ namespace Infocyph\CacheLayer\Cache;
 final readonly class CacheRecord
 {
     /**
-     * @param array<string, string> $tags
+     * @param array<int|string, string> $tags
      */
     public function __construct(
         public mixed $value,
