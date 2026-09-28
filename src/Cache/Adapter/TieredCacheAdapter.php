@@ -90,6 +90,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
 
     public function deleteItem(string $key): bool
     {
+        $this->discardDeferredKey($key);
         $deleted = true;
         foreach ($this->pools as $index => $pool) {
             $poolDeleted = $pool->deleteItem($key);
@@ -105,6 +106,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
     /** @param list<string> $keys */
     public function deleteItems(array $keys): bool
     {
+        $this->discardDeferredKeys($keys);
         $deleted = true;
         foreach ($this->pools as $index => $pool) {
             $poolDeleted = $pool->deleteItems($keys);
