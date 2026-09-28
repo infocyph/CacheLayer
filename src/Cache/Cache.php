@@ -420,14 +420,11 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         $fetched = $this->backend(fn(): array => $this->fetchItems($keys), []);
         $byIdentity = [];
         foreach ($fetched as $item) {
-            if ($item instanceof CacheItemInterface) {
-                $byIdentity["key:\0" . $item->getKey()] = $item;
-            }
+            $byIdentity["key:\0" . $item->getKey()] = $item;
         }
         $items = [];
         foreach ($keys as $key) {
-            $item = $byIdentity["key:\0" . $key] ?? null;
-            $items[$key] = $item instanceof CacheItemInterface ? $item : $this->miss($key);
+            $items[$key] = $byIdentity["key:\0" . $key] ?? $this->miss($key);
         }
         $items = $this->validateTagSnapshots($items);
         $hits = 0;
@@ -797,8 +794,10 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
     private function fetchItems(array $keys): array
     {
         $items = $this->adapter->getItems($keys);
+        /** @var list<CacheItemInterface> $normalized */
+        $normalized = array_values(is_array($items) ? $items : iterator_to_array($items));
 
-        return array_values(is_array($items) ? $items : iterator_to_array($items));
+        return $normalized;
     }
 
     private function jitteredTtl(?int $ttl): ?int
