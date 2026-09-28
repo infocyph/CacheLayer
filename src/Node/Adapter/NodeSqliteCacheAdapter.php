@@ -221,6 +221,7 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
             }
             $items[$key] = $this->genericItemFromRecord($key, $record);
         }
+
         return $items;
     }
 
