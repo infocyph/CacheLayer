@@ -358,8 +358,7 @@ test('Redis cache clear does not reset isolated atomic counters and large intege
     $counters = AtomicCounters::redis('tests', client: $this->redisClient);
     $large = 9_007_199_254_740_993;
 
-    expect($counters->increment('large', $large))
-        ->value->toBe($large)
+    expect($counters->increment('large', $large)->value)->toBe($large)
         ->and($this->cache->set('ordinary', 'value'))->toBeTrue()
         ->and($this->cache->clear())->toBeTrue()
         ->and($counters->get('large'))->toBe($large);
