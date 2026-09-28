@@ -239,7 +239,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
      */
     public function multiFetch(array $keys): array
     {
-        $items = $this->withSharedLock(function () use ($keys): array {
+        return $this->withSharedLock(function () use ($keys): array {
             $store = $this->loadStore();
             $items = [];
             foreach ($keys as $key) {
@@ -253,8 +253,6 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
 
             return $items;
         });
-
-        return $items;
     }
 
     /** @param list<string> $tags */
