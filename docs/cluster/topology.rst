@@ -1,6 +1,5 @@
-=====================================
 Cluster Cache: Topology and Node Setup
-=====================================
+======================================
 
 This page explains the runtime API and the exact pattern for adding the third,
 fourth, or Nth independently running application node.
