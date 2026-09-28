@@ -237,6 +237,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
     public function storeTagGenerations(array $generations): bool
     {
         foreach ($generations as $tag => $generation) {
+            $tag = (string) $tag;
             if (!self::isGeneration($generation)) {
                 return false;
             }
