@@ -121,6 +121,11 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
 
     public function getItem(string $key): CacheItem
     {
+        $pending = $this->deferredRead($key);
+        if ($pending !== null) {
+            return $pending;
+        }
+
         foreach ($this->readablePools() as $index => $pool) {
             $item = $pool->getItem($key);
             if (!$item->isHit()) {
