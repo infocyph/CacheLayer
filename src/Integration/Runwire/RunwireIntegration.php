@@ -42,7 +42,11 @@ final class RunwireIntegration
     {
         $fiber = Fiber::getCurrent();
         if ($fiber !== null) {
-            return self::$fiberContexts?->offsetGet($fiber);
+            $contexts = self::$fiberContexts;
+
+            return $contexts !== null && isset($contexts[$fiber])
+                ? $contexts[$fiber]
+                : null;
         }
 
         return self::$rootContext;
