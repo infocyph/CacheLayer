@@ -363,8 +363,8 @@ Batches 1-6 are complete. Batch 7, Runwire 2.1 integration, is now required and 
 
 | Sub-batch | Scope | Status | Gate |
 | --- | --- | --- | --- |
-| 7A — Runtime/request lifecycle | Runtime binding, concurrent memoizer isolation, sequential persistent request reset | **In progress** | Focused Runwire lifecycle tests, then full PHPForge QA. |
-| 7B — Worker-owned background integration | Bounded cluster invalidation polling and optional Node maintenance through Runwire worker lifecycle | **Pending** | Worker stop/drain/error/coherence tests, then full QA. |
+| 7A — Runtime/request lifecycle | Shared active RuntimeContext + request/task scope, capability-driven memoizer isolation/fallback | **Complete** | Exact head `a998ffaf0b952c7c751183a8a0652e25770472bc` passed Security & Standards #421 and Release Verification #61. Clean no-dev consumers confirm Runwire remains optional. |
+| 7B — Worker-owned background integration | Bounded cluster invalidation polling and Node maintenance inside the host-provided task scope; no worker/loop ownership | **In progress** | Add bounded runners using shared scope/cooperative waits with normal blocking fallback, then worker stop/error/coherence tests and full QA. |
 | 7C — Consumer/docs/release integration | Executable example, optional consumer dependency, topology docs, PHP 8.4/8.5 integration matrix | **Pending** | Exact-head Security & Standards + Release Verification. |
 
 ## Optional Runwire 2.1 integration workstream
