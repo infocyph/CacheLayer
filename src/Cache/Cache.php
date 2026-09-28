@@ -790,9 +790,10 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
      */
     private function fetchItems(array $keys): array
     {
-        $items = $this->adapter->getItems($keys);
+        /** @var array<string, CacheItemInterface> $items */
+        $items = [...$this->adapter->getItems($keys)];
 
-        return is_array($items) ? $items : iterator_to_array($items);
+        return $items;
     }
 
     private function jitteredTtl(?int $ttl): ?int
@@ -894,7 +895,10 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         if (!$item instanceof CacheItem || !$item->isHit() || $item->getTagGenerations() === []) {
             return $item;
         }
-        $tags = array_keys($item->getTagGenerations());
+        $tags = array_map(
+            static fn(int|string $tag): string => (string) $tag,
+            array_keys($item->getTagGenerations()),
+        );
         $generations = $this->backend(
             fn(): array => $this->adapter->getTagGenerations($tags),
             null,
