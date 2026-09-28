@@ -407,26 +407,30 @@ LUA;
     {
         $generations = [];
         foreach ($missing as $tag => $value) {
-            $candidate = self::newGeneration();
-            $key = $this->mapTag($tag);
-            if (!is_string($value)) {
-                $stored = $this->redis->set($key, $candidate, ['nx']);
-                $current = $stored ? $candidate : $this->redis->get($key);
-            } else {
-                $current = RedisValueGuard::replaceIfUnchanged($this->redis, $key, $value, $candidate);
-                if ($current === false) {
-                    $stored = $this->redis->set($key, $candidate, ['nx']);
-                    $current = $stored ? $candidate : $this->redis->get($key);
-                }
-            }
-            $generation = self::normalizeGeneration($current);
-            if ($generation === null) {
-                throw new RuntimeException('Unable to initialize Redis tag generation.');
-            }
-            $generations[$tag] = $generation;
+            $generations[$tag] = $this->initializeTagGeneration((string) $tag, $value);
         }
 
         return $generations;
+    }
+
+    private function initializeTagGeneration(string $tag, mixed $observed): string
+    {
+        $candidate = self::newGeneration();
+        $key = $this->mapTag($tag);
+        $current = is_string($observed)
+            ? RedisValueGuard::replaceIfUnchanged($this->redis, $key, $observed, $candidate)
+            : false;
+        if ($current === false) {
+            $stored = $this->redis->set($key, $candidate, ['nx']);
+            $current = $stored ? $candidate : $this->redis->get($key);
+        }
+
+        $generation = self::normalizeGeneration($current);
+        if ($generation === null) {
+            throw new RuntimeException('Unable to initialize Redis tag generation.');
+        }
+
+        return $generation;
     }
 
     private function map(string $key): string
