@@ -58,7 +58,7 @@ final class OnceMemoizer
             . ':' . ($location['line'] ?? 0)
             . ':' . ($caller['class'] ?? '')
             . ':' . $this->normalizeCallerFunction($caller['function'] ?? '(unknown)')
-            . ':' . (is_object($callerObject) ? spl_object_id($callerObject) : '')
+            . ':' . (is_object($callerObject) ? CallableFingerprint::objectIdentity($callerObject) : '')
             . ':' . $this->callbackFingerprint($callback);
     }
 
@@ -74,7 +74,7 @@ final class OnceMemoizer
                 $reflection->getStartLine(),
                 $reflection->getEndLine(),
                 $reflection->getClosureScopeClass()?->getName() ?? '',
-                $bound === null ? '' : $bound::class . '#' . spl_object_id($bound),
+                $bound === null ? '' : CallableFingerprint::objectIdentity($bound),
             ]);
         }
 
