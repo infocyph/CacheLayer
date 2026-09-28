@@ -8,7 +8,10 @@ PHP workers or application nodes: rate-limit windows, authentication lockout
 attempts, quotas, and replay-attempt counts.
 
 Use Redis or Valkey as the shared backend. Node Cache, APCu, and SQLite are not
-distributed atomic-counter stores.
+distributed atomic-counter stores. Counter records live in a dedicated
+``cachelayer:counter:<namespace>:`` keyspace, so clearing ordinary cache data
+never resets rate-limit, quota, or replay counters that happen to share the same
+logical namespace.
 
 .. code-block:: php
 
@@ -25,7 +28,10 @@ distributed atomic-counter stores.
 When a positive TTL is supplied, it is assigned only when that key is first
 created; later increments do not extend the fixed window. Each operation
 returns ``AtomicCounterValue`` with the resulting ``value`` and an
-``initialized`` flag.
+``initialized`` flag. The Lua operation reads the resulting counter back as an
+exact decimal string before returning it, so values above JavaScript/Lua's
+2^53 precision boundary remain exact. Values outside PHP's integer range and
+malformed stored values fail closed with ``AtomicCounterException``.
 
 .. code-block:: php
 
