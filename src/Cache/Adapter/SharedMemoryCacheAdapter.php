@@ -337,6 +337,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         return $this->withExclusiveLock(function () use ($generations): bool {
             $store = $this->loadStore();
             foreach ($generations as $tag => $generation) {
+                $tag = (string) $tag;
                 if (!self::isGeneration($generation)) {
                     return false;
                 }
