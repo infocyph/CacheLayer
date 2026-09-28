@@ -51,6 +51,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
 
     public function deleteItem(string $key): bool
     {
+        $this->discardDeferredKey($key);
         $mapped = $this->map($key);
         if (!apcu_exists($mapped)) {
             return true;
@@ -65,6 +66,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
      */
     public function deleteItems(array $keys): bool
     {
+        $this->discardDeferredKeys($keys);
         if ($keys === []) {
             return true;
         }
