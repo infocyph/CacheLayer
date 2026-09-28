@@ -367,6 +367,7 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
         $this->assertWritableTransaction();
         $rows = [];
         foreach ($generations as $tag => $generation) {
+            $tag = (string) $tag;
             if (!self::isGeneration($generation)) {
                 return false;
             }
