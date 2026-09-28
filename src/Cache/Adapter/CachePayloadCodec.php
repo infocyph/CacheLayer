@@ -54,8 +54,7 @@ final readonly class CachePayloadCodec
         string $blob,
         ?string $storageIdentity = null,
         ?string $key = null,
-    ): ?CacheRecord
-    {
+    ): ?CacheRecord {
         if ($this->isPayloadTooLarge($blob)) {
             return null;
         }
@@ -90,8 +89,7 @@ final readonly class CachePayloadCodec
         ?string $namespaceGeneration = null,
         ?string $storageIdentity = null,
         ?string $key = null,
-    ): string
-    {
+    ): string {
         [$encoding, $encodedValue] = $this->encodeValue($value);
         $serialized = serialize([
             'format' => 2,
@@ -145,8 +143,7 @@ final readonly class CachePayloadCodec
         string $payload,
         ?string $storageIdentity,
         ?string $key,
-    ): string
-    {
+    ): string {
         if ($this->options->integrityKey === null) {
             return $payload;
         }
@@ -245,7 +242,7 @@ final readonly class CachePayloadCodec
         $maximumLength = $this->options->maxPayloadBytes === null
             ? 0
             : min($this->options->maxPayloadBytes, PHP_INT_MAX - 1) + 1;
-        set_error_handler(static fn (): bool => true);
+        set_error_handler(static fn(): bool => true);
 
         try {
             $expanded = gzdecode($compressed, $maximumLength);
@@ -312,7 +309,7 @@ final readonly class CachePayloadCodec
 
     private function unserializeNative(string $payload): mixed
     {
-        set_error_handler(static fn (): bool => true);
+        set_error_handler(static fn(): bool => true);
 
         try {
             return unserialize($payload, [
@@ -333,8 +330,7 @@ final readonly class CachePayloadCodec
         string $blob,
         ?string $storageIdentity,
         ?string $key,
-    ): ?string
-    {
+    ): ?string {
         $integrityKey = $this->options->integrityKey;
         if ($integrityKey === null) {
             return $this->unsignedPayload($blob);
