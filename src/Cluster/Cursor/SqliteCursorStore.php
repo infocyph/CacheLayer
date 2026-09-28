@@ -19,9 +19,9 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
 
     private const string TABLE = 'cachelayer_cluster_cursors_v3';
 
-    private PDO $connection;
-
     private string $cluster;
+
+    private PDO $connection;
 
     private string $namespace;
 
@@ -68,11 +68,6 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
         return is_string($cursor) && $cursor !== '' ? $cursor : null;
     }
 
-    public function reset(?string $eventId): void
-    {
-        $this->write($eventId);
-    }
-
     public function requiresRecovery(): bool
     {
         if ($this->scopeExists()) {
@@ -80,6 +75,11 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
         }
 
         return $this->legacyScopeExists() || $this->previousScopeExists();
+    }
+
+    public function reset(?string $eventId): void
+    {
+        $this->write($eventId);
     }
 
     public function updatedAt(): ?int
@@ -173,17 +173,6 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
         }
     }
 
-    /** @return array<string, string> */
-    private function scopeParameters(): array
-    {
-        return [
-            ':cluster' => $this->cluster,
-            ':node_id' => $this->nodeId,
-            ':namespace' => $this->namespace,
-            ':transport_identity' => $this->transportIdentity,
-        ];
-    }
-
     private function scopeExists(): bool
     {
         return $this->rowExists(
@@ -193,6 +182,17 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
             $this->scopeParameters(),
             'Unable to inspect the scoped cluster cursor.',
         );
+    }
+
+    /** @return array<string, string> */
+    private function scopeParameters(): array
+    {
+        return [
+            ':cluster' => $this->cluster,
+            ':node_id' => $this->nodeId,
+            ':namespace' => $this->namespace,
+            ':transport_identity' => $this->transportIdentity,
+        ];
     }
 
     private function tableExists(string $table): bool
