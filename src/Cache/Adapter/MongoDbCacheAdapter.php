@@ -140,6 +140,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
 
     public function deleteItem(string $key): bool
     {
+        $this->discardDeferredKey($key);
         $this->collection->deleteOne(['_id' => $this->mapData($key)]);
 
         return true;
@@ -151,6 +152,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
      */
     public function deleteItems(array $keys): bool
     {
+        $this->discardDeferredKeys($keys);
         if ($keys !== []) {
             $this->collection->deleteMany([
                 '_id' => ['$in' => array_map($this->mapData(...), $keys)],
