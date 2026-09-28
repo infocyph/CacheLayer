@@ -151,3 +151,48 @@ test('Memcached adapter multiFetch()', function () {
         ->and($items['m2']->get())->toBe('bar')
         ->and($items['missing']->isHit())->toBeFalse();
 });
+
+
+test('Memcached long TTLs remain relative at the CacheLayer boundary', function () {
+    $thirtyDays = 2_592_000;
+    $thirtyDaysAndOne = $thirtyDays + 1;
+    $thirtyOneDays = 2_678_400;
+
+    expect($this->cache->set('ttl-30d', 'exact', $thirtyDays))->toBeTrue()
+        ->and($this->cache->get('ttl-30d'))->toBe('exact')
+        ->and($this->cache->set('ttl-30d-plus', 'plus', $thirtyDaysAndOne))->toBeTrue()
+        ->and($this->cache->get('ttl-30d-plus'))->toBe('plus')
+        ->and($this->cache->set('ttl-31d', 'month', $thirtyOneDays))->toBeTrue()
+        ->and($this->cache->get('ttl-31d'))->toBe('month')
+        ->and($this->cache->set('ttl-interval', 'interval', new DateInterval('P31D')))->toBeTrue()
+        ->and($this->cache->get('ttl-interval'))->toBe('interval')
+        ->and($this->cache->set(
+            'ttl-absolute',
+            'absolute',
+            (new DateTimeImmutable())->modify('+31 days'),
+        ))->toBeTrue()
+        ->and($this->cache->get('ttl-absolute'))->toBe('absolute');
+});
+
+test('Memcached atomic writes and leases normalize long TTLs', function () {
+    $longTtl = 2_592_001;
+    $atomic = $this->cache->atomic();
+    expect($atomic)->not->toBeNull();
+    if ($atomic === null) {
+        return;
+    }
+
+    expect($atomic->setIfAbsent('atomic-long', 'first', $longTtl))->toBeTrue()
+        ->and($this->cache->get('atomic-long'))->toBe('first')
+        ->and($atomic->compareAndSet('atomic-long', 'first', 'second', $longTtl))->toBeTrue()
+        ->and($this->cache->get('atomic-long'))->toBe('second');
+
+    $provider = new MemcachedLockProvider($this->client);
+    $handle = $provider->acquire('long-lease', 0.0, (float) $longTtl);
+    expect($handle)->not->toBeNull();
+    if ($handle !== null) {
+        expect($this->client->get($handle->key))->toBe($handle->token)
+            ->and($provider->refresh($handle, (float) $longTtl))->toBeTrue();
+        $provider->release($handle);
+    }
+});
