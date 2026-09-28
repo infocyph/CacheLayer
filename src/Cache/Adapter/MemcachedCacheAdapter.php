@@ -304,7 +304,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         return $this->client->set(
             $this->mapData($item->getKey()),
             $this->encodeItem($item, $expiration['expiresAt'], $this->namespaceGeneration()),
-            $expiration['ttl'] ?? 0,
+            MemcachedExpiration::fromRelative($expiration['ttl']),
         );
     }
 
