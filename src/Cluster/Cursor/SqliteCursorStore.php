@@ -13,7 +13,11 @@ use PDOException;
 
 final readonly class SqliteCursorStore implements CursorStoreInterface
 {
-    private const string TABLE = 'cachelayer_cluster_cursors';
+    private const string LEGACY_TABLE = 'cachelayer_cluster_cursors';
+
+    private const string PREVIOUS_TABLE = 'cachelayer_cluster_cursors_v2';
+
+    private const string TABLE = 'cachelayer_cluster_cursors_v3';
 
     private PDO $connection;
 
@@ -69,6 +73,15 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
         $this->write($eventId);
     }
 
+    public function requiresRecovery(): bool
+    {
+        if ($this->scopeExists()) {
+            return false;
+        }
+
+        return $this->legacyScopeExists() || $this->previousScopeExists();
+    }
+
     public function updatedAt(): ?int
     {
         $updatedAt = $this->read(
@@ -86,79 +99,51 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
     private function createSchemaIfMissing(): void
     {
         try {
-            $columns = $this->cursorColumns();
-            if ($columns === []) {
-                $this->createScopedSchema();
-
-                return;
-            }
-
-            if (in_array('namespace_name', $columns, true)
-                && in_array('transport_identity', $columns, true)) {
-                return;
-            }
-
-            $this->migrateLegacySchema();
+            $this->connection->exec(
+                'CREATE TABLE IF NOT EXISTS ' . self::TABLE . ' ('
+                . 'cluster_name TEXT NOT NULL, node_id TEXT NOT NULL, namespace_name TEXT NOT NULL, '
+                . 'transport_identity TEXT NOT NULL, last_event_id TEXT, updated_at INTEGER NOT NULL, '
+                . 'PRIMARY KEY (cluster_name, node_id, namespace_name, transport_identity)) WITHOUT ROWID',
+            );
         } catch (PDOException $exception) {
             throw new ClusterCacheException('Unable to initialize the cluster cursor store.', 0, $exception);
         }
     }
 
-    /** @return list<string> */
-    private function cursorColumns(): array
+    private function legacyScopeExists(): bool
     {
-        $statement = $this->connection->query('PRAGMA table_info(' . self::TABLE . ')');
-        $columns = [];
-        foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
-            if (is_array($row) && is_string($row['name'] ?? null)) {
-                $columns[] = $row['name'];
-            }
+        if (!$this->tableExists(self::LEGACY_TABLE)) {
+            return false;
         }
 
-        return $columns;
-    }
-
-    private function createScopedSchema(): void
-    {
-        $this->connection->exec(
-            'CREATE TABLE IF NOT EXISTS ' . self::TABLE . ' ('
-            . 'cluster_name TEXT NOT NULL, node_id TEXT NOT NULL, namespace_name TEXT NOT NULL, '
-            . 'transport_identity TEXT NOT NULL, last_event_id TEXT, updated_at INTEGER NOT NULL, '
-            . 'PRIMARY KEY (cluster_name, node_id, namespace_name, transport_identity)) WITHOUT ROWID',
+        return $this->rowExists(
+            'SELECT 1 FROM ' . self::LEGACY_TABLE . ' '
+            . 'WHERE cluster_name = :cluster AND node_id = :node_id LIMIT 1',
+            [
+                ':cluster' => $this->cluster,
+                ':node_id' => $this->nodeId,
+            ],
+            'Unable to inspect the legacy cluster cursor scope.',
         );
     }
 
-    private function migrateLegacySchema(): void
+    private function previousScopeExists(): bool
     {
-        $this->connection->exec('BEGIN IMMEDIATE');
-
-        try {
-            $columns = $this->cursorColumns();
-            if (!in_array('namespace_name', $columns, true)
-                || !in_array('transport_identity', $columns, true)) {
-                $this->connection->exec('DROP TABLE ' . self::TABLE);
-                $this->createScopedSchema();
-                if ($this->nodeEntriesTableExists()) {
-                    $this->connection->exec('DELETE FROM cachelayer_node_entries');
-                }
-            }
-
-            $this->connection->exec('COMMIT');
-        } catch (PDOException $exception) {
-            $this->connection->exec('ROLLBACK');
-
-            throw $exception;
+        if (!$this->tableExists(self::PREVIOUS_TABLE)) {
+            return false;
         }
-    }
 
-    private function nodeEntriesTableExists(): bool
-    {
-        $statement = $this->connection->prepare(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'cachelayer_node_entries' LIMIT 1",
+        return $this->rowExists(
+            'SELECT 1 FROM ' . self::PREVIOUS_TABLE . ' '
+            . 'WHERE cluster_name = :cluster AND node_id = :node_id '
+            . 'AND namespace_name = :namespace LIMIT 1',
+            [
+                ':cluster' => $this->cluster,
+                ':node_id' => $this->nodeId,
+                ':namespace' => $this->namespace,
+            ],
+            'Unable to inspect the previous cluster cursor scope.',
         );
-        $statement->execute();
-
-        return $statement->fetchColumn() !== false;
     }
 
     private function read(string $sql, string $failureMessage): mixed
@@ -168,6 +153,21 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
             $statement->execute($this->scopeParameters());
 
             return $statement->fetchColumn();
+        } catch (PDOException $exception) {
+            throw new ClusterCacheException($failureMessage, 0, $exception);
+        }
+    }
+
+    /**
+     * @param array<string, string> $parameters
+     */
+    private function rowExists(string $sql, array $parameters, string $failureMessage): bool
+    {
+        try {
+            $statement = $this->connection->prepare($sql);
+            $statement->execute($parameters);
+
+            return $statement->fetchColumn() !== false;
         } catch (PDOException $exception) {
             throw new ClusterCacheException($failureMessage, 0, $exception);
         }
@@ -184,6 +184,26 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
         ];
     }
 
+    private function scopeExists(): bool
+    {
+        return $this->rowExists(
+            'SELECT 1 FROM ' . self::TABLE . ' '
+            . 'WHERE cluster_name = :cluster AND node_id = :node_id '
+            . 'AND namespace_name = :namespace AND transport_identity = :transport_identity LIMIT 1',
+            $this->scopeParameters(),
+            'Unable to inspect the scoped cluster cursor.',
+        );
+    }
+
+    private function tableExists(string $table): bool
+    {
+        return $this->rowExists(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = :table LIMIT 1",
+            [':table' => $table],
+            'Unable to inspect the cluster cursor schema.',
+        );
+    }
+
     private function write(?string $eventId): void
     {
         try {
@@ -194,8 +214,7 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
                 . 'ON CONFLICT(cluster_name, node_id, namespace_name, transport_identity) DO UPDATE SET '
                 . 'last_event_id = excluded.last_event_id, updated_at = excluded.updated_at',
             );
-            $statement->execute([
-                ...$this->scopeParameters(),
+            $statement->execute($this->scopeParameters() + [
                 ':event_id' => $eventId,
                 ':updated_at' => time(),
             ]);
