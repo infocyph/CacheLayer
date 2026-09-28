@@ -80,7 +80,7 @@ final readonly class CachePayloadCodec
     }
 
     /**
-     * @param array<string, string> $tags
+     * @param array<int|string, string> $tags
      */
     public function encode(
         mixed $value,
@@ -287,9 +287,8 @@ final readonly class CachePayloadCodec
             return null;
         }
 
-        foreach ($tags as $tag => $generation) {
-            if ((!is_string($tag) && !is_int($tag))
-                || !is_string($generation)
+        foreach ($tags as $generation) {
+            if (!is_string($generation)
                 || strlen($generation) !== 32
                 || !ctype_xdigit($generation)) {
                 return null;
