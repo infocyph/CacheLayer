@@ -336,7 +336,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
             return false;
         }
         foreach ($groups as $memcachedExpiration => $records) {
-            if (!$this->client->setMulti($records, (int) $memcachedExpiration)) {
+            if (!$this->client->setMulti($records, $memcachedExpiration)) {
                 return false;
             }
         }
