@@ -214,8 +214,8 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
                 $this->ns,
                 $this->bucket($saveItem->getKey()),
                 $this->mapData($saveItem->getKey()),
-                $this->encodeItem($saveItem, $expires['expiresAt']),
-                $expires['expiresAt'],
+                OptionalCassandra::blob($this->encodeItem($saveItem, $expires['expiresAt'])),
+                OptionalCassandra::bigint($expires['expiresAt']),
             ];
             if ($expires['ttl'] !== null) {
                 $cql .= ' USING TTL ?';
@@ -427,6 +427,10 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
             return $value;
         }
 
+        if (is_object($value) && is_callable([$value, 'toInt'])) {
+            return $value->toInt();
+        }
+
         if (is_float($value) || (is_string($value) && is_numeric($value))) {
             return (int) $value;
         }
@@ -463,6 +467,10 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
     {
         if (is_string($value)) {
             return $value;
+        }
+
+        if (is_object($value) && is_callable([$value, 'toBinaryString'])) {
+            return $value->toBinaryString();
         }
 
         if (is_object($value) && is_callable([$value, '__toString'])) {
@@ -513,8 +521,8 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
                 $this->ns,
                 $bucket,
                 $this->mapData($item->getKey()),
-                $this->encodeItem($item, $expiresAt),
-                $expiresAt,
+                OptionalCassandra::blob($this->encodeItem($item, $expiresAt)),
+                OptionalCassandra::bigint($expiresAt),
             );
             if ($ttl !== null) {
                 $arguments[] = $ttl;
