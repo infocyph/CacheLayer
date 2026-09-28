@@ -406,7 +406,6 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
         }
     }
 
-
     /** @param array<string, string> $generations */
     private function insertTagGenerationsIfMissing(array $generations): bool
     {
