@@ -106,7 +106,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
 
         $expiresAt = $this->normalizeExpiry($row['expires'] ?? null);
         if ($expiresAt !== null && $expiresAt <= time()) {
-            return $this->genericDeleteAndMiss($key);
+            return $this->genericMiss($key);
         }
 
         $payload = $this->normalizeString($row['payload'] ?? null);
@@ -114,7 +114,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
         return $this->genericFromBlobWithInvalidator(
             $key,
             $payload,
-            fn(): bool => $this->deleteItem($key),
+            static fn(): bool => true,
         );
     }
 
@@ -152,14 +152,8 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
     public function multiFetch(array $keys): array
     {
         $items = [];
-        $invalid = [];
         foreach ($this->groupByBucket($keys) as $bucket => $group) {
-            $result = $this->fetchBucketItems($bucket, $group);
-            $items += $result['items'];
-            array_push($invalid, ...$result['invalid']);
-        }
-        if ($invalid !== []) {
-            $this->deleteItems($invalid);
+            $items += $this->fetchBucketItems($bucket, $group);
         }
 
         return $items;
@@ -372,7 +366,6 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
         }
 
         $items = [];
-        $invalid = [];
         foreach ($keys as $key) {
             $row = $byKey[$this->mapData($key)] ?? null;
             $payload = is_array($row) ? $this->normalizeString($row['payload'] ?? null) : null;
@@ -380,12 +373,9 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
             $items[$key] = $record === null
                 ? $this->genericMiss($key)
                 : $this->genericItemFromRecord($key, $record);
-            if (is_array($row) && $record === null) {
-                $invalid[] = $key;
-            }
         }
 
-        return ['items' => $items, 'invalid' => $invalid];
+        return $items;
     }
 
     /**
