@@ -18,7 +18,9 @@ final class PdoCacheSchema
 
         $driverValue = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
         $driver = is_string($driverValue) ? $driverValue : '';
-        $identifier = in_array($driver, ['mysql', 'mariadb'], true) ? 'VARCHAR(191)' : 'TEXT';
+        $identifier = in_array($driver, ['mysql', 'mariadb'], true)
+            ? 'VARCHAR(191) CHARACTER SET ascii COLLATE ascii_bin'
+            : 'TEXT';
         $payload = match ($driver) {
             'mysql', 'mariadb' => 'MEDIUMBLOB',
             'pgsql' => 'BYTEA',
@@ -34,7 +36,8 @@ final class PdoCacheSchema
                 PRIMARY KEY (namespace, kind, cache_key)
             )",
         );
-        if (in_array($driver, ['mysql', 'mariadb'], true)) {
+        if (in_array($driver, ['mysql', 'mariadb'], true)
+            && !self::mysqlIdentityColumnsAreBinary($pdo, $table)) {
             self::hardenMysqlIdentityColumns($pdo, $table);
         }
 
@@ -64,5 +67,18 @@ final class PdoCacheSchema
             . 'MODIFY kind VARCHAR(191) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, '
             . 'MODIFY cache_key VARCHAR(191) CHARACTER SET ascii COLLATE ascii_bin NOT NULL',
         );
+    }
+
+    private static function mysqlIdentityColumnsAreBinary(PDO $pdo, string $table): bool
+    {
+        $statement = $pdo->prepare(
+            'SELECT COUNT(*) FROM information_schema.columns '
+            . 'WHERE table_schema = DATABASE() AND table_name = ? '
+            . "AND column_name IN ('namespace', 'kind', 'cache_key') "
+            . "AND collation_name = 'ascii_bin'",
+        );
+        $statement->execute([$table]);
+
+        return (int) $statement->fetchColumn() === 3;
     }
 }
