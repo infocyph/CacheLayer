@@ -148,6 +148,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
 
     public function deleteItem(string $key): bool
     {
+        $this->discardDeferredKey($key);
         $mapped = $this->map($key);
 
         return $this->withExclusiveLock(function () use ($mapped): bool {
@@ -164,6 +165,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
      */
     public function deleteItems(array $keys): bool
     {
+        $this->discardDeferredKeys($keys);
         $mappedKeys = [];
         foreach ($keys as $key) {
             $mappedKeys[] = $this->map($key);
