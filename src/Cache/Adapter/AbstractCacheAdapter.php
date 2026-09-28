@@ -28,15 +28,6 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
 
     private ?string $storageIdentity = null;
 
-    /**
-     * @param list<string> $keys
-     * @return array<string, CacheItem>
-     */
-    abstract public function multiFetch(array $keys): array;
-
-    /** @param array<string, CacheItemInterface> $items */
-    abstract public function saveItems(array $items): bool;
-
     public function __destruct()
     {
         if ($this->deferred === []) {
@@ -48,6 +39,15 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         } catch (Throwable) {
         }
     }
+
+    /**
+     * @param list<string> $keys
+     * @return array<string, CacheItem>
+     */
+    abstract public function multiFetch(array $keys): array;
+
+    /** @param array<string, CacheItemInterface> $items */
+    abstract public function saveItems(array $items): bool;
 
     /** @internal */
     public function assertOptionsCompatible(CacheOptions $options): void
@@ -172,29 +172,6 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         return true;
     }
 
-    protected function discardDeferredKey(string $key): void
-    {
-        CacheInput::key($key);
-        if ($this->committing) {
-            return;
-        }
-
-        unset($this->deferred[$this->deferredKey($key)]);
-    }
-
-    /** @param list<string> $keys */
-    protected function discardDeferredKeys(array $keys): void
-    {
-        $keys = CacheInput::keys($keys);
-        if ($this->committing) {
-            return;
-        }
-
-        foreach ($keys as $key) {
-            unset($this->deferred[$this->deferredKey($key)]);
-        }
-    }
-
     protected static function isGeneration(mixed $value): bool
     {
         return is_string($value) && strlen($value) === 32 && ctype_xdigit($value);
@@ -228,6 +205,29 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         return $record !== null && !CachePayloadCodec::isExpired($record->expiresAt)
             ? $record
             : null;
+    }
+
+    protected function discardDeferredKey(string $key): void
+    {
+        CacheInput::key($key);
+        if ($this->committing) {
+            return;
+        }
+
+        unset($this->deferred[$this->deferredKey($key)]);
+    }
+
+    /** @param list<string> $keys */
+    protected function discardDeferredKeys(array $keys): void
+    {
+        $keys = CacheInput::keys($keys);
+        if ($this->committing) {
+            return;
+        }
+
+        foreach ($keys as $key) {
+            unset($this->deferred[$this->deferredKey($key)]);
+        }
     }
 
     protected function encodeItem(
