@@ -173,13 +173,10 @@ final readonly class CachePayloadCodec
         if (!is_array($value)) {
             return false;
         }
-        foreach ($value as $item) {
-            if ($this->containsUnsupportedDecodedValue($item)) {
-                return true;
-            }
-        }
-
-        return false;
+        return array_any(
+            $value,
+            fn(mixed $item): bool => $this->containsUnsupportedDecodedValue($item),
+        );
     }
 
     /**
