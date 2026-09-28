@@ -249,11 +249,9 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
 
     /**
      * @param array $items The items argument.
-     * @param array $stale The stale argument.
      * @param string $key The key argument.
      * @param array $raw The raw argument.
      * @phpstan-param array<string, CacheItem> $items
-     * @phpstan-param list<string> $stale
      * @phpstan-param array<mixed> $raw
      */
     private function appendFetchedHit(array &$items, string $key, array $raw): bool
