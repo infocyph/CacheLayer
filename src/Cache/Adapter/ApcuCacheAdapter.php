@@ -89,7 +89,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
             apcu_delete($apcuKey);
         }
 
-        return new CacheItem($this, $key);
+        return $this->genericMiss($key);
     }
 
     /** @param list<string> $tags */
