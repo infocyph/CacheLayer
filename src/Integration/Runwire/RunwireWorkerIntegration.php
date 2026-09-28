@@ -26,13 +26,12 @@ final class RunwireWorkerIntegration
         }
 
         return $worker->spawnBackground(
-            static function (CoroutineScope $scope) use ($worker, $cluster, $batchSize, $idleSeconds): void {
+            static function (CoroutineScope $scope) use ($cluster, $batchSize, $idleSeconds): void {
                 RunwireIntegration::share(
                     null,
                     $scope,
-                    static function () use ($worker, $cluster, $scope, $batchSize, $idleSeconds): void {
-                        while (true) {
-                            RunwireIntegration::checkpoint();
+                    static function () use ($cluster, $scope, $batchSize, $idleSeconds): void {
+                        while (!$scope->cancellation()->isCancelled()) {
                             $processed = $cluster->consume($batchSize);
 
                             if ($processed < $batchSize && $idleSeconds > 0.0) {
@@ -41,6 +40,8 @@ final class RunwireWorkerIntegration
                                 $scope->yieldNow();
                             }
                         }
+
+                        $scope->cancellation()->throwIfCancelled();
                     },
                 );
             },
@@ -61,7 +62,6 @@ final class RunwireWorkerIntegration
 
         return $worker->spawnBackground(
             static function (CoroutineScope $scope) use (
-                $worker,
                 $maintenance,
                 $intervalSeconds,
                 $pruneLimit,
@@ -71,15 +71,14 @@ final class RunwireWorkerIntegration
                     null,
                     $scope,
                     static function () use (
-                        $worker,
+                        $scope,
                         $maintenance,
                         $intervalSeconds,
                         $pruneLimit,
                         $optimizeEvery,
                     ): void {
                         $cycles = 0;
-                        while (true) {
-                            RunwireIntegration::checkpoint();
+                        while (!$scope->cancellation()->isCancelled()) {
                             ++$cycles;
                             $maintenance->cycle(
                                 pruneLimit: $pruneLimit,
@@ -89,6 +88,8 @@ final class RunwireWorkerIntegration
 
                             RunwireIntegration::sleep($intervalSeconds);
                         }
+
+                        $scope->cancellation()->throwIfCancelled();
                     },
                 );
             },
