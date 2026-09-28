@@ -109,6 +109,11 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
 
     public function getItem(string $key): CacheItem
     {
+        $pending = $this->deferredRead($key);
+        if ($pending !== null) {
+            return $pending;
+        }
+
         if ($this->l1 !== null && $this->l1Readable) {
             $l1 = $this->attempt(
                 fn(): CacheItemInterface => $this->l1->getItem($key),
