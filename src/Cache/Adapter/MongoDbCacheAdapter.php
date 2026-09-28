@@ -176,7 +176,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return $this->genericFromBlobWithInvalidator(
             $key,
             $payload,
-            fn(): bool => $this->deleteItem($key),
+            static fn(): bool => true,
         );
     }
 
@@ -227,17 +227,15 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         }
 
         $items = [];
-        $stale = [];
         foreach ($keys as $key) {
             $row = $byId[$this->mapData($key)] ?? null;
             $payload = is_array($row) ? $this->binaryString($row['payload'] ?? null) : null;
-            $item = $this->genericFromBlobWithInvalidator($key, $payload, static fn(): bool => true);
-            $items[$key] = $item;
-            if (is_array($row) && !$item->isHit()) {
-                $stale[] = $key;
-            }
+            $items[$key] = $this->genericFromBlobWithInvalidator(
+                $key,
+                $payload,
+                static fn(): bool => true,
+            );
         }
-        $this->deleteItems($stale);
 
         return $items;
     }
