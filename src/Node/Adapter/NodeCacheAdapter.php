@@ -33,6 +33,16 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         }
     }
 
+    #[\Override]
+    public function assertStorageIdentityCompatible(string $storageIdentity): void
+    {
+        parent::assertStorageIdentityCompatible($storageIdentity);
+        $this->l2->assertStorageIdentityCompatible($storageIdentity);
+        if ($this->l1 instanceof AbstractCacheAdapter) {
+            $this->l1->assertStorageIdentityCompatible($storageIdentity);
+        }
+    }
+
     public function clear(): bool
     {
         $l2 = $this->attempt(fn(): bool => $this->l2->clear(), false, 'l2_failure');
@@ -50,6 +60,17 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         $this->l2->configureOptions($options);
         if ($this->l1 instanceof AbstractCacheAdapter) {
             $this->l1->configureOptions($options);
+        }
+    }
+
+    #[\Override]
+    public function configureStorageIdentity(string $storageIdentity): void
+    {
+        $this->assertStorageIdentityCompatible($storageIdentity);
+        parent::configureStorageIdentity($storageIdentity);
+        $this->l2->configureStorageIdentity($storageIdentity);
+        if ($this->l1 instanceof AbstractCacheAdapter) {
+            $this->l1->configureStorageIdentity($storageIdentity);
         }
     }
 

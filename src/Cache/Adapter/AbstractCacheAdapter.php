@@ -22,6 +22,8 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
 
     private ?CacheOptions $options = null;
 
+    private ?string $storageIdentity = null;
+
     /**
      * @param list<string> $keys
      * @return array<string, CacheItem>
@@ -36,6 +38,14 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
     {
         if ($this->options !== null && $this->options != $options) {
             throw new \LogicException('Cache options cannot change after the adapter is bound to a facade.');
+        }
+    }
+
+    /** @internal */
+    public function assertStorageIdentityCompatible(string $storageIdentity): void
+    {
+        if ($this->storageIdentity !== null && $this->storageIdentity !== $storageIdentity) {
+            throw new \LogicException('Cache storage identity cannot change after the adapter is bound to a facade.');
         }
     }
 
@@ -59,6 +69,13 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
     {
         $this->assertOptionsCompatible($options);
         $this->options ??= $options;
+    }
+
+    /** @internal */
+    public function configureStorageIdentity(string $storageIdentity): void
+    {
+        $this->assertStorageIdentityCompatible($storageIdentity);
+        $this->storageIdentity ??= $storageIdentity;
     }
 
     public function createItem(string $key): CacheItemInterface
@@ -136,16 +153,16 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         return strtolower($value);
     }
 
-    protected function decodeRecordFromBase64(string $payload): ?CacheRecord
+    protected function decodeRecordFromBase64(string $payload, ?string $key = null): ?CacheRecord
     {
         $blob = base64_decode($payload, true);
 
-        return is_string($blob) ? $this->decodeRecordFromBlob($blob) : null;
+        return is_string($blob) ? $this->decodeRecordFromBlob($blob, $key) : null;
     }
 
-    protected function decodeRecordFromBlob(string $blob): ?CacheRecord
+    protected function decodeRecordFromBlob(string $blob, ?string $key = null): ?CacheRecord
     {
-        $record = $this->payloadCodec()->decode($blob);
+        $record = $this->payloadCodec()->decode($blob, $this->storageIdentity, $key);
 
         return $record !== null && !CachePayloadCodec::isExpired($record->expiresAt)
             ? $record
@@ -159,7 +176,14 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
     ): string {
         $tags = $item instanceof CacheItem ? $item->getTagGenerations() : [];
 
-        return $this->payloadCodec()->encode($item->get(), $expiresAt, $tags, $namespaceGeneration);
+        return $this->payloadCodec()->encode(
+            $item->get(),
+            $expiresAt,
+            $tags,
+            $namespaceGeneration,
+            $this->storageIdentity,
+            $item->getKey(),
+        );
     }
 
     protected function genericDeleteAndMiss(string $key): CacheItem
@@ -179,7 +203,7 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
             $key,
             $payload,
             $onInvalid,
-            $this->decodeRecordFromBase64(...),
+            fn(string $encoded): ?CacheRecord => $this->decodeRecordFromBase64($encoded, $key),
         );
     }
 
@@ -193,7 +217,7 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
             $key,
             $blob,
             $onInvalid,
-            $this->decodeRecordFromBlob(...),
+            fn(string $encoded): ?CacheRecord => $this->decodeRecordFromBlob($encoded, $key),
         );
     }
 

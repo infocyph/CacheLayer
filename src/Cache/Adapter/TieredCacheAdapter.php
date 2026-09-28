@@ -36,6 +36,17 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         }
     }
 
+    #[\Override]
+    public function assertStorageIdentityCompatible(string $storageIdentity): void
+    {
+        parent::assertStorageIdentityCompatible($storageIdentity);
+        foreach ($this->pools as $pool) {
+            if ($pool instanceof AbstractCacheAdapter) {
+                $pool->assertStorageIdentityCompatible($storageIdentity);
+            }
+        }
+    }
+
     public function clear(): bool
     {
         $cleared = true;
@@ -55,6 +66,18 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         foreach ($this->pools as $pool) {
             if ($pool instanceof AbstractCacheAdapter) {
                 $pool->configureOptions($options);
+            }
+        }
+    }
+
+    #[\Override]
+    public function configureStorageIdentity(string $storageIdentity): void
+    {
+        $this->assertStorageIdentityCompatible($storageIdentity);
+        parent::configureStorageIdentity($storageIdentity);
+        foreach ($this->pools as $pool) {
+            if ($pool instanceof AbstractCacheAdapter) {
+                $pool->configureStorageIdentity($storageIdentity);
             }
         }
     }

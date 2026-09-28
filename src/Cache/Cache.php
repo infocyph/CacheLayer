@@ -63,6 +63,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         $this->options = $options ?? new CacheOptions();
         if ($adapter instanceof AbstractCacheAdapter) {
             $adapter->configureOptions($this->options);
+            $adapter->configureStorageIdentity($namespace);
         }
     }
 
