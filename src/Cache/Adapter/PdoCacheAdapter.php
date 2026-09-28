@@ -414,12 +414,9 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
     /** @param list<array{0:string, 1:string, 2:string, 3:int|null}> $rows */
     private function upsertRows(array $rows): bool
     {
-        foreach (array_chunk($rows, self::BATCH_SIZE) as $chunk) {
-            if (!$this->upsertChunk($chunk)) {
-                return false;
-            }
-        }
-
-        return true;
+        return array_all(
+            array_chunk($rows, self::BATCH_SIZE),
+            fn(array $chunk): bool => $this->upsertChunk($chunk),
+        );
     }
 }
