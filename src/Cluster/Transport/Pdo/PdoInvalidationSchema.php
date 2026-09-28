@@ -39,7 +39,7 @@ final class PdoInvalidationSchema
         try {
             $connection->exec(
                 'CREATE INDEX'.$ifNotExists.' cachelayer_invalidation_events_cluster_idx '
-                .'ON ' . self::TABLE . ' (cluster_name, event_id)',
+                .'ON '.self::TABLE.' (cluster_name, event_id)',
             );
         } catch (PDOException $exception) {
             $duplicate = is_array($exception->errorInfo) && ($exception->errorInfo[1] ?? null) === 1061;
@@ -58,7 +58,7 @@ final class PdoInvalidationSchema
         };
 
         return 'CREATE TABLE IF NOT EXISTS '.self::TABLE.' ('
-            .'event_id ' . $id . ', cluster_name VARCHAR(128) NOT NULL, namespace_name VARCHAR(64) NOT NULL, '
+            .'event_id '.$id.', cluster_name VARCHAR(128) NOT NULL, namespace_name VARCHAR(64) NOT NULL, '
             .'event_type VARCHAR(32) NOT NULL, identifier VARCHAR(64) NULL, origin_node_id VARCHAR(255) NOT NULL, '
             .'created_at BIGINT NOT NULL)';
     }

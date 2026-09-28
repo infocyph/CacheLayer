@@ -302,9 +302,9 @@ final readonly class CachePayloadCodec
     private function signatureInput(string $payload, string $storageIdentity, string $key): string
     {
         return self::SIGNATURE_PURPOSE
-            ."\0" . strlen($storageIdentity) . ':' . $storageIdentity
-            ."\0" . strlen($key) . ':' . $key
-            ."\0" . $payload;
+            ."\0".strlen($storageIdentity).':'.$storageIdentity
+            ."\0".strlen($key).':'.$key
+            ."\0".$payload;
     }
 
     private function unserializeNative(string $payload): mixed
