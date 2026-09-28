@@ -233,7 +233,7 @@ LUA;
             $this->redis->del($this->map($key));
         }
 
-        return new CacheItem($this, $key);
+        return $this->genericMiss($key);
     }
 
     /** @param list<string> $tags */
