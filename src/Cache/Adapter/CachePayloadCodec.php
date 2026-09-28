@@ -288,7 +288,7 @@ final readonly class CachePayloadCodec
         }
 
         foreach ($tags as $tag => $generation) {
-            if (!is_string($tag)
+            if ((!is_string($tag) && !is_int($tag))
                 || !is_string($generation)
                 || strlen($generation) !== 32
                 || !ctype_xdigit($generation)) {
