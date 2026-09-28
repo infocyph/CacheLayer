@@ -14,7 +14,7 @@ final class RedisConnection
 
     private const float READ_TIMEOUT_SECONDS = 1.0;
 
-    public static function connect(string $dsn): \Redis
+    public static function connect(#[\SensitiveParameter] string $dsn): \Redis
     {
         [$host, $port, $database, $credentials] = self::parseDsn($dsn);
         $connection = new \Redis();
@@ -73,7 +73,7 @@ final class RedisConnection
      * @param string $dsn The Redis-compatible DSN.
      * @phpstan-return array{string, int, int|null, string|array{string, string}|null}
      */
-    private static function parseDsn(string $dsn): array
+    private static function parseDsn(#[\SensitiveParameter] string $dsn): array
     {
         $parts = self::parseDsnParts($dsn);
         $scheme = $parts['scheme'] ?? null;
@@ -113,7 +113,7 @@ final class RedisConnection
      * @param string $dsn The Redis-compatible DSN.
      * @phpstan-return array<string, int|string>
      */
-    private static function parseDsnParts(string $dsn): array
+    private static function parseDsnParts(#[\SensitiveParameter] string $dsn): array
     {
         try {
             $parts = parse_url($dsn);

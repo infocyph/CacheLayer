@@ -31,7 +31,7 @@ final class ClosureSerializer
         return self::PREFIX . base64_encode(opis_serialize($closure));
     }
 
-    public static function signed(string $key): SignedClosureSerializer
+    public static function signed(#[\SensitiveParameter] string $key): SignedClosureSerializer
     {
         return new SignedClosureSerializer($key);
     }

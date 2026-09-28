@@ -11,7 +11,7 @@ final readonly class SignedClosureSerializer
 {
     private const string PREFIX = 'cls1-sig:';
 
-    public function __construct(private string $key)
+    public function __construct(#[\SensitiveParameter] private string $key)
     {
         if ($key === '') {
             throw new InvalidArgumentException('The Closure signing key must not be empty.');
