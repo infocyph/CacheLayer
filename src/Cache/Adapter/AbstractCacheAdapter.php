@@ -386,7 +386,7 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         $ttl = $item instanceof CacheItem ? $item->ttlSeconds() : null;
         $tags = $item instanceof CacheItem ? $item->getTagGenerations() : [];
 
-        return (new CacheItem($this, $item->getKey(), $item->get(), true))
+        return new CacheItem($this, $item->getKey(), $item->get(), true)
             ->expiresAfter($ttl)
             ->setTagGenerations($tags);
     }
