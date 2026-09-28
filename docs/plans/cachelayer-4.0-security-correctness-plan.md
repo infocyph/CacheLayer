@@ -1,9 +1,37 @@
 # CacheLayer security, correctness, and release plan
 
 Date: 2026-09-28  
-Status: Planned for 4.0.0; audit completed, remediation not implemented\
+Status: Implementation in progress; Batch 1 implemented, QA remediation in progress\
 Audited revision: `b064b8196ddc4672ce37be252bc7a4cadb78527e` (local tag `3.4`)  
 Release target: **4.0.0 — next major release**
+
+## Implementation tracker
+
+Updated: 2026-09-28  
+Working branch: `feature/improvements`  
+Draft PR: [#29 — CacheLayer 4.0 security and correctness hardening](https://github.com/infocyph/CacheLayer/pull/29)
+
+| Batch | Findings | Status | Current gate |
+| --- | --- | --- | --- |
+| 1 — Security and transaction containment | R01, R03, R04, R05, R09, R10 | **QA in progress** | Production fixes and regression coverage are implemented. PHPForge analysis and benchmarks pass on the latest completed run; quality QA still needs remediation before this batch closes. |
+| 2 — Authenticated payload/storage identity | R02, R15 | Not started | Starts only after Batch 1 QA is clean. |
+| 3 — Durable invalidation protocol | R06, R07 | Not started | Blocked on Batch 2 identity decisions. |
+| 4 — Cache contracts and memoization | R08, R11, R12, R13, R16, R17 | Not started | Pending prior batches. |
+| 5 — Counters and backend races | R14, R18 | Not started | Pending prior batches. |
+| 6 — Release gates and integration | R19 plus release acceptance / optional Runwire 2.1 | Not started | Final full-matrix and packaging gate. |
+
+### Batch 1 tracker
+
+| Finding | Implementation | Regression evidence | QA state |
+| --- | --- | --- | --- |
+| R01 — bounded recursive traversal | Implemented | Added bounded subprocess coverage for direct/mutual cycles, deep input, signed/unsigned/compressed records; shared traversal guard also protects callable fingerprints | Analyzer feedback on the traversal helper was resolved; focused regression passes in CI. |
+| R03 — immutable adapter policy | Implemented | Shared-adapter conflicting-policy regression added | Pending final Batch 1 quality gate. |
+| R04 — atomic file consume deletion | Implemented | File and PHP-files consume failure coverage added | Logic implemented; current CI reports the permission-fault test as a warning on the runner, so the fault injection still needs deterministic hardening. |
+| R05 — Node SQLite transaction ownership | Implemented | Caller-owned transaction preservation regression added | Node tests pass; pending final Batch 1 quality gate. |
+| R09 — filesystem trust boundaries | Implemented across File/PHP-files roots and locks, Node/PDO SQLite paths, FileLockProvider, and shared-memory token paths | Symlink-root regression added; filesystem owners were audited beyond the initially reproduced PHP-files path | Static-analysis feedback was resolved; pending final Batch 1 quality gate and platform coverage. |
+| R10 — secret redaction | Implemented for Redis/Valkey DSNs, PDO credentials/DSNs, MongoDB URI creation, integrity/signing keys, and tier descriptors | Error/trace and `#[SensitiveParameter]` regression coverage added | Redis redaction regression passes; one reflection assertion currently targets a stale/removed symbol and must be corrected. |
+
+**Latest completed CI evidence:** PHPForge analysis passes on PHP 8.4/8.5 and both benchmark jobs pass. QA jobs currently fail on the quality suite because the new containment test has one ReflectionException, Pint reports style issues, and the repository's existing skip-directive/reference-integrity findings remain active. Do not mark Batch 1 complete until those failures are resolved and the exact resulting commit is green.
 
 ## Decision
 
