@@ -60,12 +60,14 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
 
     public function deleteItem(string $key): bool
     {
+        $this->discardDeferredKey($key);
         return $this->call('del', $this->mapData($key)) !== false;
     }
 
     /** @param list<string> $keys */
     public function deleteItems(array $keys): bool
     {
+        $this->discardDeferredKeys($keys);
         foreach ($this->groupByBucket($keys) as $group) {
             if ($this->call('del', array_map($this->mapData(...), $group)) === false) {
                 return false;
