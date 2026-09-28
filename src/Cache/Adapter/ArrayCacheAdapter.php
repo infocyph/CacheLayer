@@ -94,6 +94,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
 
     public function deleteItem(string $key): bool
     {
+        $this->discardDeferredKey($key);
         unset($this->store[$this->map($key)]);
 
         return true;
@@ -105,6 +106,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
      */
     public function deleteItems(array $keys): bool
     {
+        $this->discardDeferredKeys($keys);
         foreach ($keys as $key) {
             unset($this->store[$this->map($key)]);
         }
