@@ -154,7 +154,7 @@ php -d apc.enable_cli=1 vendor/bin/pest \
 
 An initial direct Pest attempt without the bundled configuration failed with `Could not read XML from file "--cache-directory"`; the explicit configuration above resolved it. The sandbox could not start (`bubblewrap: mountinfo path is not absolute`), so approved host execution was used. These were tooling issues, not library test failures.
 
-No complete MySQL/MariaDB, MongoDB, Scylla CQL, Redis Cluster, Windows, PHP 8.3/8.4, clean production consumer, documentation build, sustained-RPM benchmark, or worker soak gate passed during this audit. `sphinx-build` was unavailable. PostgreSQL testing below exercised transaction ordering through `psql`, not the library's PDO driver. Current CI on a future final revision remains required.
+No complete MySQL/MariaDB, MongoDB, Scylla CQL, Redis Cluster, Windows, PHP 8.4/8.5, clean production consumer, documentation build, sustained-RPM benchmark, or worker soak gate passed during this audit. `sphinx-build` was unavailable. PostgreSQL testing below exercised transaction ordering through `psql`, not the library's PDO driver. Current CI on a future final revision remains required.
 
 ## Required findings
 
