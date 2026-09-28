@@ -132,12 +132,8 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         }
 
         $item = $this->hydrate($key, $row);
-        if ($item instanceof CacheItem) {
-            return $item;
-        }
-        $this->deleteItem($key);
 
-        return $this->genericMiss($key);
+        return $item ?? $this->genericMiss($key);
     }
 
     /**
@@ -183,16 +179,11 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
     {
         $rows = $this->fetchRows(self::KIND_DATA, $keys);
         $items = [];
-        $stale = [];
         foreach ($keys as $key) {
             $row = $rows[$key] ?? null;
             $item = is_array($row) ? $this->hydrate($key, $row) : null;
             $items[$key] = $item ?? $this->genericMiss($key);
-            if (is_array($row) && $item === null) {
-                $stale[] = $key;
-            }
         }
-        $this->deleteByKind(self::KIND_DATA, $stale);
 
         return $items;
     }
@@ -208,13 +199,14 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         );
         $statement->bindValue(1, $this->namespace, PDO::PARAM_STR);
         $statement->bindValue(2, self::KIND_DATA, PDO::PARAM_STR);
-        $statement->bindValue(3, time(), PDO::PARAM_INT);
+        $cutoff = time();
+        $statement->bindValue(3, $cutoff, PDO::PARAM_INT);
         $statement->bindValue(4, $limit, PDO::PARAM_INT);
         $statement->execute();
         $keys = $statement->fetchAll(PDO::FETCH_COLUMN);
         $keys = array_values(array_filter($keys, is_string(...)));
 
-        return $this->deleteByKind(self::KIND_DATA, $keys) ? count($keys) : 0;
+        return $this->deleteExpiredKeys($keys, $cutoff);
     }
 
     /** @param list<string> $tags */
@@ -289,6 +281,26 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         if (file_exists($file) && !is_file($file)) {
             throw new RuntimeException("SQLite cache path is not a regular file: {$file}");
         }
+    }
+
+
+    /** @param list<string> $keys */
+    private function deleteExpiredKeys(array $keys, int $cutoff): int
+    {
+        $deleted = 0;
+        foreach (array_chunk($keys, self::BATCH_SIZE) as $chunk) {
+            $marks = implode(',', array_fill(0, count($chunk), '?'));
+            $statement = $this->pdo->prepare(
+                "DELETE FROM {$this->table} WHERE namespace = ? AND kind = ? "
+                . "AND expires IS NOT NULL AND expires <= ? AND cache_key IN ({$marks})",
+            );
+            if (!$statement->execute([$this->namespace, self::KIND_DATA, $cutoff, ...$chunk])) {
+                return $deleted;
+            }
+            $deleted += $statement->rowCount();
+        }
+
+        return $deleted;
     }
 
     /** @param list<string> $keys */
