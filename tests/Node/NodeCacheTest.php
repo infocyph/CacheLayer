@@ -196,3 +196,85 @@ test('node cache configuration rejects invalid paths and timeouts', function () 
         ->and(fn() => new NodeCacheConfig('/tmp/cache.sqlite', 'app', busyTimeoutMs: -1))
         ->toThrow(NodeCacheConfigurationException::class);
 });
+
+
+test('node APCu identity includes the SQLite store', function () {
+    expect(extension_loaded('apcu'))->toBeTrue()
+        ->and(apcu_enabled())->toBeTrue();
+    apcu_clear_cache();
+
+    $first = NodeCache::create(new NodeCacheConfig(
+        sqliteFile: $this->nodeCacheDirectory . '/first.sqlite',
+        namespace: 'shared.namespace',
+        apcuEnabled: true,
+    ));
+    $second = NodeCache::create(new NodeCacheConfig(
+        sqliteFile: $this->nodeCacheDirectory . '/second.sqlite',
+        namespace: 'shared.namespace',
+        apcuEnabled: true,
+    ));
+
+    expect($first->set('shared', 'first'))->toBeTrue()
+        ->and($second->get('shared'))->toBeNull()
+        ->and($second->set('shared', 'second'))->toBeTrue()
+        ->and($first->get('shared'))->toBe('first')
+        ->and($second->get('shared'))->toBe('second');
+
+    apcu_clear_cache();
+});
+
+test('node lock identity includes the SQLite store', function () {
+    $keys = [];
+    $provider = new class ($keys) implements LockProviderInterface {
+        public function __construct(private array &$keys) {}
+
+        public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): ?LockHandle
+        {
+            $this->keys[] = $key;
+
+            return new LockHandle($key, bin2hex(random_bytes(16)), leaseSeconds: $leaseSeconds);
+        }
+
+        public function refresh(?LockHandle $handle, float $leaseSeconds): bool
+        {
+            return $handle instanceof LockHandle && $leaseSeconds > 0;
+        }
+
+        public function release(?LockHandle $handle): void {}
+    };
+
+    foreach (['first.sqlite', 'second.sqlite'] as $file) {
+        $cache = NodeCache::create(new NodeCacheConfig(
+            sqliteFile: $this->nodeCacheDirectory . '/' . $file,
+            namespace: 'shared.namespace',
+            apcuEnabled: false,
+            lockProvider: $provider,
+        ));
+        $cache->remember('same-key', static fn(): string => 'value', 30);
+    }
+
+    expect($keys)->toHaveCount(2)
+        ->and($keys[0])->not->toBe($keys[1]);
+});
+
+test('node authority reflects whether an L1 cache can serve stale state', function () {
+    expect(extension_loaded('apcu'))->toBeTrue()
+        ->and(apcu_enabled())->toBeTrue();
+    apcu_clear_cache();
+
+    $withL1 = NodeCache::create(new NodeCacheConfig(
+        sqliteFile: $this->nodeCacheDirectory . '/with-l1.sqlite',
+        namespace: 'authority',
+        apcuEnabled: true,
+    ));
+    $l2Only = NodeCache::create(new NodeCacheConfig(
+        sqliteFile: $this->nodeCacheDirectory . '/l2-only.sqlite',
+        namespace: 'authority',
+        apcuEnabled: false,
+    ));
+
+    expect($withL1->isAuthoritative())->toBeFalse()
+        ->and($l2Only->isAuthoritative())->toBeTrue();
+
+    apcu_clear_cache();
+});
