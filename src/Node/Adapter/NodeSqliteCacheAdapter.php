@@ -24,9 +24,9 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
 
     private readonly string $namespace;
 
-    private bool $ownsTransaction = false;
-
     private readonly \PDOStatement $upsertStatement;
+
+    private bool $ownsTransaction = false;
 
     public function __construct(
         private readonly PDO $connection,
@@ -376,7 +376,16 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
         return $this->upsertRows($rows);
     }
 
-    private function createSchemaIfMissing(): void
+    private function assertWritableTransaction(): void
+    {
+        if ($this->connection->inTransaction() && !$this->ownsTransaction) {
+            throw new NodeCacheStorageException(
+                'Node SQLite cache mutations cannot join a caller-owned transaction.',
+            );
+        }
+    }
+
+private function createSchemaIfMissing(): void
     {
         try {
             $this->connection->exec(
@@ -403,16 +412,7 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
         return 'm:tag:' . $tag;
     }
 
-    private function assertWritableTransaction(): void
-    {
-        if ($this->connection->inTransaction() && !$this->ownsTransaction) {
-            throw new NodeCacheStorageException(
-                'Node SQLite cache mutations cannot join a caller-owned transaction.',
-            );
-        }
-    }
-
-    private function rollBack(): void
+        private function rollBack(): void
     {
         if ($this->ownsTransaction && $this->connection->inTransaction()) {
             $this->connection->rollBack();

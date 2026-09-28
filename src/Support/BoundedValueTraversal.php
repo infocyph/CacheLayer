@@ -32,20 +32,6 @@ final class BoundedValueTraversal
     }
 
     /** @param array<mixed> $value */
-    private static function assertDepth(int $depth, array $value): void
-    {
-        if ($depth >= self::MAX_DEPTH && $value !== []) {
-            throw new InvalidArgumentException('The value graph exceeds the supported nesting depth.');
-        }
-    }
-
-    private static function assertNodeBudget(int $nodes): void
-    {
-        if ($nodes > self::MAX_NODES) {
-            throw new InvalidArgumentException('The value graph exceeds the supported traversal budget.');
-        }
-    }
-
     /**
      * @param list<array{value:mixed,depth:int,references:array<string,true>}> $stack
      * @param array<mixed> $current
@@ -64,6 +50,21 @@ final class BoundedValueTraversal
                 'depth' => $depth + 1,
                 'references' => $childReferences,
             ];
+        }
+    }
+
+    /** @param array<mixed> $value */
+    private static function assertDepth(int $depth, array $value): void
+    {
+        if ($depth >= self::MAX_DEPTH && $value !== []) {
+            throw new InvalidArgumentException('The value graph exceeds the supported nesting depth.');
+        }
+    }
+
+private static function assertNodeBudget(int $nodes): void
+    {
+        if ($nodes > self::MAX_NODES) {
+            throw new InvalidArgumentException('The value graph exceeds the supported traversal budget.');
         }
     }
 

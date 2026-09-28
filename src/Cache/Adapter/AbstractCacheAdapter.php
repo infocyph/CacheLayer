@@ -28,6 +28,14 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
      */
     abstract public function multiFetch(array $keys): array;
 
+    /** @internal */
+    public function assertOptionsCompatible(CacheOptions $options): void
+    {
+        if ($this->options !== null && $this->options != $options) {
+            throw new \LogicException('Cache options cannot change after the adapter is bound to a facade.');
+        }
+    }
+
     /** @param array<string, CacheItemInterface> $items */
     abstract public function saveItems(array $items): bool;
 
@@ -44,14 +52,6 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         }
 
         return $saved;
-    }
-
-    /** @internal */
-    public function assertOptionsCompatible(CacheOptions $options): void
-    {
-        if ($this->options !== null && $this->options != $options) {
-            throw new \LogicException('Cache options cannot change after the adapter is bound to a facade.');
-        }
     }
 
     /** @internal */

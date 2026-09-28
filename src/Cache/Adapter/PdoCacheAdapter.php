@@ -90,25 +90,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         return $directory . DIRECTORY_SEPARATOR . 'cache_' . CacheInput::namespace($namespace) . '.sqlite';
     }
 
-    private static function assertSqliteTarget(string $dsn): void
-    {
-        if (!str_starts_with($dsn, 'sqlite:')) {
-            return;
-        }
-
-        $file = substr($dsn, strlen('sqlite:'));
-        if ($file === '' || $file === ':memory:') {
-            return;
-        }
-        if (FilesystemTrust::containsSymlink($file)) {
-            throw new RuntimeException("Refusing symlinked SQLite cache path: {$file}");
-        }
-        if (file_exists($file) && !is_file($file)) {
-            throw new RuntimeException("SQLite cache path is not a regular file: {$file}");
-        }
-    }
-
-    public function clear(): bool
+        public function clear(): bool
     {
         $statement = $this->pdo->prepare("DELETE FROM {$this->table} WHERE namespace = ?");
         $cleared = $statement->execute([$this->namespace]);
@@ -285,6 +267,24 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         }
 
         return $this->deleteByKind(self::KIND_DATA, $expired) && $this->upsertRows($rows);
+    }
+
+private static function assertSqliteTarget(string $dsn): void
+    {
+        if (!str_starts_with($dsn, 'sqlite:')) {
+            return;
+        }
+
+        $file = substr($dsn, strlen('sqlite:'));
+        if ($file === '' || $file === ':memory:') {
+            return;
+        }
+        if (FilesystemTrust::containsSymlink($file)) {
+            throw new RuntimeException("Refusing symlinked SQLite cache path: {$file}");
+        }
+        if (file_exists($file) && !is_file($file)) {
+            throw new RuntimeException("SQLite cache path is not a regular file: {$file}");
+        }
     }
 
     /** @param list<string> $keys */

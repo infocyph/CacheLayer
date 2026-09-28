@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Infocyph\CacheLayer\Memoize;
 
 use Closure;
-use ReflectionFunction;
 use Infocyph\CacheLayer\Support\BoundedValueTraversal;
+use ReflectionFunction;
 use ReflectionReference;
 use WeakMap;
 

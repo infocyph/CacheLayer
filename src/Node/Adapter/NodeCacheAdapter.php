@@ -23,16 +23,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         private readonly CacheMetricsCollectorInterface $metrics = new InMemoryCacheMetricsCollector(),
     ) {}
 
-    public function clear(): bool
-    {
-        $l2 = $this->attempt(fn(): bool => $this->l2->clear(), false, 'l2_failure');
-        $l1 = $this->l1 === null || $this->attempt(fn(): bool => $this->l1->clear(), false, 'l1_failure');
-        $this->deferred = [];
-
-        return $l2 && $l1;
-    }
-
-    #[\Override]
+        #[\Override]
     public function assertOptionsCompatible(CacheOptions $options): void
     {
         parent::assertOptionsCompatible($options);
@@ -40,6 +31,15 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         if ($this->l1 instanceof AbstractCacheAdapter) {
             $this->l1->assertOptionsCompatible($options);
         }
+    }
+
+public function clear(): bool
+    {
+        $l2 = $this->attempt(fn(): bool => $this->l2->clear(), false, 'l2_failure');
+        $l1 = $this->l1 === null || $this->attempt(fn(): bool => $this->l1->clear(), false, 'l1_failure');
+        $this->deferred = [];
+
+        return $l2 && $l1;
     }
 
     #[\Override]
