@@ -14,10 +14,7 @@ use Psr\Cache\CacheItemInterface;
 
 final class TieredCacheAdapter extends AbstractCacheAdapter
 {
-    private bool $bypassUpperTier = false;
-
-    /** @var array<string, true> */
-    private array $bypassedKeys = [];
+    private bool $l1Readable = true;
 
     /** @param list<InternalCachePoolInterface> $pools */
     public function __construct(
@@ -57,14 +54,10 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         $cleared = true;
         foreach ($this->pools as $index => $pool) {
             $poolCleared = $pool->clear();
-            if ($index === 0 && !$poolCleared) {
-                $this->bypassUpperTier = true;
-            }
             $cleared = $poolCleared && $cleared;
-        }
-        if ($cleared) {
-            $this->bypassUpperTier = false;
-            $this->bypassedKeys = [];
+            if ($index === 0) {
+                $this->l1Readable = $poolCleared;
+            }
         }
         $this->deferred = [];
 
@@ -100,10 +93,10 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         $deleted = true;
         foreach ($this->pools as $index => $pool) {
             $poolDeleted = $pool->deleteItem($key);
-            if ($index === 0) {
-                $this->setUpperTierFence($key, !$poolDeleted);
-            }
             $deleted = $poolDeleted && $deleted;
+            if ($index === 0) {
+                $this->l1Readable = $poolDeleted;
+            }
         }
 
         return $deleted;
@@ -115,12 +108,10 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         $deleted = true;
         foreach ($this->pools as $index => $pool) {
             $poolDeleted = $pool->deleteItems($keys);
-            if ($index === 0) {
-                foreach ($keys as $key) {
-                    $this->setUpperTierFence($key, !$poolDeleted);
-                }
-            }
             $deleted = $poolDeleted && $deleted;
+            if ($index === 0) {
+                $this->l1Readable = $poolDeleted;
+            }
         }
 
         return $deleted;
@@ -128,21 +119,18 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
 
     public function getItem(string $key): CacheItem
     {
-        foreach ($this->pools as $index => $pool) {
-            if ($this->shouldBypass($index, $key)) {
-                continue;
-            }
-
+        foreach ($this->readablePools() as $index => $pool) {
             $item = $pool->getItem($key);
             if (!$item->isHit()) {
                 continue;
             }
-            $out = $this->copyItem($item);
+
+            $copy = $this->copyItem($item);
             if ($index > 0) {
-                $this->promoteOne($out, $index);
+                $this->promoteOne($copy, $index);
             }
 
-            return $out;
+            return $copy;
         }
 
         return $this->genericMiss($key);
@@ -150,7 +138,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
 
     /**
      * @param list<string> $tags
-     * @return array<string, string>
+     * @return array<int|string, string>
      */
     #[\Override]
     public function getTagGenerations(array $tags): array
@@ -175,41 +163,16 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
     {
         $remaining = $keys;
         $results = [];
-        foreach ($this->pools as $index => $pool) {
+        foreach ($this->readablePools() as $index => $pool) {
             if ($remaining === []) {
                 break;
             }
 
-            $wanted = [];
-            foreach ($remaining as $key) {
-                if (!$this->shouldBypass($index, $key)) {
-                    $wanted[] = $key;
-                }
+            $fetched = $pool->multiFetch($remaining);
+            [$hits, $remaining] = $this->extractHits($remaining, $fetched);
+            foreach ($hits as $key => $item) {
+                $results[$key] = $item;
             }
-            if ($wanted === []) {
-                continue;
-            }
-
-            $fetched = $pool->multiFetch($wanted);
-            $hits = [];
-            $next = [];
-            foreach ($remaining as $key) {
-                if ($this->shouldBypass($index, $key)) {
-                    $next[] = $key;
-
-                    continue;
-                }
-
-                $item = $fetched[$key] ?? null;
-                if (!$item instanceof CacheItemInterface || !$item->isHit()) {
-                    $next[] = $key;
-
-                    continue;
-                }
-                $hits[$key] = $this->copyItem($item);
-                $results[$key] = $hits[$key];
-            }
-            $remaining = $next;
             if ($index > 0 && $hits !== []) {
                 $this->promote($hits, $index);
             }
@@ -241,33 +204,22 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
             return false;
         }
 
+        $start = $this->writeStart();
         $written = true;
-        $start = $this->writeToL1 || count($this->pools) === 1 ? 0 : 1;
-        for ($index = $start, $count = count($this->pools); $index < $count; $index++) {
+        for ($index = $start, $count = count($this->pools); $index < $count; ++$index) {
             $written = $this->saveOneIntoPool($this->pools[$index], $item) && $written;
         }
 
-        if ($start === 0) {
-            if ($written) {
-                $this->setUpperTierFence($item->getKey(), false);
-            }
-
-            return $written;
-        }
-
-        $invalidated = $this->pools[0]->deleteItem($item->getKey());
-        $this->setUpperTierFence($item->getKey(), !$invalidated);
-
-        return $written && $invalidated;
+        return $start === 0
+            ? $this->finishL1Write($written)
+            : $this->invalidateSkippedL1([$item->getKey()], $written);
     }
 
     /** @param array<string, CacheItemInterface> $items */
     public function saveItems(array $items): bool
     {
-        foreach ($items as $item) {
-            if (!$this->supportsItem($item)) {
-                return false;
-            }
+        if (!$this->supportsItems($items)) {
+            return false;
         }
 
         return $this->writeBatch($items);
@@ -283,50 +235,95 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
             ->setTagGenerations($tags);
     }
 
+    /**
+     * @param list<string> $wanted
+     * @param array<string, CacheItemInterface> $fetched
+     * @return array{array<string, CacheItem>, list<string>}
+     */
+    private function extractHits(array $wanted, array $fetched): array
+    {
+        $hits = [];
+        $misses = [];
+        foreach ($wanted as $key) {
+            $item = $fetched[$key] ?? null;
+            if ($item instanceof CacheItemInterface && $item->isHit()) {
+                $hits[$key] = $this->copyItem($item);
+            } else {
+                $misses[] = $key;
+            }
+        }
+
+        return [$hits, $misses];
+    }
+
+    private function finishL1Write(bool $written): bool
+    {
+        if ($written) {
+            $this->l1Readable = true;
+        }
+
+        return $written;
+    }
+
+    /** @param list<string> $keys */
+    private function invalidateSkippedL1(array $keys, bool $written): bool
+    {
+        if (count($this->pools) === 1) {
+            return $written;
+        }
+
+        $invalidated = $this->pools[0]->deleteItems($keys);
+        $this->l1Readable = $invalidated;
+
+        return $written && $invalidated;
+    }
+
     /** @param array<string, CacheItem> $items */
     private function promote(array $items, int $tierIndex): void
     {
-        for ($index = 0; $index < $tierIndex; $index++) {
-            if ($index === 0 && $this->bypassUpperTier) {
+        if (!$this->l1Readable) {
+            return;
+        }
+
+        for ($index = 0; $index < $tierIndex; ++$index) {
+            if (!$this->saveIntoPool($this->pools[$index], $items)) {
+                if ($index === 0) {
+                    $this->l1Readable = false;
+                }
+
                 continue;
             }
-
-            $promotable = [];
-            foreach ($items as $item) {
-                if (!$this->shouldBypass($index, $item->getKey())) {
-                    $promotable[$item->getKey()] = $item;
-                }
-            }
-            if ($promotable === []) {
-                continue;
-            }
-
-            if ($this->saveIntoPool($this->pools[$index], $promotable)) {
-                $this->metrics->increment(self::class, 'promotion_batch');
-                $this->metrics->increment(self::class, 'promotion_keys', count($promotable));
-                foreach ($promotable as $item) {
-                    $this->setUpperTierFence($item->getKey(), false);
-                }
-            } elseif ($index === 0) {
-                foreach ($promotable as $item) {
-                    $this->setUpperTierFence($item->getKey(), true);
-                }
-            }
+            $this->metrics->increment(self::class, 'promotion_batch');
+            $this->metrics->increment(self::class, 'promotion_keys', count($items));
         }
     }
 
     private function promoteOne(CacheItemInterface $item, int $tierIndex): void
     {
-        for ($index = 0; $index < $tierIndex; $index++) {
-            if ($this->shouldBypass($index, $item->getKey())) {
-                continue;
-            }
+        if (!$this->l1Readable) {
+            return;
+        }
 
-            $stored = $this->saveOneIntoPool($this->pools[$index], $item);
-            if ($index === 0) {
-                $this->setUpperTierFence($item->getKey(), !$stored);
+        for ($index = 0; $index < $tierIndex; ++$index) {
+            if (!$this->saveOneIntoPool($this->pools[$index], $item) && $index === 0) {
+                $this->l1Readable = false;
+
+                return;
             }
         }
+    }
+
+    /** @return array<int, InternalCachePoolInterface> */
+    private function readablePools(): array
+    {
+        if ($this->l1Readable || count($this->pools) === 1) {
+            return $this->pools;
+        }
+
+        $pools = $this->pools;
+        unset($pools[0]);
+
+        return $pools;
     }
 
     /** @param array<string, CacheItemInterface> $items */
@@ -335,13 +332,12 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         $targets = [];
         foreach ($items as $item) {
             $key = $item->getKey();
-            $target = $pool->createItem($key);
-            $target->set($item->get());
-            $target->expiresAfter($item instanceof CacheItem ? $item->ttlSeconds() : null);
+            $target = $pool->createItem($key)->set($item->get());
             if ($target instanceof CacheItem && $item instanceof CacheItem) {
-                $target->setTagGenerations($item->getTagGenerations());
+                $target->expiresAfter($item->ttlSeconds())
+                    ->setTagGenerations($item->getTagGenerations());
             }
-            $targets[$key] = $target;
+            $targets["key:\0" . $key] = $target;
         }
 
         return $pool->saveItems($targets);
@@ -349,62 +345,38 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
 
     private function saveOneIntoPool(InternalCachePoolInterface $pool, CacheItemInterface $item): bool
     {
-        $target = $pool->createItem($item->getKey());
-        $target->set($item->get());
-        $target->expiresAfter($item instanceof CacheItem ? $item->ttlSeconds() : null);
+        $target = $pool->createItem($item->getKey())->set($item->get());
         if ($target instanceof CacheItem && $item instanceof CacheItem) {
-            $target->setTagGenerations($item->getTagGenerations());
+            $target->expiresAfter($item->ttlSeconds())
+                ->setTagGenerations($item->getTagGenerations());
         }
 
         return $pool->save($target);
     }
 
-    private function setUpperTierFence(string $key, bool $fenced): void
-    {
-        $identity = hash('xxh128', $key);
-        if ($fenced) {
-            $this->bypassedKeys[$identity] = true;
-
-            return;
-        }
-
-        unset($this->bypassedKeys[$identity]);
-    }
-
-    private function shouldBypass(int $tierIndex, string $key): bool
-    {
-        return $tierIndex === 0
-            && ($this->bypassUpperTier || isset($this->bypassedKeys[hash('xxh128', $key)]));
-    }
-
     /** @param array<string, CacheItemInterface> $items */
     private function writeBatch(array $items): bool
     {
+        $start = $this->writeStart();
         $written = true;
-        $start = $this->writeToL1 || count($this->pools) === 1 ? 0 : 1;
-        for ($index = $start, $count = count($this->pools); $index < $count; $index++) {
+        for ($index = $start, $count = count($this->pools); $index < $count; ++$index) {
             $written = $this->saveIntoPool($this->pools[$index], $items) && $written;
         }
 
         if ($start === 0) {
-            if ($written) {
-                foreach ($items as $item) {
-                    $this->setUpperTierFence($item->getKey(), false);
-                }
-            }
-
-            return $written;
+            return $this->finishL1Write($written);
         }
 
-        $keys = [];
-        foreach ($items as $item) {
-            $keys[] = $item->getKey();
-        }
-        $invalidated = $this->pools[0]->deleteItems($keys);
-        foreach ($keys as $key) {
-            $this->setUpperTierFence($key, !$invalidated);
-        }
+        $keys = array_map(
+            static fn(CacheItemInterface $item): string => $item->getKey(),
+            array_values($items),
+        );
 
-        return $written && $invalidated;
+        return $this->invalidateSkippedL1($keys, $written);
+    }
+
+    private function writeStart(): int
+    {
+        return $this->writeToL1 || count($this->pools) === 1 ? 0 : 1;
     }
 }
