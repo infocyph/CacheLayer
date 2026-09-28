@@ -39,7 +39,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
         }
 
         $mapped = $this->map($key);
-        $record = $this->atomicRecord($mapped);
+        $record = $this->atomicRecord($key, $mapped);
         if (!$record instanceof CacheRecord || $record->value !== $expected) {
             return false;
         }
@@ -52,7 +52,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
         $mapped = $this->map($key);
-        $record = $this->atomicRecord($mapped);
+        $record = $this->atomicRecord($key, $mapped);
         if (!$record instanceof CacheRecord) {
             return $this->genericMiss($key);
         }
@@ -74,7 +74,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
         }
 
         $mapped = $this->map($item->getKey());
-        if ($this->atomicRecord($mapped) instanceof CacheRecord) {
+        if ($this->atomicRecord($item->getKey(), $mapped) instanceof CacheRecord) {
             return false;
         }
 
@@ -148,7 +148,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
             return false;
         }
 
-        $record = $this->decodeRecordFromBlob($blob);
+        $record = $this->decodeRecordFromBlob($blob, $key);
         if ($record === null) {
             unset($this->store[$mapped]);
 
@@ -246,14 +246,14 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
         return true;
     }
 
-    private function atomicRecord(string $mapped): ?CacheRecord
+    private function atomicRecord(string $key, string $mapped): ?CacheRecord
     {
         $blob = $this->store[$mapped] ?? null;
         if (!is_string($blob)) {
             return null;
         }
 
-        $record = $this->decodeRecordFromBlob($blob);
+        $record = $this->decodeRecordFromBlob($blob, $key);
         if (!$record instanceof CacheRecord || !$this->recordTagsAreCurrent($record)) {
             unset($this->store[$mapped]);
 
