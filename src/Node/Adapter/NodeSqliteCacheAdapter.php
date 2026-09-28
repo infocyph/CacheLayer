@@ -24,6 +24,8 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
 
     private readonly string $namespace;
 
+    private bool $ownsTransaction = false;
+
     private readonly \PDOStatement $upsertStatement;
 
     public function __construct(
@@ -49,6 +51,8 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
 
     public function clear(): bool
     {
+        $this->assertWritableTransaction();
+
         try {
             $statement = $this->connection->prepare('DELETE FROM ' . self::TABLE . ' WHERE namespace = :namespace');
             $ok = $statement->execute([':namespace' => $this->namespace]);
@@ -80,6 +84,8 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
 
     public function deleteItem(string $key): bool
     {
+        $this->assertWritableTransaction();
+
         try {
             return $this->deleteStatement->execute([
                 ':namespace' => $this->namespace,
@@ -100,6 +106,8 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
             return true;
         }
 
+        $this->assertWritableTransaction();
+
         try {
             $mapped = array_map($this->mapData(...), $keys);
             $marks = implode(',', array_fill(0, count($mapped), '?'));
@@ -109,8 +117,6 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
 
             return $statement->execute([$this->namespace, ...$mapped]);
         } catch (PDOException $exception) {
-            $this->rollBack();
-
             throw $this->storageException('Unable to delete node SQLite cache keys.', $exception);
         }
     }
@@ -261,6 +267,7 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
 
     public function save(CacheItemInterface $item): bool
     {
+        $this->assertWritableTransaction();
         if (!$this->supportsItem($item)) {
             return false;
         }
@@ -301,6 +308,7 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
      */
     public function saveMany(array $items): bool
     {
+        $this->assertWritableTransaction();
         $rows = [];
         $expired = [];
         foreach ($items as $item) {
@@ -327,6 +335,7 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
 
         try {
             $this->connection->beginTransaction();
+            $this->ownsTransaction = true;
             if ($expired !== [] && !$this->deleteItems($expired)) {
                 $this->rollBack();
 
@@ -338,11 +347,16 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
                 return false;
             }
 
-            return $this->connection->commit();
+            $committed = $this->connection->commit();
+            $this->ownsTransaction = false;
+
+            return $committed;
         } catch (PDOException $exception) {
             $this->rollBack();
 
             throw $this->storageException('Unable to store node SQLite cache entries.', $exception);
+        } finally {
+            $this->ownsTransaction = false;
         }
     }
 
@@ -350,6 +364,7 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
     #[\Override]
     public function storeTagGenerations(array $generations): bool
     {
+        $this->assertWritableTransaction();
         $rows = [];
         foreach ($generations as $tag => $generation) {
             if (!self::isGeneration($generation)) {
@@ -388,11 +403,21 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
         return 'm:tag:' . $tag;
     }
 
+    private function assertWritableTransaction(): void
+    {
+        if ($this->connection->inTransaction() && !$this->ownsTransaction) {
+            throw new NodeCacheStorageException(
+                'Node SQLite cache mutations cannot join a caller-owned transaction.',
+            );
+        }
+    }
+
     private function rollBack(): void
     {
-        if ($this->connection->inTransaction()) {
+        if ($this->ownsTransaction && $this->connection->inTransaction()) {
             $this->connection->rollBack();
         }
+        $this->ownsTransaction = false;
     }
 
     private function storageException(string $message, PDOException $exception): NodeCacheStorageException

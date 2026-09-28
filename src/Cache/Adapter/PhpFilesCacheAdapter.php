@@ -54,7 +54,9 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
             if (!$record instanceof CacheRecord) {
                 return $this->genericMiss($key);
             }
-            $this->deleteItemUnlocked($key);
+            if (!$this->deleteItemUnlocked($key)) {
+                throw new RuntimeException('Unable to delete consumed PHP-file cache entry.');
+            }
 
             return $this->genericItemFromRecord($key, $record);
         });
@@ -203,12 +205,12 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
     {
         $baseDir = rtrim($baseDir ?? $this->defaultBaseDirectory(), DIRECTORY_SEPARATOR);
         $ns = CacheInput::namespace($ns);
-        $root = $baseDir . DIRECTORY_SEPARATOR . 'cache_' . $ns . DIRECTORY_SEPARATOR;
-        $this->dataDirectory = $root . 'data' . DIRECTORY_SEPARATOR;
-        $this->metadataDirectory = $root . 'meta' . DIRECTORY_SEPARATOR;
-        $this->lockDirectory = $root . 'locks' . DIRECTORY_SEPARATOR;
+        $root = $baseDir . DIRECTORY_SEPARATOR . 'cache_' . $ns;
+        $this->dataDirectory = $root . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR;
+        $this->metadataDirectory = $root . DIRECTORY_SEPARATOR . 'meta' . DIRECTORY_SEPARATOR;
+        $this->lockDirectory = $root . DIRECTORY_SEPARATOR . 'locks' . DIRECTORY_SEPARATOR;
 
-        foreach ([$baseDir, $this->dataDirectory, $this->metadataDirectory, $this->lockDirectory] as $directory) {
+        foreach ([$baseDir, $root, $this->dataDirectory, $this->metadataDirectory, $this->lockDirectory] as $directory) {
             $this->assertPathNotSymlink($directory, 'PHP cache directory');
             if (!is_dir($directory) && !mkdir($directory, 0700, true) && !is_dir($directory)) {
                 throw new RuntimeException("Unable to create PHP cache directory: {$directory}");

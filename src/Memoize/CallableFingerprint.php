@@ -6,6 +6,7 @@ namespace Infocyph\CacheLayer\Memoize;
 
 use Closure;
 use ReflectionFunction;
+use Infocyph\CacheLayer\Support\BoundedValueTraversal;
 use ReflectionReference;
 use WeakMap;
 
@@ -51,13 +52,9 @@ final class CallableFingerprint
 
     public static function value(mixed $value): mixed
     {
-        return match (true) {
-            $value instanceof Closure => self::closure($value),
-            is_object($value) => self::object($value),
-            is_resource($value) => 'res:' . get_resource_type($value) . '#' . (int) $value,
-            is_array($value) => self::values($value),
-            default => $value,
-        };
+        BoundedValueTraversal::assertSafe($value);
+
+        return self::normalizeValue($value);
     }
 
     private static function closure(Closure $closure): string
@@ -90,6 +87,17 @@ final class CallableFingerprint
         return self::$closures[$closure] = 'closure:' . hash('xxh128', serialize($identity));
     }
 
+    private static function normalizeValue(mixed $value): mixed
+    {
+        return match (true) {
+            $value instanceof Closure => self::closure($value),
+            is_object($value) => self::object($value),
+            is_resource($value) => 'res:' . get_resource_type($value) . '#' . (int) $value,
+            is_array($value) => self::values($value),
+            default => $value,
+        };
+    }
+
     private static function object(object $object): string
     {
         self::$objects ??= new WeakMap();
@@ -105,7 +113,7 @@ final class CallableFingerprint
     {
         $normalized = [];
         foreach ($values as $key => $value) {
-            $normalized[$key] = self::value($value);
+            $normalized[$key] = self::normalizeValue($value);
         }
 
         return $normalized;

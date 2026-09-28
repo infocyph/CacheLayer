@@ -10,8 +10,20 @@ trait SecuresFilesystemDirectories
 {
     protected function assertPathNotSymlink(string $path, string $label): void
     {
-        if (is_link($path)) {
-            throw new RuntimeException($label . " must not be a symlink: {$path}");
+        $cursor = rtrim($path, DIRECTORY_SEPARATOR);
+        if ($cursor === '') {
+            $cursor = DIRECTORY_SEPARATOR;
+        }
+
+        while (true) {
+            if (is_link($cursor)) {
+                throw new RuntimeException($label . " must not contain symlinks: {$path}");
+            }
+            $parent = dirname($cursor);
+            if ($parent === $cursor || $parent === '.') {
+                return;
+            }
+            $cursor = $parent;
         }
     }
 

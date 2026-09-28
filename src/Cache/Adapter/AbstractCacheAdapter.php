@@ -49,15 +49,16 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
     /** @internal */
     public function configureOptions(CacheOptions $options): void
     {
-        if ($this->codec !== null) {
-            if ($this->options == $options) {
-                return;
-            }
+        if ($this->options === null) {
+            $this->options = $options;
 
-            throw new \LogicException('Cache options cannot change after the adapter starts processing records.');
+            return;
+        }
+        if ($this->options == $options) {
+            return;
         }
 
-        $this->options = $options;
+        throw new \LogicException('Cache options cannot change after the adapter is bound to a facade.');
     }
 
     public function createItem(string $key): CacheItemInterface

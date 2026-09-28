@@ -11,6 +11,7 @@ use Infocyph\CacheLayer\Cache\CacheOptions;
 use Infocyph\CacheLayer\Cache\CacheRecord;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Serializer\ClosureSerializer;
+use Infocyph\CacheLayer\Support\BoundedValueTraversal;
 use InvalidArgumentException;
 use Psr\Cache\CacheItemInterface;
 use RuntimeException;
@@ -65,6 +66,7 @@ final readonly class CachePayloadCodec
 
         try {
             $decoded = $this->unserializeNative($serialized);
+            BoundedValueTraversal::assertSafe($decoded);
         } catch (Throwable) {
             return null;
         }
@@ -198,6 +200,7 @@ final readonly class CachePayloadCodec
             return ['closure', ClosureSerializer::serialize($value)];
         }
 
+        BoundedValueTraversal::assertSafe($value);
         $this->assertNativeValueSupported($value);
 
         return ['native', $value];
