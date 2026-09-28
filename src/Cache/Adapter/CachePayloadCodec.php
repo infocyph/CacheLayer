@@ -54,7 +54,8 @@ final readonly class CachePayloadCodec
         string $blob,
         ?string $storageIdentity = null,
         ?string $key = null,
-    ): ?CacheRecord {
+    ): ?CacheRecord
+    {
         if ($this->isPayloadTooLarge($blob)) {
             return null;
         }
@@ -89,7 +90,8 @@ final readonly class CachePayloadCodec
         ?string $namespaceGeneration = null,
         ?string $storageIdentity = null,
         ?string $key = null,
-    ): string {
+    ): string
+    {
         [$encoding, $encodedValue] = $this->encodeValue($value);
         $serialized = serialize([
             'format' => 2,
@@ -143,7 +145,8 @@ final readonly class CachePayloadCodec
         string $payload,
         ?string $storageIdentity,
         ?string $key,
-    ): string {
+    ): string
+    {
         if ($this->options->integrityKey === null) {
             return $payload;
         }
@@ -330,7 +333,8 @@ final readonly class CachePayloadCodec
         string $blob,
         ?string $storageIdentity,
         ?string $key,
-    ): ?string {
+    ): ?string
+    {
         $integrityKey = $this->options->integrityKey;
         if ($integrityKey === null) {
             return $this->unsignedPayload($blob);
