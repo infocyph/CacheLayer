@@ -99,10 +99,15 @@ test('tiered bulk reads preserve numeric-string logical keys', function () {
         expect($cache->set($key, 'value-' . $key))->toBeTrue();
     }
 
-    expect($cache->getMultiple(['0', '123', '-1', '01']))->toBe([
-        0 => 'value-0',
-        123 => 'value-123',
-        -1 => 'value--1',
-        '01' => 'value-01',
+    $actual = [];
+    foreach ($cache->getMultiple(['0', '123', '-1', '01']) as $key => $value) {
+        $actual[] = [$key, $value];
+    }
+
+    expect($actual)->toBe([
+        ['0', 'value-0'],
+        ['123', 'value-123'],
+        ['-1', 'value--1'],
+        ['01', 'value-01'],
     ]);
 });
