@@ -56,7 +56,10 @@ final class OptionalCassandra
         return $session;
     }
 
-    /** @param array<int, mixed> $arguments */
+    /**
+     * @param array<int, mixed> $arguments
+     * @return array{arguments:array<int, mixed>}
+     */
     public static function executionOptions(array $arguments): array
     {
         return ['arguments' => $arguments];
