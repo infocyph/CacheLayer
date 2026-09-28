@@ -399,20 +399,6 @@ LUA;
         }
     }
 
-    /**
-     * @param array<string, mixed> $missing
-     * @return array<string, string>
-     */
-    private function initializeTagGenerations(array $missing): array
-    {
-        $generations = [];
-        foreach ($missing as $tag => $value) {
-            $generations[$tag] = $this->initializeTagGeneration((string) $tag, $value);
-        }
-
-        return $generations;
-    }
-
     private function initializeTagGeneration(string $tag, mixed $observed): string
     {
         $candidate = self::newGeneration();
@@ -431,6 +417,20 @@ LUA;
         }
 
         return $generation;
+    }
+
+    /**
+     * @param array<string, mixed> $missing
+     * @return array<string, string>
+     */
+    private function initializeTagGenerations(array $missing): array
+    {
+        $generations = [];
+        foreach ($missing as $tag => $value) {
+            $generations[$tag] = $this->initializeTagGeneration((string) $tag, $value);
+        }
+
+        return $generations;
     }
 
     private function map(string $key): string
