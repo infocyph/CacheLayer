@@ -36,7 +36,13 @@ final class CachePolicyBench
     public function benchHmacCodec(): int
     {
         $codec = new CachePayloadCodec(new CacheOptions(integrityKey: 'benchmark-secret'));
-        $record = $codec->decode($codec->encode($this->payload, null));
+        $payload = $codec->encode(
+            $this->payload,
+            null,
+            storageIdentity: 'benchmark',
+            key: 'payload',
+        );
+        $record = $codec->decode($payload, 'benchmark', 'payload');
 
         return strlen((string) $record?->value);
     }
