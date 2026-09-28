@@ -23,7 +23,7 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
     /** @var array<string, WeakReference<object>> */
     private array $weakRefs = [];
 
-    /** @var array<string, array<string, string>> */
+    /** @var array<string, array<int|string, string>> */
     private array $weakTags = [];
 
     public function __construct(string $namespace = 'default')
