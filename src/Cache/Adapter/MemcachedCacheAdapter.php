@@ -7,6 +7,7 @@ namespace Infocyph\CacheLayer\Cache\Adapter;
 use Infocyph\CacheLayer\Cache\CacheInput;
 use Infocyph\CacheLayer\Cache\CacheRecord;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
+use Infocyph\CacheLayer\Support\MemcachedValueGuard;
 use Psr\Cache\CacheItemInterface;
 use RuntimeException;
 
@@ -160,11 +161,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         $this->discardDeferredKey($key);
         $this->client->delete($this->mapData($key));
 
-        return !in_array(
-            $this->client->getResultCode(),
-            [\Memcached::RES_FAILURE, \Memcached::RES_WRITE_FAILURE],
-            true,
-        );
+        return $this->deleteResultSucceeded();
     }
 
     /** @param list<string> $keys */
@@ -177,11 +174,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
 
         $this->client->deleteMulti(array_map($this->mapData(...), $keys));
 
-        return !in_array(
-            $this->client->getResultCode(),
-            [\Memcached::RES_FAILURE, \Memcached::RES_WRITE_FAILURE],
-            true,
-        );
+        return $this->deleteResultSucceeded();
     }
 
     public function getClient(): \Memcached
@@ -204,7 +197,13 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
             return $this->genericItemFromRecord($key, $record);
         }
         if (is_string($blob)) {
-            $this->client->delete($mapped);
+            MemcachedValueGuard::replaceIfUnchanged(
+                $this->client,
+                $mapped,
+                $blob,
+                self::ATOMIC_TOMBSTONE,
+                1,
+            );
         }
 
         return $this->genericMiss($key);
@@ -267,15 +266,21 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
             if ($record === null || $record->namespaceGeneration !== $generation) {
                 $items[$key] = $this->genericMiss($key);
                 if (is_string($blob)) {
-                    $stale[] = $mapped;
+                    $stale[] = [$mapped, $blob];
                 }
 
                 continue;
             }
             $items[$key] = $this->genericItemFromRecord($key, $record);
         }
-        if ($stale !== []) {
-            $this->client->deleteMulti($stale);
+        foreach ($stale as [$mapped, $observed]) {
+            MemcachedValueGuard::replaceIfUnchanged(
+                $this->client,
+                $mapped,
+                $observed,
+                self::ATOMIC_TOMBSTONE,
+                1,
+            );
         }
 
         return $items;
@@ -347,6 +352,35 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
     }
 
     /** @return array{value:string, cas:int|float}|null */
+
+    private function deleteResultSucceeded(): bool
+    {
+        return in_array(
+            $this->client->getResultCode(),
+            [\Memcached::RES_SUCCESS, \Memcached::RES_NOTFOUND],
+            true,
+        );
+    }
+
+    private function initializeGeneration(string $key, mixed $observed, string $failureMessage): string
+    {
+        $generation = self::normalizeGeneration($observed);
+        if ($generation !== null) {
+            return $generation;
+        }
+
+        $candidate = self::newGeneration();
+        $current = is_string($observed)
+            ? MemcachedValueGuard::replaceIfUnchanged($this->client, $key, $observed, $candidate)
+            : ($this->client->add($key, $candidate) ? $candidate : $this->client->get($key));
+        $generation = self::normalizeGeneration($current);
+        if ($generation === null) {
+            throw new RuntimeException($failureMessage);
+        }
+
+        return $generation;
+    }
+
     private function extendedGet(string $key): ?array
     {
         $value = $this->client->get($key, null, \Memcached::GET_EXTENDED);
@@ -379,24 +413,12 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
     private function namespaceGeneration(mixed $value = null): string
     {
         $value ??= $this->client->get($this->generationKey());
-        $generation = self::normalizeGeneration($value);
-        if ($generation !== null) {
-            return $generation;
-        }
 
-        $candidate = self::newGeneration();
-        $value = $this->client->add($this->generationKey(), $candidate)
-            ? $candidate
-            : $this->client->get($this->generationKey());
-        $generation = self::normalizeGeneration($value);
-        if ($generation === null) {
-            $generation = self::newGeneration();
-            if (!$this->client->set($this->generationKey(), $generation)) {
-                throw new RuntimeException('Unable to initialize Memcached namespace generation.');
-            }
-        }
-
-        return $generation;
+        return $this->initializeGeneration(
+            $this->generationKey(),
+            $value,
+            'Unable to initialize Memcached namespace generation.',
+        );
     }
 
     private function recordTagsAreCurrent(CacheRecord $record): bool
@@ -418,23 +440,10 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
 
     private function tagGeneration(string $key, mixed $value): string
     {
-        $generation = self::normalizeGeneration($value);
-        if ($generation !== null) {
-            return $generation;
-        }
-
-        $candidate = self::newGeneration();
-        $generation = self::normalizeGeneration(
-            $this->client->add($key, $candidate) ? $candidate : $this->client->get($key),
+        return $this->initializeGeneration(
+            $key,
+            $value,
+            'Unable to initialize Memcached tag generation.',
         );
-        if ($generation !== null) {
-            return $generation;
-        }
-        $generation = self::newGeneration();
-        if (!$this->client->set($key, $generation)) {
-            throw new RuntimeException('Unable to initialize Memcached tag generation.');
-        }
-
-        return $generation;
     }
 }
