@@ -35,6 +35,12 @@ final class Memoizer
         return self::$instance ??= new self();
     }
 
+    /** @internal Create lifecycle-isolated memoization state. */
+    public static function isolated(): self
+    {
+        return new self();
+    }
+
     public function flush(): void
     {
         $this->staticCache = [];
