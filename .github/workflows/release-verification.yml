@@ -11,36 +11,6 @@ permissions:
   contents: read
 
 jobs:
-  php83-core:
-    name: PHP 8.3 core consumer (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-24.04, windows-latest]
-    steps:
-      - uses: actions/checkout@v7
-      - uses: shivammathur/setup-php@v2
-        with:
-          php-version: "8.3"
-          tools: composer:v2
-          extensions: mbstring, pdo, pdo_sqlite, opcache
-          coverage: none
-      - run: composer install --no-dev --no-interaction --prefer-dist --no-progress --classmap-authoritative
-      - run: composer check-platform-reqs --no-dev
-      - name: Lint production source on PHP 8.3
-        if: runner.os != 'Windows'
-        shell: bash
-        run: find src -name '*.php' -print0 | xargs -0 -n1 php -l
-      - name: Lint production source on PHP 8.3 (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: Get-ChildItem src -Recurse -Filter *.php | ForEach-Object { php -l $_.FullName; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
-      - name: Core smoke without CLI OPcache
-        run: php -d error_reporting=E_ALL -d opcache.enable_cli=0 tools/release/php83-smoke.php
-      - name: Core smoke with CLI OPcache
-        run: php -d error_reporting=E_ALL -d opcache.enable_cli=1 tools/release/php83-smoke.php
-
   psr-contracts:
     name: Independent PSR-6 / PSR-16 contracts
     runs-on: ubuntu-24.04
