@@ -113,6 +113,18 @@ LUA;
         return self::COUNTER_PREFIX . $this->namespace . ':' . $key;
     }
 
+    private function normalizeTtl(?int $ttlSeconds): int
+    {
+        if ($ttlSeconds === null) {
+            return -1;
+        }
+
+        if ($ttlSeconds < 1) {
+            throw new AtomicCounterException('Atomic counter TTL must be greater than zero when provided.');
+        }
+
+        return $ttlSeconds;
+    }
 
     private function parseInteger(string $value): int
     {
@@ -130,18 +142,5 @@ LUA;
         }
 
         return (int) (($negative && $digits !== '0' ? '-' : '') . $digits);
-    }
-
-    private function normalizeTtl(?int $ttlSeconds): int
-    {
-        if ($ttlSeconds === null) {
-            return -1;
-        }
-
-        if ($ttlSeconds < 1) {
-            throw new AtomicCounterException('Atomic counter TTL must be greater than zero when provided.');
-        }
-
-        return $ttlSeconds;
     }
 }
