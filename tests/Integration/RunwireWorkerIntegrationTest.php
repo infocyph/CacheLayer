@@ -6,16 +6,23 @@ use Infocyph\CacheLayer\Cluster\ClusterCache;
 use Infocyph\CacheLayer\Cluster\ClusterCacheConfig;
 use Infocyph\CacheLayer\Cluster\Event\InvalidationEvent;
 use Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration;
+use Infocyph\CacheLayer\Integration\Runwire\RunwireWorkerIntegration;
+use Infocyph\CacheLayer\Node\Connection\NodeSqliteConnection;
+use Infocyph\CacheLayer\Node\NodeCache;
 use Infocyph\CacheLayer\Node\NodeCacheConfig;
 use Infocyph\CacheLayer\Tests\Cluster\Support\InMemoryInvalidationTransport;
 use Infocyph\Runwire\Coroutine\CoroutineRuntime;
 use Infocyph\Runwire\Coroutine\CoroutineScope;
+use Infocyph\Runwire\Coroutine\Enum\TaskState;
 use Infocyph\Runwire\Exception\CancelledException;
+use Infocyph\Runwire\Loop\SelectLoop;
 use Infocyph\Runwire\RequestContext;
 use Infocyph\Runwire\Runtime\Enum\CancellationReason;
 use Infocyph\Runwire\Runtime\Enum\RuntimeDriver;
 use Infocyph\Runwire\RuntimeCapabilities;
 use Infocyph\Runwire\RuntimeContext;
+use Infocyph\Runwire\Supervisor\Enum\WorkerRole;
+use Infocyph\Runwire\Supervisor\WorkerContext;
 
 function cacheLayerWorkerRuntimeContext(): RuntimeContext
 {
@@ -32,15 +39,37 @@ function cacheLayerWorkerRuntimeContext(): RuntimeContext
     );
 }
 
+
+/** @return array{WorkerContext, resource} */
+function cacheLayerBackgroundWorkerContext(): array
+{
+    [$readyParent, $readyChild] = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
+    $pid = getmypid();
+
+    return [
+        new WorkerContext(
+            group: 'cachelayer',
+            slot: 0,
+            generation: 1,
+            pid: is_int($pid) ? $pid : 0,
+            parentPid: 0,
+            readyStream: $readyChild,
+            role: WorkerRole::TASK,
+        ),
+        $readyParent,
+    ];
+}
+
 beforeEach(function (): void {
     $this->runwireWorkerDirectory = sys_get_temp_dir() . '/cachelayer-runwire-worker-' . uniqid();
     $this->runwireWorkerTransport = new InMemoryInvalidationTransport();
+    $this->runwireWorkerNodeConfig = new NodeCacheConfig(
+        $this->runwireWorkerDirectory . '/node.sqlite',
+        'application',
+        apcuEnabled: false,
+    );
     $this->runwireWorkerCluster = ClusterCache::create(
-        new NodeCacheConfig(
-            $this->runwireWorkerDirectory . '/node.sqlite',
-            'application',
-            apcuEnabled: false,
-        ),
+        $this->runwireWorkerNodeConfig,
         new ClusterCacheConfig('runwire-cluster', 'node-a', 'runwire-memory'),
         $this->runwireWorkerTransport,
     );
@@ -132,4 +161,101 @@ it('propagates Runwire cancellation instead of replaying worker operations throu
             );
         },
     ))->toThrow(CancelledException::class);
+});
+
+
+it('runs bounded invalidation consumption inside the host-owned Runwire worker scope', function (): void {
+    foreach (['one', 'two', 'three'] as $key) {
+        $this->runwireWorkerTransport->publish(
+            InvalidationEvent::key('runwire-cluster', 'application', $key, 'writer'),
+        );
+    }
+
+    $runtime = cacheLayerWorkerRuntimeContext();
+    RunwireIntegration::bind($runtime);
+    [$worker, $readyParent] = cacheLayerBackgroundWorkerContext();
+    $loop = new SelectLoop();
+    $worker->attachLoop($loop, 0.25);
+    $task = RunwireWorkerIntegration::startClusterConsumer(
+        $worker,
+        $this->runwireWorkerCluster,
+        batchSize: 1,
+        idleSeconds: 0.001,
+    );
+    expect($task)->not->toBeNull();
+
+    $loop->delay(0.01, static function () use ($worker): void {
+        $worker->requestStop();
+    });
+    $loop->run();
+
+    expect($this->runwireWorkerCluster->consume())->toBe(0)
+        ->and($task?->state())->toBe(TaskState::CANCELLED)
+        ->and($worker->acceptingBackgroundWork())->toBeFalse();
+
+    $worker->close();
+    fclose($readyParent);
+});
+
+it('runs bounded node maintenance inside the host-owned Runwire worker scope', function (): void {
+    $connection = NodeSqliteConnection::create($this->runwireWorkerNodeConfig);
+    $statement = $connection->prepare(
+        'INSERT INTO cachelayer_node_entries (namespace, cache_key, payload, expires_at) VALUES (?, ?, ?, ?)',
+    );
+    $statement->execute([
+        $this->runwireWorkerNodeConfig->namespace,
+        'expired-runwire',
+        'unused',
+        time() - 1,
+    ]);
+
+    $runtime = cacheLayerWorkerRuntimeContext();
+    RunwireIntegration::bind($runtime);
+    [$worker, $readyParent] = cacheLayerBackgroundWorkerContext();
+    $loop = new SelectLoop();
+    $worker->attachLoop($loop, 0.25);
+    $task = RunwireWorkerIntegration::startNodeMaintenance(
+        $worker,
+        NodeCache::maintenance($this->runwireWorkerNodeConfig),
+        intervalSeconds: 0.001,
+        pruneLimit: 1,
+        optimizeEvery: 2,
+    );
+    expect($task)->not->toBeNull();
+
+    $loop->delay(0.01, static function () use ($worker): void {
+        $worker->requestStop();
+    });
+    $loop->run();
+
+    expect((int) $connection->query(
+        "SELECT COUNT(*) FROM cachelayer_node_entries WHERE cache_key = 'expired-runwire'",
+    )->fetchColumn())->toBe(0)
+        ->and($task?->state())->toBe(TaskState::CANCELLED)
+        ->and($worker->backgroundDrainExpired())->toBeFalse();
+
+    $worker->close();
+    fclose($readyParent);
+});
+
+it('keeps worker automation inactive when the shared runtime lacks Runwire coroutine capabilities', function (): void {
+    $runtime = RuntimeContext::fromCapabilities(
+        new RuntimeCapabilities(driver: RuntimeDriver::NATIVE),
+        'cachelayer-worker-fallback',
+        concurrent: false,
+    );
+    RunwireIntegration::bind($runtime);
+    [$worker, $readyParent] = cacheLayerBackgroundWorkerContext();
+
+    expect(RunwireWorkerIntegration::startClusterConsumer(
+        $worker,
+        $this->runwireWorkerCluster,
+    ))->toBeNull()
+        ->and(RunwireWorkerIntegration::startNodeMaintenance(
+            $worker,
+            NodeCache::maintenance($this->runwireWorkerNodeConfig),
+        ))->toBeNull();
+
+    $worker->close();
+    fclose($readyParent);
 });
