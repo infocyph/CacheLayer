@@ -222,13 +222,10 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
             apcu_delete($expired);
         }
 
-        foreach ($groups as $ttl => $records) {
-            if (apcu_store($records, null, (int) $ttl) !== []) {
-                return false;
-            }
-        }
-
-        return true;
+        return array_all(
+            $groups,
+            static fn(array $records, int|string $ttl): bool => apcu_store($records, null, (int) $ttl) === [],
+        );
     }
 
     /** @param array<string, string> $generations */
