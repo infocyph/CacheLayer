@@ -114,6 +114,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
+
         return $this->deleteByKind(self::KIND_DATA, $keys);
     }
 
