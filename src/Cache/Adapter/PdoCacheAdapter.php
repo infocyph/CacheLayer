@@ -143,45 +143,13 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
     #[\Override]
     public function getTagGenerations(array $tags): array
     {
-        if ($tags === []) {
-            return [];
-        }
-
-        $rows = $this->fetchRows(self::KIND_TAG, $tags);
-        $generations = [];
-        $missing = [];
-        foreach ($tags as $tag) {
-            $row = $rows[$tag] ?? null;
-            if (is_array($row)) {
-                $generation = $row['payload'];
-                if (!self::isGeneration($generation)) {
-                    throw new RuntimeException('PDO tag generation contains invalid state.');
-                }
-                $generations[$tag] = strtolower($generation);
-
-                continue;
-            }
-            $missing[$tag] = self::newGeneration();
-        }
-        foreach ($missing as $tag => $candidate) {
-            if (!$this->insertTagGenerationIfMissing($tag, $candidate)) {
-                throw new RuntimeException('Unable to initialize PDO tag generation.');
-            }
-        }
-        if ($missing === []) {
-            return $generations;
-        }
-
-        $actual = $this->fetchRows(self::KIND_TAG, array_keys($missing));
-        foreach ($missing as $tag => $_candidate) {
-            $generation = $actual[$tag]['payload'] ?? null;
-            if (!self::isGeneration($generation)) {
-                throw new RuntimeException('Unable to initialize PDO tag generation.');
-            }
-            $generations[$tag] = strtolower($generation);
-        }
-
-        return $generations;
+        return PdoTagGenerationStore::getOrInitialize(
+            $this->pdo,
+            $this->driver,
+            $this->table,
+            $this->namespace,
+            $tags,
+        );
     }
 
     public function hasItem(string $key): bool
@@ -283,37 +251,6 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         return $this->deleteByKind(self::KIND_DATA, $expired) && $this->upsertRows($rows);
     }
 
-
-    private function insertTagGenerationIfMissing(string $tag, string $generation): bool
-    {
-        $sql = match ($this->driver) {
-            'pgsql', 'sqlite' => "INSERT INTO {$this->table} "
-                . '(namespace, kind, cache_key, payload, expires) VALUES (?, ?, ?, ?, NULL) '
-                . 'ON CONFLICT(namespace, kind, cache_key) DO NOTHING',
-            'mysql', 'mariadb' => "INSERT INTO {$this->table} "
-                . '(namespace, kind, cache_key, payload, expires) VALUES (?, ?, ?, ?, NULL) '
-                . 'ON DUPLICATE KEY UPDATE cache_key = cache_key',
-            default => "INSERT INTO {$this->table} "
-                . '(namespace, kind, cache_key, payload, expires) VALUES (?, ?, ?, ?, NULL)',
-        };
-
-        try {
-            return $this->pdo->prepare($sql)->execute([
-                $this->namespace,
-                self::KIND_TAG,
-                $tag,
-                strtolower($generation),
-            ]);
-        } catch (PDOException $failure) {
-            if (in_array($this->driver, ['pgsql', 'sqlite', 'mysql', 'mariadb'], true)) {
-                throw $failure;
-            }
-
-            $row = $this->fetchRows(self::KIND_TAG, [$tag])[$tag] ?? null;
-
-            return is_array($row) && self::isGeneration($row['payload']);
-        }
-    }
 
     private static function assertSqliteTarget(string $dsn): void
     {
