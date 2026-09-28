@@ -34,6 +34,9 @@ final class PdoCacheSchema
                 PRIMARY KEY (namespace, kind, cache_key)
             )",
         );
+        if (in_array($driver, ['mysql', 'mariadb'], true)) {
+            self::hardenMysqlIdentityColumns($pdo, $table);
+        }
 
         $index = $table . '_expires_idx';
 
@@ -51,5 +54,15 @@ final class PdoCacheSchema
         }
 
         $pdo->exec("CREATE INDEX IF NOT EXISTS {$index} ON {$table}(namespace, kind, expires)");
+    }
+
+    private static function hardenMysqlIdentityColumns(PDO $pdo, string $table): void
+    {
+        $pdo->exec(
+            "ALTER TABLE {$table} "
+            . 'MODIFY namespace VARCHAR(191) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, '
+            . 'MODIFY kind VARCHAR(191) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, '
+            . 'MODIFY cache_key VARCHAR(191) CHARACTER SET ascii COLLATE ascii_bin NOT NULL',
+        );
     }
 }

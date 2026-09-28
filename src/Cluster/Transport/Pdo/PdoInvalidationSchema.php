@@ -18,6 +18,9 @@ final class PdoInvalidationSchema
 
         try {
             $connection->exec(self::createTableSql($driver));
+            if ($driver === 'mysql') {
+                self::hardenMysqlIdentityColumns($connection);
+            }
             self::createIndex($connection, $driver);
         } catch (PDOException $exception) {
             throw new ClusterTransportException('Unable to initialize the PDO invalidation transport schema.', 0, $exception);
@@ -58,6 +61,18 @@ final class PdoInvalidationSchema
             . 'event_id ' . $id . ', cluster_name VARCHAR(128) NOT NULL, namespace_name VARCHAR(64) NOT NULL, '
             . 'event_type VARCHAR(32) NOT NULL, identifier VARCHAR(64) NULL, origin_node_id VARCHAR(255) NOT NULL, '
             . 'created_at BIGINT NOT NULL)';
+    }
+
+    private static function hardenMysqlIdentityColumns(PDO $connection): void
+    {
+        $connection->exec(
+            'ALTER TABLE ' . self::TABLE . ' '
+            . 'MODIFY cluster_name VARCHAR(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, '
+            . 'MODIFY namespace_name VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, '
+            . 'MODIFY event_type VARCHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, '
+            . 'MODIFY identifier VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL, '
+            . 'MODIFY origin_node_id VARCHAR(255) CHARACTER SET ascii COLLATE ascii_bin NOT NULL',
+        );
     }
 
     private static function driver(PDO $connection, bool $allowSqliteForTesting): string
