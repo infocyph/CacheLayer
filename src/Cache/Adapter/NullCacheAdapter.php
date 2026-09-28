@@ -90,12 +90,6 @@ final class NullCacheAdapter extends AbstractCacheAdapter
     /** @param array<string, CacheItemInterface> $items */
     public function saveItems(array $items): bool
     {
-        foreach ($items as $item) {
-            if (!$this->supportsItem($item)) {
-                return false;
-            }
-        }
-
-        return true;
+        return $this->supportsItems($items);
     }
 }
