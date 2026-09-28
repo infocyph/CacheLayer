@@ -162,11 +162,18 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
                 $missing[$tag] = self::newGeneration();
             }
         }
-        if ($missing !== [] && !$this->storeTagGenerations($missing)) {
+        if ($missing !== [] && !$this->insertTagGenerationsIfMissing($missing)) {
             throw new NodeCacheStorageException('Unable to initialize node SQLite tag generations.');
         }
 
-        return $generations + $missing;
+        $actual = $this->readTagGenerations($tags);
+        foreach ($tags as $tag) {
+            if (!isset($actual[$tag])) {
+                throw new NodeCacheStorageException('Unable to initialize node SQLite tag generation.');
+            }
+        }
+
+        return $actual;
     }
 
     public function hasItem(string $key): bool
@@ -397,6 +404,29 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
         } catch (PDOException $exception) {
             throw $this->storageException('Unable to initialize the node SQLite cache schema.', $exception);
         }
+    }
+
+
+    /** @param array<string, string> $generations */
+    private function insertTagGenerationsIfMissing(array $generations): bool
+    {
+        $this->assertWritableTransaction();
+        foreach ($generations as $tag => $generation) {
+            $statement = $this->connection->prepare(
+                'INSERT INTO ' . self::TABLE
+                . ' (namespace, cache_key, payload, expires_at) VALUES (?, ?, ?, NULL) '
+                . 'ON CONFLICT(namespace, cache_key) DO NOTHING',
+            );
+            if (!$statement->execute([
+                $this->namespace,
+                $this->mapTag((string) $tag),
+                strtolower($generation),
+            ])) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function mapData(string $key): string
