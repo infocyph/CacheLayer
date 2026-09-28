@@ -13,6 +13,8 @@ use PDOException;
 
 final readonly class SqliteCursorStore implements CursorStoreInterface
 {
+    private const string LEGACY_TABLE = 'cachelayer_cluster_cursors';
+
     private const string TABLE = 'cachelayer_cluster_cursors_v2';
 
     private PDO $connection;
@@ -59,6 +61,11 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
         $this->write($eventId);
     }
 
+    public function requiresRecovery(): bool
+    {
+        return $this->legacyTableExists() && !$this->scopeExists();
+    }
+
     public function updatedAt(): ?int
     {
         $updatedAt = $this->read(
@@ -87,6 +94,20 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
         }
     }
 
+    private function legacyTableExists(): bool
+    {
+        try {
+            $statement = $this->connection->prepare(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = :table LIMIT 1",
+            );
+            $statement->execute([':table' => self::LEGACY_TABLE]);
+
+            return $statement->fetchColumn() !== false;
+        } catch (PDOException $exception) {
+            throw new ClusterCacheException('Unable to inspect the legacy cluster cursor store.', 0, $exception);
+        }
+    }
+
     private function read(string $sql, string $failureMessage): mixed
     {
         try {
@@ -96,6 +117,22 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
             return $statement->fetchColumn();
         } catch (PDOException $exception) {
             throw new ClusterCacheException($failureMessage, 0, $exception);
+        }
+    }
+
+    private function scopeExists(): bool
+    {
+        try {
+            $statement = $this->connection->prepare(
+                'SELECT 1 FROM ' . self::TABLE . ' '
+                . 'WHERE cluster_name = :cluster AND node_id = :node_id '
+                . 'AND namespace_name = :namespace LIMIT 1',
+            );
+            $statement->execute($this->scopeParameters());
+
+            return $statement->fetchColumn() !== false;
+        } catch (PDOException $exception) {
+            throw new ClusterCacheException('Unable to inspect the scoped cluster cursor.', 0, $exception);
         }
     }
 
