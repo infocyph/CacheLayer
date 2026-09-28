@@ -43,6 +43,7 @@ extensions = [
 ]
 
 source_suffix = ".rst"
+autosectionlabel_prefix_document = True
 pygments_style = "sphinx"
 pygments_dark_style = "native"
 
