@@ -237,7 +237,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         $ttl = $source instanceof CacheItem ? $source->ttlSeconds() : null;
         $tags = $source instanceof CacheItem ? $source->getTagGenerations() : [];
 
-        return (new CacheItem($this, $source->getKey(), $source->get(), true))
+        return new CacheItem($this, $source->getKey(), $source->get(), true)
             ->expiresAfter($ttl)
             ->setTagGenerations($tags);
     }
