@@ -84,6 +84,7 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
 
     public function deleteItem(string $key): bool
     {
+        $this->discardDeferredKey($key);
         $this->assertWritableTransaction();
 
         try {
@@ -102,6 +103,7 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
      */
     public function deleteItems(array $keys): bool
     {
+        $this->discardDeferredKeys($keys);
         if ($keys === []) {
             return true;
         }
