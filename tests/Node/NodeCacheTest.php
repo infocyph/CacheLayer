@@ -2,8 +2,11 @@
 
 declare(strict_types=1);
 
+use Infocyph\CacheLayer\Cache\Adapter\AbstractCacheAdapter;
 use Infocyph\CacheLayer\Cache\Adapter\ArrayCacheAdapter;
 use Infocyph\CacheLayer\Cache\Cache;
+use Infocyph\CacheLayer\Cache\CacheOptions;
+use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Cache\Lock\LockHandle;
 use Infocyph\CacheLayer\Cache\Lock\LockProviderInterface;
 use Infocyph\CacheLayer\Cache\Metrics\InMemoryCacheMetricsCollector;
@@ -14,6 +17,7 @@ use Infocyph\CacheLayer\Node\Exception\NodeCacheConfigurationException;
 use Infocyph\CacheLayer\Node\Maintenance\NodeCachePruner;
 use Infocyph\CacheLayer\Node\NodeCache;
 use Infocyph\CacheLayer\Node\NodeCacheConfig;
+use Psr\Cache\CacheItemInterface;
 
 beforeEach(function () {
     $this->nodeCacheDirectory = sys_get_temp_dir() . '/cachelayer-node-' . uniqid();
@@ -174,6 +178,113 @@ test('node never writes L1 when its authoritative L2 write fails', function () {
         ->and($l2->getItem('coherent')->get())->toBe('old');
 });
 
+test('node cache applies the complete cache policy from its configuration', function () {
+    $cache = NodeCache::create(new NodeCacheConfig(
+        sqliteFile: $this->nodeCacheDirectory . '/policy.sqlite',
+        namespace: 'policy',
+        apcuEnabled: false,
+        options: new CacheOptions(
+            integrityKey: 'node-policy-key',
+            maxPayloadBytes: 1_048_576,
+            failOpen: false,
+        ),
+    ));
+
+    expect($cache->hasPayloadIntegrity())->toBeTrue()
+        ->and($cache->isFailOpen())->toBeFalse()
+        ->and($cache->set('scalar', 'value'))->toBeTrue()
+        ->and($cache->get('scalar'))->toBe('value');
+});
+
+test('node disables a failed L1 before it can serve stale data', function () {
+    $connection = NodeSqliteConnection::create($this->nodeConfig);
+    $l1 = new class extends AbstractCacheAdapter {
+        public bool $rejectWrites = false;
+
+        /** @var array<string, mixed> */
+        private array $values = [];
+
+        public function clear(): bool
+        {
+            $this->values = [];
+
+            return true;
+        }
+
+        public function deleteItem(string $key): bool
+        {
+            unset($this->values[$key]);
+
+            return true;
+        }
+
+        public function deleteItems(array $keys): bool
+        {
+            foreach ($keys as $key) {
+                unset($this->values[$key]);
+            }
+
+            return true;
+        }
+
+        public function getItem(string $key): CacheItem
+        {
+            return array_key_exists($key, $this->values)
+                ? new CacheItem($this, $key, $this->values[$key], true)
+                : new CacheItem($this, $key);
+        }
+
+        public function hasItem(string $key): bool
+        {
+            return array_key_exists($key, $this->values);
+        }
+
+        public function multiFetch(array $keys): array
+        {
+            $items = [];
+            foreach ($keys as $key) {
+                $items[$key] = $this->getItem($key);
+            }
+
+            return $items;
+        }
+
+        public function save(CacheItemInterface $item): bool
+        {
+            if ($this->rejectWrites || !$this->supportsItem($item)) {
+                return false;
+            }
+
+            $this->values[$item->getKey()] = $item->get();
+
+            return true;
+        }
+
+        public function saveItems(array $items): bool
+        {
+            if ($this->rejectWrites || !$this->supportsItems($items)) {
+                return false;
+            }
+
+            foreach ($items as $item) {
+                $this->values[$item->getKey()] = $item->get();
+            }
+
+            return true;
+        }
+    };
+    $l2 = new NodeSqliteCacheAdapter($connection, $this->nodeConfig->namespace);
+    $cache = new Cache(new NodeCacheAdapter($l1, $l2, true));
+
+    expect($cache->set('coherent', 'old', 300))->toBeTrue();
+    $l1->rejectWrites = true;
+
+    expect($cache->set('coherent', 'new', 300))->toBeFalse()
+        ->and($cache->get('coherent'))->toBe('new')
+        ->and($cache->setMultiple(['one' => 1, 'two' => 2], 300))->toBeTrue()
+        ->and($cache->getMultiple(['one', 'two']))->toBe(['one' => 1, 'two' => 2]);
+});
+
 test('expired rows remain outside the read path until bounded pruning', function () {
     $connection = NodeSqliteConnection::create($this->nodeConfig);
     $adapter = new NodeSqliteCacheAdapter($connection, $this->nodeConfig->namespace);
@@ -196,7 +307,6 @@ test('node cache configuration rejects invalid paths and timeouts', function () 
         ->and(fn() => new NodeCacheConfig('/tmp/cache.sqlite', 'app', busyTimeoutMs: -1))
         ->toThrow(NodeCacheConfigurationException::class);
 });
-
 
 test('node APCu identity includes the SQLite store', function () {
     expect(extension_loaded('apcu'))->toBeTrue()
