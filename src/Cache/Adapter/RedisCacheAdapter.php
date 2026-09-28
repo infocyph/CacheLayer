@@ -9,6 +9,7 @@ use Infocyph\CacheLayer\Cache\CacheRecord;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 use Infocyph\CacheLayer\Support\RedisConnection;
+use Infocyph\CacheLayer\Support\RedisValueGuard;
 use InvalidArgumentException;
 use Psr\Cache\CacheItemInterface;
 use RuntimeException;
@@ -304,13 +305,13 @@ LUA;
 
                     continue;
                 }
-                $stale[] = $this->map($k);
+                $stale[] = [$this->map($k), $v];
             }
             $items[$k] = new CacheItem($this, $k);
         }
 
-        if ($stale !== []) {
-            $this->redis->del($stale);
+        foreach ($stale as [$mapped, $observed]) {
+            RedisValueGuard::deleteIfUnchanged($this->redis, $mapped, $observed);
         }
 
         return $items;
@@ -408,12 +409,15 @@ LUA;
         foreach ($missing as $tag => $value) {
             $candidate = self::newGeneration();
             $key = $this->mapTag($tag);
-            if ($value === false || $value === null) {
+            if (!is_string($value)) {
                 $stored = $this->redis->set($key, $candidate, ['nx']);
                 $current = $stored ? $candidate : $this->redis->get($key);
             } else {
-                $this->redis->set($key, $candidate);
-                $current = $candidate;
+                $current = RedisValueGuard::replaceIfUnchanged($this->redis, $key, $value, $candidate);
+                if ($current === false) {
+                    $stored = $this->redis->set($key, $candidate, ['nx']);
+                    $current = $stored ? $candidate : $this->redis->get($key);
+                }
             }
             $generation = self::normalizeGeneration($current);
             if ($generation === null) {
