@@ -218,6 +218,19 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
     }
 
     /** @param list<string> $keys */
+    protected function deferredRead(string $key): ?CacheItem
+    {
+        $pending = $this->deferred[$this->deferredKey($key)] ?? null;
+        if (!$pending instanceof CacheItem) {
+            return null;
+        }
+        if (!$pending->isHit()) {
+            return new CacheItem($this, $key);
+        }
+
+        return clone $pending;
+    }
+
     protected function discardDeferredKeys(array $keys): void
     {
         $keys = CacheInput::keys($keys);
@@ -366,19 +379,6 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
     private function deferredKey(string $key): string
     {
         return "key:\0" . $key;
-    }
-
-    private function deferredRead(string $key): ?CacheItem
-    {
-        $pending = $this->deferred[$this->deferredKey($key)] ?? null;
-        if (!$pending instanceof CacheItem) {
-            return null;
-        }
-        if (!$pending->isHit()) {
-            return new CacheItem($this, $key);
-        }
-
-        return clone $pending;
     }
 
     private function deferredSnapshot(CacheItemInterface $item): CacheItem
