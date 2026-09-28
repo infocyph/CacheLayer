@@ -14,10 +14,10 @@ Draft PR: [#29 — CacheLayer 4.0 security and correctness hardening](https://gi
 | Batch | Findings | Status | Current gate |
 | --- | --- | --- | --- |
 | 1 — Security and transaction containment | R01, R03, R04, R05, R09, R10 | **Complete** | Implemented and verified on exact commit `5a9f4bd553b4d97cca72d05affa32b6e7ce3c37e`; Security & Standards run #173 passed. |
-| 2 — Authenticated payload/storage identity | R02, R15 | Not started | Starts only after Batch 1 QA is clean. |
+| 2 — Authenticated payload/storage identity | R02, R15, R18 | Not started | Starts only after Batch 1 QA is clean. |
 | 3 — Durable invalidation protocol | R06, R07 | Not started | Blocked on Batch 2 identity decisions. |
 | 4 — Cache contracts and memoization | R08, R11, R12, R13, R16, R17 | Not started | Pending prior batches. |
-| 5 — Counters and backend races | R14, R18 | Not started | Pending prior batches. |
+| 5 — Counters and backend races | R14 plus race review | Not started | Pending prior batches. |
 | 6 — Release gates and integration | R19 plus release acceptance / optional Runwire 2.1 | Not started | Final full-matrix and packaging gate. |
 
 ### Batch 1 tracker
