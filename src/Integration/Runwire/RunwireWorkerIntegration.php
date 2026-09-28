@@ -31,12 +31,9 @@ final class RunwireWorkerIntegration
                     null,
                     $scope,
                     static function () use ($worker, $cluster, $scope, $batchSize, $idleSeconds): void {
-                        while ($worker->acceptingBackgroundWork()) {
+                        while (true) {
                             RunwireIntegration::checkpoint();
                             $processed = $cluster->consume($batchSize);
-                            if (!$worker->acceptingBackgroundWork()) {
-                                break;
-                            }
 
                             if ($processed < $batchSize && $idleSeconds > 0.0) {
                                 RunwireIntegration::sleep($idleSeconds);
@@ -81,7 +78,7 @@ final class RunwireWorkerIntegration
                         $optimizeEvery,
                     ): void {
                         $cycles = 0;
-                        while ($worker->acceptingBackgroundWork()) {
+                        while (true) {
                             RunwireIntegration::checkpoint();
                             ++$cycles;
                             $maintenance->cycle(
@@ -89,9 +86,6 @@ final class RunwireWorkerIntegration
                                 checkpoint: true,
                                 optimize: $optimizeEvery > 0 && ($cycles % $optimizeEvery) === 0,
                             );
-                            if (!$worker->acceptingBackgroundWork()) {
-                                break;
-                            }
 
                             RunwireIntegration::sleep($intervalSeconds);
                         }
