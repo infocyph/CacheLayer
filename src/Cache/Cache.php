@@ -120,6 +120,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         ?object $client = null,
         string $database = 'cachelayer',
         string $collectionName = 'entries',
+        #[\SensitiveParameter]
         string $uri = 'mongodb://127.0.0.1:27017',
         ?CacheOptions $options = null,
     ): self {
@@ -136,7 +137,11 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
                     'mongodb/mongodb is required unless a collection/client is provided.',
                 );
             }
-            $client = new Client($uri);
+            try {
+                $client = new Client($uri);
+            } catch (Throwable) {
+                throw new CacheInvalidArgumentException('Unable to create MongoDB client from the configured URI.');
+            }
         }
 
         return new self(
@@ -153,8 +158,10 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
 
     public static function pdo(
         string $namespace = 'default',
+        #[\SensitiveParameter]
         ?string $dsn = null,
         ?string $username = null,
+        #[\SensitiveParameter]
         ?string $password = null,
         ?\PDO $pdo = null,
         string $table = 'cachelayer_entries',
@@ -185,6 +192,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
 
     public static function redis(
         string $namespace = 'default',
+        #[\SensitiveParameter]
         string $dsn = 'redis://127.0.0.1:6379',
         ?\Redis $client = null,
         ?CacheOptions $options = null,
@@ -272,6 +280,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
 
     /** @param list<InternalCachePoolInterface|array<string, mixed>> $tiers */
     public static function tiered(
+        #[\SensitiveParameter]
         array $tiers,
         bool $writeToL1 = true,
         ?CacheOptions $options = null,
@@ -289,6 +298,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
 
     public static function valkey(
         string $namespace = 'default',
+        #[\SensitiveParameter]
         string $dsn = 'valkey://127.0.0.1:6379',
         ?\Redis $client = null,
         ?CacheOptions $options = null,

@@ -33,8 +33,10 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
 
     public function __construct(
         string $namespace = 'default',
+        #[\SensitiveParameter]
         ?string $dsn = null,
         ?string $username = null,
+        #[\SensitiveParameter]
         ?string $password = null,
         ?PDO $pdo = null,
         string $table = 'cachelayer_entries',
@@ -47,7 +49,15 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         $this->namespace = CacheInput::namespace($namespace);
         $this->table = $table;
         $resolvedDsn = $dsn ?? 'sqlite:' . self::defaultSqliteFileForNamespace($this->namespace);
-        $this->pdo = $pdo ?? new PDO($resolvedDsn, $username, $password);
+        if ($pdo instanceof PDO) {
+            $this->pdo = $pdo;
+        } else {
+            try {
+                $this->pdo = new PDO($resolvedDsn, $username, $password);
+            } catch (PDOException) {
+                throw new RuntimeException('Unable to connect to the PDO cache backend.');
+            }
+        }
         $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $driver = $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
         $this->driver = is_string($driver) ? $driver : '';

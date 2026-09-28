@@ -9,6 +9,7 @@ use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 final readonly class CacheOptions
 {
     public function __construct(
+        #[\SensitiveParameter]
         public ?string $integrityKey = null,
         public ?int $maxPayloadBytes = 8_388_608,
         public ?int $compressionThreshold = null,
