@@ -7,9 +7,7 @@ use Infocyph\CacheLayer\Cache\AtomicCacheInterface;
 use Infocyph\CacheLayer\Cache\Cache;
 
 if (! function_exists('shm_attach')) {
-    test('shared memory extension not loaded')->skip();
-
-    return;
+    throw new RuntimeException('System V shared memory is required for the configured cache test matrix.');
 }
 
 test('shared memory adapter shares values across instances', function () {
@@ -141,9 +139,7 @@ test('shared memory atomic set reclaims expired and tag-invalidated state', func
 });
 
 test('shared memory atomic claim has one winner under process contention', function () {
-    if (!function_exists('pcntl_fork')) {
-        $this->markTestSkipped('pcntl is required for the shared-memory contention test.');
-    }
+    expect(function_exists('pcntl_fork'))->toBeTrue();
 
     $namespace = 'shm-contention-' . getmypid();
     $cache = Cache::sharedMemory($namespace);

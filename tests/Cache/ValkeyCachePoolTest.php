@@ -6,9 +6,7 @@ use Infocyph\CacheLayer\Cache\AtomicCacheInterface;
 use Infocyph\CacheLayer\Cache\Cache;
 
 if (! class_exists(Redis::class)) {
-    test('phpredis ext not loaded - skipping valkey tests')->skip();
-
-    return;
+    throw new RuntimeException('phpredis is required for the configured Valkey test matrix.');
 }
 
 $valkeyHost = getenv('IC_VALKEY_HOST') ?: getenv('CACHELAYER_VALKEY_HOST') ?: getenv('IC_REDIS_HOST') ?: getenv('CACHELAYER_REDIS_HOST') ?: '127.0.0.1';
@@ -22,10 +20,8 @@ try {
         $probe->auth($valkeyPassword);
     }
     $probe->ping();
-} catch (Throwable) {
-    test('Valkey server unreachable - skipping')->skip();
-
-    return;
+} catch (Throwable $failure) {
+    throw new RuntimeException('Valkey service is required for the configured cache test matrix.', 0, $failure);
 }
 
 beforeEach(function () use ($valkeyHost, $valkeyPort, $valkeyPassword) {

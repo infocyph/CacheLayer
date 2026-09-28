@@ -18,9 +18,7 @@ use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 
 /* ── skip whole file when Redis unavailable ───────────────────────── */
 if (! class_exists(Redis::class)) {
-    test('phpredis ext not loaded – skipping')->skip();
-
-    return;
+    throw new RuntimeException('phpredis is required for the configured cache test matrix.');
 }
 
 $redisHost = getenv('IC_REDIS_HOST') ?: getenv('CACHELAYER_REDIS_HOST') ?: '127.0.0.1';
@@ -43,10 +41,8 @@ try {
         $probe->auth($redisPassword);
     }
     $probe->ping();
-} catch (Throwable) {
-    test('Redis server unreachable – skipping')->skip();
-
-    return;
+} catch (Throwable $failure) {
+    throw new RuntimeException('Redis service is required for the configured cache test matrix.', 0, $failure);
 }
 
 $finishForkedTest = static function (bool $success): never {

@@ -241,7 +241,7 @@ function scylladbHttpGet(string $url, mixed $context): ?string
 test('scylladb alternator health endpoint is reachable', function () {
     $integration = scylladbAlternatorIntegrationContext();
     if ($integration === null) {
-        $this->markTestSkipped('ScyllaDB Alternator integration unavailable (service missing).');
+        throw new RuntimeException('ScyllaDB Alternator service is required for the configured cache test matrix.');
     }
 
     $context = stream_context_create([
@@ -260,7 +260,7 @@ test('scylladb alternator health endpoint is reachable', function () {
 test('scylladb alternator localnodes endpoint returns json list', function () {
     $integration = scylladbAlternatorIntegrationContext();
     if ($integration === null) {
-        $this->markTestSkipped('ScyllaDB Alternator integration unavailable (service missing).');
+        throw new RuntimeException('ScyllaDB Alternator service is required for the configured cache test matrix.');
     }
 
     $context = stream_context_create([

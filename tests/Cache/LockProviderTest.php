@@ -76,9 +76,7 @@ test('file lock registry keeps identical keys in different directories independe
 });
 
 test('sqlite PDO locks use the shared file-lock fallback', function (): void {
-    if (!extension_loaded('pdo_sqlite')) {
-        test()->markTestSkipped('pdo_sqlite is not available.');
-    }
+    expect(extension_loaded('pdo_sqlite'))->toBeTrue();
 
     $directory = sys_get_temp_dir() . '/cachelayer-pdo-lock-' . bin2hex(random_bytes(5));
     $pdo = new PDO('sqlite::memory:');
@@ -108,9 +106,7 @@ test('sqlite PDO locks use the shared file-lock fallback', function (): void {
 });
 
 test('sqlite PDO locks use the default file-lock fallback', function (): void {
-    if (!extension_loaded('pdo_sqlite')) {
-        test()->markTestSkipped('pdo_sqlite is not available.');
-    }
+    expect(extension_loaded('pdo_sqlite'))->toBeTrue();
 
     $key = 'worker:default-fallback:' . bin2hex(random_bytes(5));
     $pdo = new PDO('sqlite::memory:');
@@ -126,9 +122,7 @@ test('sqlite PDO locks use the default file-lock fallback', function (): void {
 });
 
 test('strict PDO locks reject SQLite during construction', function (): void {
-    if (!extension_loaded('pdo_sqlite')) {
-        test()->markTestSkipped('pdo_sqlite is not available.');
-    }
+    expect(extension_loaded('pdo_sqlite'))->toBeTrue();
 
     expect(fn(): PdoLockProvider => PdoLockProvider::strict(new PDO('sqlite::memory:')))
         ->toThrow(UnsupportedPdoLockDriver::class);
