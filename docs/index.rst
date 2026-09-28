@@ -50,6 +50,7 @@ Quick Start
    :caption: Guide
 
    cache
+   release-4.0
    upgrade-4.0
    counters
    adapters/index
