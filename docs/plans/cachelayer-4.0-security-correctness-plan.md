@@ -1,7 +1,7 @@
 # CacheLayer security, correctness, and release plan
 
 Date: 2026-09-28  
-Status: Implementation in progress; Batches 1-3 complete; Batch 4 next\
+Status: Implementation in progress; Batches 1-5 complete; Batch 6 in progress
 Audited revision: `b064b8196ddc4672ce37be252bc7a4cadb78527e` (local tag `3.4`)  
 Release target: **4.0.0 — next major release**
 
@@ -17,8 +17,8 @@ Draft PR: [#29 — CacheLayer 4.0 security and correctness hardening](https://gi
 | 2 — Authenticated payload/storage identity | R02, R15, R18 | **Complete** | Implemented and verified on exact commit `1924a74da3b9d6474696631405e839bd52ec158b`; Security & Standards run #210 passed. |
 | 3 — Durable invalidation protocol | R06, R07 | **Complete** | Implemented and verified on exact commit `3046e91fdc64bd2f1c9e8bd56a6d3dfc96057b7e`; Security & Standards run #240 passed. |
 | 4 — Cache contracts and memoization | R08, R11, R12, R13, R16, R17 | **Complete** | Implemented and verified on exact commit `02078be9e29876fd74d8cbd2fa6947e247cb8bc1`; Security & Standards run #312 passed. |
-| 5 — Counters and backend races | R14 plus race review | **In progress** | Counter keyspace/precision work and deterministic backend race review are active after verified Batch 4 closure. |
-| 6 — Release gates and integration | R19 plus release acceptance / optional Runwire 2.1 | Not started | Final full-matrix and packaging gate. |
+| 5 — Counters and backend races | R14 plus race review | **Complete** | Implemented and verified on exact commit `d2f0bbb356690a8acb8d9fd9532822c453f953ee`; Security & Standards run #352 passed. |
+| 6 — Release gates and integration | R19 plus release acceptance / optional Runwire 2.1 | **In progress** | Final support-matrix, documentation, migration, packaging, and exact-revision release gates are active. Runwire 2.1 remains optional and is not a 4.0 blocker. |
 
 ### Batch 1 tracker
 
@@ -62,14 +62,14 @@ Draft PR: [#29 — CacheLayer 4.0 security and correctness hardening](https://gi
 
 | Finding | Implementation | Regression evidence | QA state |
 | --- | --- | --- | --- |
-| R08 — memoizer identity | **Implemented; QA pending** | Callable/value fingerprints are type-tagged; same-line closure identity and lifetime-safe object identity coverage added. | Current Batch 4 gate still failing elsewhere. |
-| R11 — deferred PSR-6 lifecycle | **Implemented; QA fixes in progress** | Pending reads, snapshot semantics, overwrite/delete/clear ordering, commit retry/finalization paths are being consolidated at the pool boundary. | Run #266 exposed Node bulk-copy and stale legacy expectation failures. |
-| R12 — numeric-string keys/tags | **Implemented broadly; QA fixes in progress** | Logical keys/tags are normalized through batch/tag paths instead of being rejected solely because PHP coerces numeric-string array keys. | Run #266 exposed remaining typing/legacy-test cleanup. |
-| R13 — skipped-L1 coherence | **Implemented; QA pending** | Tier writes with disabled L1 write-through invalidate/fence upper-tier state; single and bulk regressions added. | Static complexity cleanup still required. |
-| R16 — Memcached >30-day TTL | **Implemented; QA fix in progress** | Shared expiration conversion covers atomic and lease paths with long-TTL regressions. | Run #266 exposed one missed ordinary single-save conversion. |
-| R17 — direct PSR contracts | **Implemented broadly; QA fixes in progress** | Direct key validation, deferred visibility, missing-delete and expiration contracts are being aligned across adapters. | Full common-contract gate pending. |
+| R08 — memoizer identity | **Complete** | Callable/value fingerprints are type-tagged; same-line closures, object/string/resource separation, weak lifetime-safe object identity, and request-reset behavior are covered. | Passed final Batch 4 QA on run #312. |
+| R11 — deferred PSR-6 lifecycle | **Complete** | Pending reads are visible before commit; queued values are snapshotted; immediate overwrite/delete/clear reconcile pending state; failed commit state is retained for retry; composed pools use logical item keys. | Passed final Batch 4 QA on run #312. |
+| R12 — numeric-string keys/tags | **Complete** | Logical keys/tags are preserved through internal identity encodings and item identities rather than relying on PHP array-key coercion. Numeric-string key/tag, batch, deferred, tier, and boundary cases are covered. | Passed final Batch 4 QA on run #312. |
+| R13 — skipped-L1 coherence | **Complete** | Writes that skip L1 invalidate or fence upper-tier state; failed L1 mutation/promotion prevents stale L1 reads until coherence is re-established. Single and batch regressions cover promoted stale values. | Passed final Batch 4 QA on run #312. |
+| R16 — Memcached >30-day TTL | **Complete** | One centralized conversion handles ordinary, bulk, atomic, and lease expiration semantics around the 30-day cutoff, including overflow guards. | Passed final Batch 4 QA on run #312. |
+| R17 — direct PSR contracts | **Complete** | Direct pools validate public PSR keys consistently; missing deletes succeed, null/expiry/deferred behavior is aligned, and APCu/bulk delete semantics are normalized. | Passed final Batch 4 QA on run #312. |
 
-**Batch 4 current QA evidence:** Security & Standards run #266 reached 296 passing Pest tests but failed seven regressions plus PHPStan/Pint/Rector. These failures are treated as open Batch 4 work; the batch is not closed until an exact-head full gate passes.
+**Batch 4 intermediate QA evidence:** Security & Standards run #266 exposed deferred/bulk, Memcached TTL, PHPStan/Pint/Rector regressions. Those failures were resolved before the exact-head closure gate; run #266 is retained here as historical implementation evidence, not current status.
 
 
 **Batch 4 closure evidence:** exact commit `02078be9e29876fd74d8cbd2fa6947e247cb8bc1` passed Security & Standards run #312: clean install, PHP 8.4/8.5 analysis, PHP 8.4/8.5 benchmarks, and all four stable/lowest QA jobs. Pest, Pint, PHPCS, Deptrac, Rector, skip-directive, reference-integrity, duplicate-code, and comment-policy gates all passed. Deferred PSR-6 state is visible before commit, immediate writes/deletes/clear reconcile queued state, numeric-string key/tag handling no longer relies on PHP array identity, Tiered/Node bulk copies use logical item keys, skipped-L1 writes fence stale upper-tier data, Memcached long TTLs are normalized, and direct-pool contract regressions are covered.
@@ -78,9 +78,20 @@ Draft PR: [#29 — CacheLayer 4.0 security and correctness hardening](https://gi
 
 | Finding | Implementation | Regression evidence | QA state |
 | --- | --- | --- | --- |
-| R14 — Redis/Valkey counter isolation and exact integers | **In progress** | Separate counter keyspace, exact Lua-return parsing, overflow/malformed handling, TTL/decrement/concurrency coverage to be completed. | Pending Batch 5 gate. |
-| Backend race review | **In progress** | Stale-read cleanup, tag initialization, clear/write-consume, lease loss, partial bulk failure, and backend false/error handling are being reviewed with deterministic tests where the race is actionable. | Pending Batch 5 gate. |
+| R14 — Redis/Valkey counter isolation and exact integers | **Complete** | Counters use the dedicated `cachelayer:counter:<namespace>:` keyspace, so ordinary cache clear cannot erase them. Lua returns the exact post-INCRBY decimal string from the same atomic operation; malformed/out-of-range values fail closed. Redis and Valkey cover >2^53 values, PHP integer limits, decrement, fixed-window TTL, and concurrent initialization. | Passed final Batch 5 QA on run #352. |
+| Backend race review | **Complete for planned Batch 5 scope** | Redis/Memcached stale cleanup is compare-safe; unsafe cleanup on other backends is deferred to safe maintenance; PDO expiry pruning uses an expiry predicate; tag initialization races are resolved across APCu/PDO/MongoDB/Node/SharedMemory/Scylla/Redis/Redis Cluster/Memcached. Existing lock-ownership, one-winner, partial-pipeline and backend-status tests cover lease loss, consumption, and partial failures. | Passed final Batch 5 QA on run #352. |
 
+
+**Batch 5 closure evidence:** exact commit `d2f0bbb356690a8acb8d9fd9532822c453f953ee` passed Security & Standards run #352: clean install, PHP 8.4/8.5 analysis, PHP 8.4/8.5 benchmarks, and all four stable/lowest QA jobs. Pest, Pint, PHPCS, Deptrac, Rector, skip-directive, reference-integrity, duplicate-code, and comment-policy gates passed. Counter precision/isolation, fixed-window TTLs, concurrent initialization, compare-safe stale cleanup, tag-initialization races, lock ownership, partial bulk failure, and backend false/error handling are covered by the final batch state.
+
+### Batch 6 tracker
+
+| Gate | Status | Evidence / next step |
+| --- | --- | --- |
+| R19 — support matrix and tooling | **In progress** | Add explicit PHP 8.3 core-consumer evidence, real MongoDB integration, and honest backend coverage boundaries; keep PHPForge limits unchanged. |
+| Documentation / migration / rollback | **In progress** | Consolidate 3.x→4.0 breaking changes, storage/cursor/counter migrations, rollback, security defaults, and topology limits. |
+| Packaging / consumer / docs | **In progress** | Add exact candidate clean-consumer and docs-as-errors gates; verify runtime code remains independent of dev packages. |
+| Optional Runwire 2.1 | **Deferred for 4.0 core release** | No runtime integration is shipped or advertised in this batch; its optional workstream does not block 4.0.0. |
 
 ## Decision
 
