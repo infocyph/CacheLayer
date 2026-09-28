@@ -27,6 +27,7 @@ final class ClusterCache
             $cluster->cluster,
             $cluster->nodeId,
             $node->namespace,
+            $cluster->transportIdentity,
         );
         $status = new ClusterStatusTracker();
         $recovery = new ClusterRecoveryManager($cache, $cursorStore, $transport, $cluster->cluster);
