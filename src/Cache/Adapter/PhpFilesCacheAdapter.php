@@ -172,13 +172,10 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
     #[\Override]
     public function rotateTagGenerations(array $tags): bool
     {
-        foreach ($tags as $tag) {
-            if (!$this->atomicReplace($this->metadataFileFor($tag), self::newGeneration())) {
-                return false;
-            }
-        }
-
-        return true;
+        return array_all(
+            $tags,
+            fn(string $tag): bool => $this->atomicReplace($this->metadataFileFor($tag), self::newGeneration()),
+        );
     }
 
     public function save(CacheItemInterface $item): bool
