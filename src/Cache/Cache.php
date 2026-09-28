@@ -137,11 +137,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
                     'mongodb/mongodb is required unless a collection/client is provided.',
                 );
             }
-            try {
-                $client = new Client($uri);
-            } catch (Throwable) {
-                throw new CacheInvalidArgumentException('Unable to create MongoDB client from the configured URI.');
-            }
+            $client = Adapter\MongoDbClientFactory::create($uri);
         }
 
         return new self(
