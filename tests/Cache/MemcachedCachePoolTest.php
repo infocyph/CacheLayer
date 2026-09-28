@@ -14,6 +14,7 @@ use Infocyph\CacheLayer\Cache\CacheOptions;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Cache\Lock\MemcachedLockProvider;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
+use Infocyph\CacheLayer\Support\MemcachedValueGuard;
 
 /* ── Skip suite if Memcached unavailable ─────────────────────────── */
 
@@ -195,4 +196,43 @@ test('Memcached atomic writes and leases normalize long TTLs', function () {
             ->and($provider->refresh($handle, (float) $longTtl))->toBeTrue();
         $provider->release($handle);
     }
+});
+
+
+test('Memcached compare-safe guard preserves a concurrent replacement', function () {
+    $key = 'tests:guard:race';
+
+    $this->client->set($key, 'fresh', 30);
+    expect(MemcachedValueGuard::replaceIfUnchanged(
+        $this->client,
+        $key,
+        'stale',
+        'repair',
+        1,
+    ))->toBe('fresh')
+        ->and($this->client->get($key))->toBe('fresh');
+
+    $this->client->set($key, 'stale', 30);
+    expect(MemcachedValueGuard::replaceIfUnchanged(
+        $this->client,
+        $key,
+        'stale',
+        'repair',
+        1,
+    ))->toBe('repair')
+        ->and($this->client->get($key))->toBe('repair');
+});
+
+test('Memcached delete reports backend errors but treats missing keys as success', function () {
+    $unavailable = new Memcached;
+    $adapter = new \Infocyph\CacheLayer\Cache\Adapter\MemcachedCacheAdapter(
+        'unavailable',
+        [],
+        $unavailable,
+    );
+
+    expect($this->cache->delete('missing-delete'))->toBeTrue()
+        ->and($this->cache->deleteItems(['missing-one', 'missing-two']))->toBeTrue()
+        ->and($adapter->deleteItem('key'))->toBeFalse()
+        ->and($adapter->deleteItems(['key']))->toBeFalse();
 });
