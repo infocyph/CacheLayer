@@ -154,6 +154,3 @@ MongoDB, ScyllaDB, Redis Cluster, null-store, and directly constructed caches do
 not claim an authentication-state lock until the caller explicitly configures
 one. Tiered caches never expose an authentication-state lock because their read
 path is not authoritative for monotonic state.
-* PDO/SQLite adapter factories set ``PdoLockProvider``; SQLite uses its
-  file-lock fallback
-* all other adapters use ``FileLockProvider`` by default
