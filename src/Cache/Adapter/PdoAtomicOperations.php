@@ -158,8 +158,9 @@ trait PdoAtomicOperations
             return true;
         }
 
-        $rows = $this->fetchRows(self::KIND_TAG, array_keys($record->tags));
+        $rows = $this->fetchRows(self::KIND_TAG, array_map(static fn(int|string $tag): string => (string) $tag, array_keys($record->tags)));
         foreach ($record->tags as $tag => $generation) {
+            $tag = (string) $tag;
             if (($rows[$tag]['payload'] ?? null) !== $generation) {
                 return false;
             }
