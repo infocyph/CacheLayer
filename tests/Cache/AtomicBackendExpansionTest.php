@@ -72,28 +72,33 @@ test('SQLite PDO supports the full atomic cache contract', function () {
     }
 });
 
-if (class_exists(Memcached::class)) {
-    $host = getenv('IC_MEMCACHED_HOST') ?: getenv('CACHELAYER_MEMCACHED_HOST') ?: '127.0.0.1';
-    $port = (int) (getenv('IC_MEMCACHED_PORT') ?: getenv('CACHELAYER_MEMCACHED_PORT') ?: '11211');
-    $probe = new Memcached();
-    $probe->addServer($host, $port);
-    $available = $probe->set('cachelayer-atomic-probe', 'ok')
-        && $probe->getResultCode() === Memcached::RES_SUCCESS;
-
-    test('Memcached supports CAS-backed atomic cache operations', function () use ($host, $port) {
-        $client = new Memcached();
-        $client->addServer($host, $port);
-        $client->flush();
-        $cache = Cache::memcached('atomic-memcached', [[$host, $port, 0]], $client);
-        $atomic = $cache->atomic();
-
-        expect($atomic)->toBeInstanceOf(AtomicCacheInterface::class)
-            ->and($atomic->setIfAbsent('claim', 'first', 30))->toBeTrue()
-            ->and($atomic->setIfAbsent('claim', 'second', 30))->toBeFalse()
-            ->and($atomic->compareAndSet('claim', 'first', 'updated', 30))->toBeTrue()
-            ->and($atomic->getAndDelete('claim', 'missing'))->toBe('updated')
-            ->and($cache->has('claim'))->toBeFalse()
-            ->and($atomic->setIfAbsent('claim', 'reclaimed', 30))->toBeTrue()
-            ->and($cache->get('claim'))->toBe('reclaimed');
-    })->skip(!$available, 'No Memcached server available.');
+if (!class_exists(Memcached::class)) {
+    throw new RuntimeException('Memcached extension is required for the configured atomic test matrix.');
 }
+
+$host = getenv('IC_MEMCACHED_HOST') ?: getenv('CACHELAYER_MEMCACHED_HOST') ?: '127.0.0.1';
+$port = (int) (getenv('IC_MEMCACHED_PORT') ?: getenv('CACHELAYER_MEMCACHED_PORT') ?: '11211');
+$probe = new Memcached();
+$probe->addServer($host, $port);
+$available = $probe->set('cachelayer-atomic-probe', 'ok')
+    && $probe->getResultCode() === Memcached::RES_SUCCESS;
+if (!$available) {
+    throw new RuntimeException('Memcached service is required for the configured atomic test matrix.');
+}
+
+test('Memcached supports CAS-backed atomic cache operations', function () use ($host, $port) {
+    $client = new Memcached();
+    $client->addServer($host, $port);
+    $client->flush();
+    $cache = Cache::memcached('atomic-memcached', [[$host, $port, 0]], $client);
+    $atomic = $cache->atomic();
+
+    expect($atomic)->toBeInstanceOf(AtomicCacheInterface::class)
+        ->and($atomic->setIfAbsent('claim', 'first', 30))->toBeTrue()
+        ->and($atomic->setIfAbsent('claim', 'second', 30))->toBeFalse()
+        ->and($atomic->compareAndSet('claim', 'first', 'updated', 30))->toBeTrue()
+        ->and($atomic->getAndDelete('claim', 'missing'))->toBe('updated')
+        ->and($cache->has('claim'))->toBeFalse()
+        ->and($atomic->setIfAbsent('claim', 'reclaimed', 30))->toBeTrue()
+        ->and($cache->get('claim'))->toBe('reclaimed');
+});
