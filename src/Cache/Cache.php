@@ -793,7 +793,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
      */
     private function fetchItems(array $keys): array
     {
-        return $this->adapter->multiFetch($keys);
+        return $this->adapter->getItems($keys);
     }
 
     private function jitteredTtl(?int $ttl): ?int
