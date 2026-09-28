@@ -428,7 +428,9 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
         }
 
         if (is_object($value) && is_callable([$value, 'toInt'])) {
-            return $value->toInt();
+            $intValue = $value->toInt();
+
+            return is_int($intValue) ? $intValue : null;
         }
 
         if (is_float($value) || (is_string($value) && is_numeric($value))) {
@@ -470,7 +472,9 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
         }
 
         if (is_object($value) && is_callable([$value, 'toBinaryString'])) {
-            return $value->toBinaryString();
+            $stringValue = $value->toBinaryString();
+
+            return is_string($stringValue) ? $stringValue : null;
         }
 
         if (is_object($value) && is_callable([$value, '__toString'])) {
