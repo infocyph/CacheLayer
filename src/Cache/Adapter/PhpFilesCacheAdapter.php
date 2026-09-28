@@ -302,7 +302,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         $row = require $file;
         $payload = is_array($row) && is_string($row['p'] ?? null) ? $row['p'] : null;
         $blob = is_string($payload) ? base64_decode($payload, true) : false;
-        $record = is_string($blob) ? $this->decodeRecordFromBlob($blob) : null;
+        $record = is_string($blob) ? $this->decodeRecordFromBlob($blob, $key) : null;
         if (!$record instanceof CacheRecord || !$this->recordTagsAreCurrent($record)) {
             return null;
         }

@@ -87,7 +87,7 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
         $values = is_array($values) ? array_values($values) : [];
         $generation = $this->namespaceGeneration($bucket, $values[0] ?? null);
         $blob = $values[1] ?? null;
-        $record = is_string($blob) ? $this->decodeRecordFromBlob($blob) : null;
+        $record = is_string($blob) ? $this->decodeRecordFromBlob($blob, $key) : null;
         if ($record !== null && $record->namespaceGeneration === $generation) {
             return $this->genericItemFromRecord($key, $record);
         }
@@ -240,7 +240,7 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
         $stale = [];
         foreach ($keys as $index => $key) {
             $blob = $values[$index + 1] ?? null;
-            $record = is_string($blob) ? $this->decodeRecordFromBlob($blob) : null;
+            $record = is_string($blob) ? $this->decodeRecordFromBlob($blob, $key) : null;
             if ($record !== null && $record->namespaceGeneration === $generation) {
                 $items[$key] = $this->genericItemFromRecord($key, $record);
 

@@ -345,7 +345,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
             return null;
         }
 
-        $record = $this->decodeRecordFromBlob($row['payload']);
+        $record = $this->decodeRecordFromBlob($row['payload'], $key);
 
         return $record === null ? null : $this->genericItemFromRecord($key, $record);
     }

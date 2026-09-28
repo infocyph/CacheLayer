@@ -138,7 +138,7 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
             return new CacheItem($this, $key);
         }
 
-        $record = $this->decodeRecordFromBlob($row['payload']);
+        $record = $this->decodeRecordFromBlob($row['payload'], $key);
         if ($record === null) {
             return new CacheItem($this, $key);
         }
@@ -205,7 +205,7 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
 
                 continue;
             }
-            $record = $this->decodeRecordFromBlob($payload);
+            $record = $this->decodeRecordFromBlob($payload, $key);
             if ($record === null) {
                 $invalid[] = $key;
                 $items[$key] = $this->genericMiss($key);

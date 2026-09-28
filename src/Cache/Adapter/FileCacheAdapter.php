@@ -305,7 +305,7 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
     {
         $file = $this->fileFor($key);
         $raw = is_file($file) ? file_get_contents($file) : false;
-        $record = is_string($raw) ? $this->decodeRecordFromBlob($raw) : null;
+        $record = is_string($raw) ? $this->decodeRecordFromBlob($raw, $key) : null;
         if (!$record instanceof CacheRecord || !$this->recordTagsAreCurrent($record)) {
             return null;
         }

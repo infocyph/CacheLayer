@@ -373,7 +373,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
         foreach ($keys as $key) {
             $row = $byKey[$this->mapData($key)] ?? null;
             $payload = is_array($row) ? $this->normalizeString($row['payload'] ?? null) : null;
-            $record = $payload === null ? null : $this->decodeRecordFromBlob($payload);
+            $record = $payload === null ? null : $this->decodeRecordFromBlob($payload, $key);
             $items[$key] = $record === null
                 ? $this->genericMiss($key)
                 : $this->genericItemFromRecord($key, $record);
