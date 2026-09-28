@@ -99,7 +99,7 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
         }
     }
 
-    /** @return array{cluster:string, node_id:string, namespace:string} */
+    /** @return array<string, string> */
     private function scopeParameters(): array
     {
         return [
