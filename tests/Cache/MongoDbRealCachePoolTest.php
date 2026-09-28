@@ -74,6 +74,10 @@ test('real MongoDB atomic claim has exactly one process winner', function () use
         $wins += pcntl_wexitstatus($status) === 0 ? 1 : 0;
     }
 
+    $freshClient = new MongoDB\Client($mongoDsn);
+    $freshCollection = $freshClient->selectCollection($mongoDatabase, $collectionName);
+    $freshCache = new Cache(new MongoDbCacheAdapter($freshCollection, 'mongo-real'));
+
     expect($wins)->toBe(1)
-        ->and($this->mongoCache->get('claim'))->toBeString();
+        ->and($freshCache->get('claim'))->toBeString();
 });
