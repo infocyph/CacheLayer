@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration;
 use Infocyph\CacheLayer\Memoize\Memoizer;
 use Infocyph\CacheLayer\Memoize\OnceMemoizer;
 
@@ -13,9 +14,12 @@ if (!function_exists('memoize')) {
      */
     function memoize(?callable $callable = null, array $params = []): mixed
     {
-        $memoizer = Memoizer::instance();
+        $memoizer = RunwireIntegration::memoizer();
         if ($callable === null) {
-            return $memoizer;
+            return $memoizer ?? Memoizer::isolated();
+        }
+        if ($memoizer === null) {
+            return $callable(...$params);
         }
 
         return $memoizer->get($callable, $params);
@@ -30,14 +34,18 @@ if (!function_exists('remember')) {
      */
     function remember(?object $object = null, ?callable $callable = null, array $params = []): mixed
     {
-        $memoizer = Memoizer::instance();
+        $memoizer = RunwireIntegration::memoizer();
 
         if ($object === null) {
-            return $memoizer;
+            return $memoizer ?? Memoizer::isolated();
         }
 
         if ($callable === null) {
             throw new InvalidArgumentException('remember() requires both object and callable');
+        }
+
+        if ($memoizer === null) {
+            return $callable(...$params);
         }
 
         return $memoizer->getFor($object, $callable, $params);
@@ -47,14 +55,17 @@ if (!function_exists('remember')) {
 if (!function_exists('once')) {
     function once(callable $callback): mixed
     {
-        return OnceMemoizer::instance()->once($callback, 1);
+        $memoizer = RunwireIntegration::onceMemoizer();
+
+        return $memoizer === null
+            ? $callback()
+            : $memoizer->once($callback, 1);
     }
 }
 
 if (!function_exists('flush_memoizers')) {
     function flush_memoizers(): void
     {
-        Memoizer::instance()->flush();
-        OnceMemoizer::instance()->flush();
+        RunwireIntegration::flushMemoizers();
     }
 }
