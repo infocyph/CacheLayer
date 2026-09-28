@@ -74,7 +74,7 @@ test('weak map enforces object and closure policies without serializing referenc
 });
 
 test('payload codec delegates only top-level closures to special serialization', function () {
-    $codec = new CachePayloadCodec();
+    $codec = new CachePayloadCodec(new CacheOptions(allowClosures: true));
     $blob = $codec->encode(static fn(int $value): int => $value + 1, null);
     $closure = $codec->decode($blob)?->value;
     $resource = fopen('php://memory', 'r+');
