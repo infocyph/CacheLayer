@@ -41,7 +41,8 @@
     },
     "require-dev": {
         "infocyph/phpforge": "dev-main@dev",
-        "mongodb/mongodb": "^1.20 || ^2.0"
+        "infocyph/runwire": "2.1",
+        "mongodb/mongodb": "*"
     },
     "suggest": {
         "ext-apcu": "For APCu-based caching (in-memory, per-process)",
