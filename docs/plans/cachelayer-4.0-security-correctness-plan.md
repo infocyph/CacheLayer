@@ -15,7 +15,7 @@ Draft PR: [#29 — CacheLayer 4.0 security and correctness hardening](https://gi
 | --- | --- | --- | --- |
 | 1 — Security and transaction containment | R01, R03, R04, R05, R09, R10 | **Complete** | Implemented and verified on exact commit `5a9f4bd553b4d97cca72d05affa32b6e7ce3c37e`; Security & Standards run #173 passed. |
 | 2 — Authenticated payload/storage identity | R02, R15, R18 | **Complete** | Implemented and verified on exact commit `1924a74da3b9d6474696631405e839bd52ec158b`; Security & Standards run #210 passed. |
-| 3 — Durable invalidation protocol | R06, R07 | **In progress** | R07 namespace-scoped cursor storage and safe cursor reset/recovery are implemented with regression coverage; R06 commit-order-safe PDO publication is next. |
+| 3 — Durable invalidation protocol | R06, R07 | **In progress** | R06 per-cluster commit-order serialization and R07 namespace-scoped cursor ownership are implemented with regression coverage; full Batch 3 QA is pending. |
 | 4 — Cache contracts and memoization | R08, R11, R12, R13, R16, R17 | Not started | Pending prior batches. |
 | 5 — Counters and backend races | R14 plus race review | Not started | Pending prior batches. |
 | 6 — Release gates and integration | R19 plus release acceptance / optional Runwire 2.1 | Not started | Final full-matrix and packaging gate. |
@@ -44,7 +44,18 @@ Draft PR: [#29 — CacheLayer 4.0 security and correctness hardening](https://gi
 
 **Batch 2 implementation/closure commits:** `df108d47309b84c9334b5747e08172b03460933b` (contracts), `a0da9349ecffe94d3e4491c8ca149fe37b31d710` (Node identity/topology), `0f9cce33e2763910b637709e534373f634af9d75` (logical storage identity propagation), `47e0f05cf0245f7d69bbc12a892f3ddbcc81ea99` (bound signed envelope and secure serialization defaults), `3ee8e84ca21ce2eac63a0b1552750ef83beb7556`, `edef15420895cee62b179c7fa9d6513479b3b336`, `045d5ff89949370744f6d95646165a9b11efd721`, `f2c3e55db67ecc3237dc87494c2828c66f33d5ee`, and `7e4a26f9f3c9e0ae4902229edc68a4429fbdaef0` (adapter/atomic identity verification and codec hardening), `8b2dbfffa7805e8bcd8b31f4ee527ba20ef91b01` and `62f984c13c342c9faa37400cd4a6a262c3f627a3` (SQL/shared-memory identity), `64fc9ba5fcdfceb12e92efd2912192486e0a1cd6` through `1924a74da3b9d6474696631405e839bd52ec158b` (final schema idempotence, unified Node policy, L1 coherence fencing, regressions/docs, and exact PHPForge formatting).
 
-**Batch 2 closure evidence:** exact commit `1924a74da3b9d6474696631405e839bd52ec158b` passed Security & Standards run #210: clean install, PHP 8.4/8.5 analysis, PHP 8.4/8.5 benchmarks, and all four stable/lowest QA jobs. Pest, Pint, PHPCS, Deptrac, Rector, skip-directive, reference-integrity, duplicate-code, and comment-policy gates all passed.\n\n## Decision
+**Batch 2 closure evidence:** exact commit `1924a74da3b9d6474696631405e839bd52ec158b` passed Security & Standards run #210: clean install, PHP 8.4/8.5 analysis, PHP 8.4/8.5 benchmarks, and all four stable/lowest QA jobs. Pest, Pint, PHPCS, Deptrac, Rector, skip-directive, reference-integrity, duplicate-code, and comment-policy gates all passed.
+
+### Batch 3 tracker
+
+| Finding | Implementation | Regression evidence | QA state |
+| --- | --- | --- | --- |
+| R06 — durable PDO invalidation ordering | **Implemented; QA pending** | PDO publication now acquires a per-cluster transactional lock before event-ID allocation. MySQL/PostgreSQL concurrency coverage forces a second publisher to attempt completion before the first transaction commits, plus rollback and publisher-process-death cases. | Full Batch 3 QA pending. |
+| R07 — namespace-scoped cursor ownership | **Implemented; QA pending** | SQLite cursor storage is versioned and keyed by cluster + node + namespace. A same-node/same-store multi-namespace regression proves one namespace cannot advance another namespace's replay cursor; null/new scoped cursors clear local state before replay. | Full Batch 3 QA pending. |
+
+**Batch 3 implementation commits so far:** `965d90ea9fbc6e39f77988e3aef4900a792b30c9` through `6a658362f6dc777f1f0f50a196289d7ef1ef26c0` (R07 cursor scope/recovery/tests/tracker start), `4b885a133b8ec08dd0ed855e502a708f705e27fc`, `fa131a8278294dba3e290c761bf017bb7e2cd5ed`, `2b2ac8e04a1168204b397f25555e4f5221b0f5a8`, and `63d8fe94ec7df44c5238c527116945fea3a6a2bb` (R06 locking protocol, schema, real-concurrency CI support, and MySQL/PostgreSQL regressions).
+
+## Decision
 
 The library needs changes before another release can be called ready. The audit reproduced security-sensitive failures, incorrect cache results, transaction data loss, and release-gate failures. Existing tests and clean static/security analysis do not cover these cases.
 
