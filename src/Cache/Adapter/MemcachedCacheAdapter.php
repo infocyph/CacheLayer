@@ -360,25 +360,6 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         );
     }
 
-    private function initializeGeneration(string $key, mixed $observed, string $failureMessage): string
-    {
-        $generation = self::normalizeGeneration($observed);
-        if ($generation !== null) {
-            return $generation;
-        }
-
-        $candidate = self::newGeneration();
-        $current = is_string($observed)
-            ? MemcachedValueGuard::replaceIfUnchanged($this->client, $key, $observed, $candidate)
-            : ($this->client->add($key, $candidate) ? $candidate : $this->client->get($key));
-        $generation = self::normalizeGeneration($current);
-        if ($generation === null) {
-            throw new RuntimeException($failureMessage);
-        }
-
-        return $generation;
-    }
-
     /** @return array{value:string, cas:float}|null */
     private function extendedGet(string $key): ?array
     {
@@ -397,6 +378,25 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
     private function generationKey(): string
     {
         return $this->namespace . ':m:generation';
+    }
+
+    private function initializeGeneration(string $key, mixed $observed, string $failureMessage): string
+    {
+        $generation = self::normalizeGeneration($observed);
+        if ($generation !== null) {
+            return $generation;
+        }
+
+        $candidate = self::newGeneration();
+        $current = is_string($observed)
+            ? MemcachedValueGuard::replaceIfUnchanged($this->client, $key, $observed, $candidate)
+            : ($this->client->add($key, $candidate) ? $candidate : $this->client->get($key));
+        $generation = self::normalizeGeneration($current);
+        if ($generation === null) {
+            throw new RuntimeException($failureMessage);
+        }
+
+        return $generation;
     }
 
     private function mapData(string $key): string
