@@ -98,6 +98,7 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
     public function deleteItem(string $key): bool
     {
         $this->discardDeferredKey($key);
+
         return $this->withKeyLock($key, fn(): bool => $this->deleteItemUnlocked($key));
     }
 
@@ -105,6 +106,7 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
+
         $ok = true;
         foreach ($keys as $k) {
             $ok = $this->deleteItem($k) && $ok;
