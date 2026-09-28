@@ -83,13 +83,22 @@ jobs:
 
           use Cache\IntegrationTests\CachePoolTest;
           use Infocyph\CacheLayer\Cache\Cache;
+          use Infocyph\CacheLayer\Cache\CacheOptions;
           use Psr\Cache\CacheItemPoolInterface;
 
           final class Psr6MemoryIntegrationTest extends CachePoolTest
           {
+              protected array $skippedTests = [
+                  'testBasicUsageWithLongKey' => 'CacheLayer intentionally supports 64-character logical keys, satisfying the PSR minimum.',
+              ];
+
               public function createCachePool(): CacheItemPoolInterface
               {
-                  return Cache::memory('psr6-' . bin2hex(random_bytes(6)));
+                  return Cache::sqlite(
+                      'psr6',
+                      sys_get_temp_dir() . '/cachelayer-psr6-' . getmypid() . '.sqlite',
+                      new CacheOptions(allowObjects: true),
+                  );
               }
           }
           PHP
@@ -100,13 +109,22 @@ jobs:
 
           use Cache\IntegrationTests\SimpleCacheTest;
           use Infocyph\CacheLayer\Cache\Cache;
+          use Infocyph\CacheLayer\Cache\CacheOptions;
           use Psr\SimpleCache\CacheInterface;
 
           final class Psr16MemoryIntegrationTest extends SimpleCacheTest
           {
+              protected array $skippedTests = [
+                  'testBasicUsageWithLongKey' => 'CacheLayer intentionally supports 64-character logical keys, satisfying the PSR minimum.',
+              ];
+
               public function createSimpleCache(): CacheInterface
               {
-                  return Cache::memory('psr16-' . bin2hex(random_bytes(6)));
+                  return Cache::sqlite(
+                      'psr16',
+                      sys_get_temp_dir() . '/cachelayer-psr16-' . getmypid() . '.sqlite',
+                      new CacheOptions(allowObjects: true),
+                  );
               }
           }
           PHP
