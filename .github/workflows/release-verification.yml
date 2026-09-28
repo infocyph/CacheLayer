@@ -1,0 +1,143 @@
+name: "Release Verification"
+
+on:
+  pull_request:
+    branches: [ "main", "master", "develop", "development" ]
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  php83-core:
+    name: PHP 8.3 core consumer (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          tools: composer:v2
+          extensions: mbstring, pdo, pdo_sqlite, opcache
+          coverage: none
+      - run: composer install --no-dev --no-interaction --prefer-dist --no-progress --classmap-authoritative
+      - run: composer check-platform-reqs --no-dev
+      - name: Lint production source on PHP 8.3
+        if: runner.os != 'Windows'
+        shell: bash
+        run: find src -name '*.php' -print0 | xargs -0 -n1 php -l
+      - name: Lint production source on PHP 8.3 (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Get-ChildItem src -Recurse -Filter *.php | ForEach-Object { php -l $_.FullName; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
+      - name: Core smoke without CLI OPcache
+        run: php -d error_reporting=E_ALL -d opcache.enable_cli=0 tools/release/php83-smoke.php
+      - name: Core smoke with CLI OPcache
+        run: php -d error_reporting=E_ALL -d opcache.enable_cli=1 tools/release/php83-smoke.php
+
+  psr-contracts:
+    name: Independent PSR-6 / PSR-16 contracts
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          tools: composer:v2
+          coverage: none
+      - name: Install independent consumer
+        working-directory: tools/release/psr-consumer
+        run: composer update --no-interaction --prefer-dist --no-progress --prefer-stable
+      - name: Run upstream integration suites
+        working-directory: tools/release/psr-consumer
+        run: vendor/bin/phpunit tests/PsrIntegrationTest.php
+
+  docs:
+    name: Documentation warnings as errors
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - run: python -m pip install --disable-pip-version-check -r docs/requirements.txt
+      - run: python -m sphinx -W --keep-going -b html docs docs/_build/html
+
+  redis-cluster:
+    name: Real Redis Cluster
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          tools: composer:v2
+          extensions: redis
+          coverage: none
+      - run: composer install --no-dev --no-interaction --prefer-dist --no-progress --classmap-authoritative
+      - name: Start three-node Redis Cluster
+        shell: bash
+        run: |
+          set -euo pipefail
+          for port in 7001 7002 7003; do
+            docker run -d --name "cachelayer-redis-$port" --network host redis:8.10-alpine               redis-server               --port "$port"               --cluster-enabled yes               --cluster-config-file "nodes-$port.conf"               --cluster-node-timeout 5000               --cluster-announce-ip 127.0.0.1               --cluster-announce-port "$port"               --cluster-announce-bus-port "$((port + 10000))"               --appendonly no               --protected-mode no
+          done
+          for attempt in {1..60}; do
+            if docker exec cachelayer-redis-7001 redis-cli -p 7001 ping | grep -q PONG; then
+              break
+            fi
+            sleep 1
+          done
+          docker exec cachelayer-redis-7001 redis-cli --cluster create             127.0.0.1:7001 127.0.0.1:7002 127.0.0.1:7003             --cluster-replicas 0 --cluster-yes
+          docker exec cachelayer-redis-7001 redis-cli -c -p 7001 cluster info | grep -q 'cluster_state:ok'
+      - name: Exercise CacheLayer against real Redis Cluster
+        env:
+          CACHELAYER_REDIS_CLUSTER_SEEDS: "127.0.0.1:7001,127.0.0.1:7002,127.0.0.1:7003"
+        run: php -d error_reporting=E_ALL tools/release/redis-cluster-smoke.php
+      - if: always()
+        shell: bash
+        run: docker rm -f cachelayer-redis-7001 cachelayer-redis-7002 cachelayer-redis-7003 >/dev/null 2>&1 || true
+
+  scylla-cql:
+    name: Real Scylla CQL
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          tools: composer:v2
+          coverage: none
+      - run: composer install --no-dev --no-interaction --prefer-dist --no-progress --classmap-authoritative
+      - name: Start ScyllaDB CQL service
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --name cachelayer-scylla -p 9042:9042 scylladb/scylla:2026.2             --smp 1 --memory 1G --overprovisioned 1 --developer-mode=1
+          for attempt in {1..120}; do
+            if docker exec cachelayer-scylla cqlsh -e 'SELECT release_version FROM system.local;' >/dev/null 2>&1; then
+              break
+            fi
+            sleep 2
+          done
+          docker exec cachelayer-scylla cqlsh -e             "CREATE KEYSPACE IF NOT EXISTS cachelayer WITH replication = {'class':'SimpleStrategy','replication_factor':1};"
+      - name: Install pinned Scylla PHP CQL driver
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y libuv1t64 libgmp10
+          mkdir -p .ci/scylla-driver
+          curl -fsSL             https://github.com/he4rt/scylladb-php-driver/releases/download/v1.5.1/ubuntu-24.04-php8.4-nts-scylladb.tar.gz             -o .ci/scylla-driver/driver.tar.gz
+          tar -xzf .ci/scylla-driver/driver.tar.gz -C .ci/scylla-driver
+          php -d "extension=$PWD/.ci/scylla-driver/cassandra.so" -r             'if (!class_exists("Cassandra")) { throw new RuntimeException("Cassandra extension did not load."); }'
+      - name: Exercise CacheLayer against real CQL
+        run: php -d error_reporting=E_ALL -d "extension=$PWD/.ci/scylla-driver/cassandra.so" tools/release/scylla-cql-smoke.php
+      - if: always()
+        run: docker rm -f cachelayer-scylla >/dev/null 2>&1 || true
