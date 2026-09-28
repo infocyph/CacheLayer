@@ -274,7 +274,6 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
         return $groups;
     }
 
-
     private function initializeGeneration(string $key, mixed $observed, string $failureMessage): string
     {
         $generation = self::normalizeGeneration($observed);
