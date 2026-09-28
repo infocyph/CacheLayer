@@ -443,8 +443,9 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
             return true;
         }
 
-        $current = $this->getTagGenerations(array_keys($record->tags));
+        $current = $this->getTagGenerations(array_map(static fn(int|string $tag): string => (string) $tag, array_keys($record->tags)));
         foreach ($record->tags as $tag => $generation) {
+            $tag = (string) $tag;
             if (($current[$tag] ?? null) !== $generation) {
                 return false;
             }
