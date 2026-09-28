@@ -4,15 +4,14 @@ declare(strict_types=1);
 
 use Infocyph\CacheLayer\Cache\Adapter\ArrayCacheAdapter;
 use Infocyph\CacheLayer\Cache\Adapter\SharedMemoryCacheAdapter;
-use Infocyph\CacheLayer\Cache\Adapter\TieredCacheAdapter;
 use Infocyph\CacheLayer\Cache\Adapter\PdoCacheAdapter;
+use Infocyph\CacheLayer\Cache\Adapter\TieredCacheAdapter;
 use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Cache\CacheOptions;
 use Infocyph\CacheLayer\Cache\Lock\FileLockProvider;
 use Infocyph\CacheLayer\Cache\Tiering\TieredPoolFactory;
 use Infocyph\CacheLayer\Serializer\ClosureSerializer;
 use Infocyph\CacheLayer\Support\RedisConnection;
-use Infocyph\CacheLayer\Counter\AtomicCounters;
 use Infocyph\CacheLayer\Node\Adapter\NodeCacheAdapter;
 use Infocyph\CacheLayer\Node\Adapter\NodeSqliteCacheAdapter;
 use Infocyph\CacheLayer\Node\Connection\NodeSqliteConnection;
@@ -131,11 +130,8 @@ test('secret-bearing public parameters are marked sensitive', function () {
     }
 });
 
-
 test('recursive payloads fail within bounded subprocess resources', function () {
-    if (!function_exists('proc_open')) {
-        test()->markTestSkipped('proc_open is required for the bounded recursion regression.');
-    }
+    expect(function_exists('proc_open'))->toBeTrue();
 
     $autoload = realpath(__DIR__ . '/../../vendor/autoload.php');
     expect($autoload)->not->toBeFalse();
@@ -216,16 +212,29 @@ PHP;
     $command = escapeshellarg(PHP_BINARY)
         . ' -d memory_limit=32M -d max_execution_time=3 '
         . escapeshellarg($script);
-    exec($command, $output, $status);
+    $process = proc_open(
+        $command,
+        [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ],
+        $pipes,
+    );
+    expect(is_resource($process))->toBeTrue();
+    fclose($pipes[0]);
+    $stdout = stream_get_contents($pipes[1]);
+    $stderr = stream_get_contents($pipes[2]);
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+    $status = proc_close($process);
     unlink($script);
 
-    expect($status)->toBe(0);
+    expect($status)->toBe(0, trim((string) $stdout . "\n" . (string) $stderr));
 });
 
 test('file atomic consumption reports deletion failure instead of returning the value', function () {
-    if (DIRECTORY_SEPARATOR === '\\') {
-        test()->markTestSkipped('POSIX permission semantics are required for this regression.');
-    }
+    expect(DIRECTORY_SEPARATOR)->not->toBe('\\');
 
     foreach ([
         'file' => static fn(string $base, CacheOptions $options): Cache
@@ -274,7 +283,6 @@ test('file atomic consumption reports deletion failure instead of returning the 
     }
 });
 
-
 test('composite adapters preflight policy conflicts without partial binding', function () {
     $strict = new CacheOptions(allowObjects: false, allowClosures: false, integrityKey: 'strict');
     $permissive = new CacheOptions(allowObjects: true, allowClosures: true);
@@ -302,9 +310,8 @@ test('composite adapters preflight policy conflicts without partial binding', fu
 });
 
 test('SQLite and file-lock owners reject symlinked path components', function () {
-    if (DIRECTORY_SEPARATOR === '\\' || !function_exists('symlink')) {
-        test()->markTestSkipped('POSIX symlink semantics are required for this regression.');
-    }
+    expect(DIRECTORY_SEPARATOR)->not->toBe('\\')
+        ->and(function_exists('symlink'))->toBeTrue();
 
     $base = sys_get_temp_dir() . '/cachelayer-path-trust-' . bin2hex(random_bytes(4));
     $target = $base . '/target';
@@ -350,9 +357,9 @@ test('SQLite and file-lock owners reject symlinked path components', function ()
 });
 
 test('shared-memory token creation rejects a pre-created symlink', function () {
-    if (DIRECTORY_SEPARATOR === '\\' || !function_exists('symlink') || !function_exists('shm_attach')) {
-        test()->markTestSkipped('Shared-memory and POSIX symlink support are required.');
-    }
+    expect(DIRECTORY_SEPARATOR)->not->toBe('\\')
+        ->and(function_exists('symlink'))->toBeTrue()
+        ->and(function_exists('shm_attach'))->toBeTrue();
 
     $namespace = 'token-' . bin2hex(random_bytes(4));
     $directory = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR)
