@@ -199,7 +199,6 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
             }
         }
         $items = [];
-        $invalid = [];
         foreach ($keys as $key) {
             $payload = $rows[$this->mapData($key)] ?? null;
             if (!is_string($payload)) {
@@ -209,17 +208,12 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
             }
             $record = $this->decodeRecordFromBlob($payload, $key);
             if ($record === null) {
-                $invalid[] = $key;
                 $items[$key] = $this->genericMiss($key);
 
                 continue;
             }
             $items[$key] = $this->genericItemFromRecord($key, $record);
         }
-        if ($invalid !== []) {
-            $this->deleteItems($invalid);
-        }
-
         return $items;
     }
 
