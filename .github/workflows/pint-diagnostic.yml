@@ -1,0 +1,27 @@
+name: Pint Diagnostic
+
+on:
+  push:
+    branches:
+      - feature/improvements
+
+jobs:
+  pint-diff:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: shivammathur/setup-php@v3
+        with:
+          php-version: '8.4'
+          coverage: none
+          extensions: apcu, mbstring, memcached, mongodb, pdo, pdo_mysql, pdo_pgsql, pdo_sqlite, redis, sysvshm
+      - uses: ramsey/composer-install@v4
+        with:
+          dependency-versions: highest
+      - name: Show exact Pint changes
+        shell: bash
+        run: |
+          vendor/bin/pint
+          git diff -- src/Cache/Adapter/PdoCacheAdapter.php src/Support/OptionalCassandra.php
