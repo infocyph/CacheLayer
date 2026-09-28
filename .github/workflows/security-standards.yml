@@ -18,5 +18,5 @@ jobs:
     with:
       php_extensions: "apcu, mbstring, memcached, mongodb, pcntl, pdo, pdo_mysql, pdo_pgsql, pdo_sqlite, redis, sysvshm"
       fail_on_skipped_tests: true
-      integration_services: '["mysql","mariadb","postgres","sqlite","redis","valkey","memcached","scylladb"]'
-      service_topologies: '{}'
+      integration_services: '["mysql","mariadb","postgres","sqlite","mongodb","redis","valkey","memcached","scylladb"]'
+      service_topologies: '{"mongodb":"replica-set"}'
