@@ -271,6 +271,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
     private function recordTagsAreCurrent(CacheRecord $record): bool
     {
         foreach ($record->tags as $tag => $generation) {
+            $tag = (string) $tag;
             if (($this->metadata[$tag] ?? null) !== $generation) {
                 return false;
             }
