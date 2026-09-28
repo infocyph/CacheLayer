@@ -353,3 +353,46 @@ test('redis cluster atomic ttl expires before the next claim', function () {
     expect($atomic->setIfAbsent('claim', 'second', 30))->toBeTrue()
         ->and($this->cache->get('claim'))->toBe('second');
 });
+
+
+test('redis cluster leaves stale data for safe overwrite instead of deleting after read', function () {
+    expect($this->cache->set('stale-race', 'value'))->toBeTrue();
+
+    $physical = null;
+    foreach ($this->cluster->keys() as $key) {
+        if (str_ends_with($key, ':d:stale-race')) {
+            $physical = $key;
+            break;
+        }
+    }
+    expect($physical)->not->toBeNull();
+    if (!is_string($physical)) {
+        return;
+    }
+
+    $this->cluster->set($physical, 'invalid-payload');
+
+    expect($this->cache->get('stale-race'))->toBeNull()
+        ->and($this->cluster->get($physical))->toBe('invalid-payload');
+});
+
+test('redis cluster generation repair fails closed without overwriting unexpected state', function () {
+    expect($this->cache->set('generation-race', 'value'))->toBeTrue();
+
+    $generation = null;
+    foreach ($this->cluster->keys() as $key) {
+        if (str_ends_with($key, ':m:generation')) {
+            $generation = $key;
+            break;
+        }
+    }
+    expect($generation)->not->toBeNull();
+    if (!is_string($generation)) {
+        return;
+    }
+
+    $this->cluster->set($generation, 'malformed-generation');
+
+    expect(fn () => $this->cache->get('generation-race'))->toThrow(RuntimeException::class)
+        ->and($this->cluster->get($generation))->toBe('malformed-generation');
+});
