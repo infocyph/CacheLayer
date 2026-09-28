@@ -82,6 +82,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
 
     public function deleteItem(string $key): bool
     {
+        $this->discardDeferredKey($key);
         $l2 = $this->attempt(fn(): bool => $this->l2->deleteItem($key), false, 'l2_failure');
         $l1 = $this->l1 === null || !$this->l1Readable
             || $this->attempt(fn(): bool => $this->l1->deleteItem($key), false, 'l1_failure');
@@ -95,6 +96,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
     /** @param list<string> $keys */
     public function deleteItems(array $keys): bool
     {
+        $this->discardDeferredKeys($keys);
         $l2 = $this->attempt(fn(): bool => $this->l2->deleteItems($keys), false, 'l2_failure');
         $l1 = $this->l1 === null || !$this->l1Readable
             || $this->attempt(fn(): bool => $this->l1->deleteItems($keys), false, 'l1_failure');
