@@ -104,12 +104,12 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
             return $this->genericMiss($key);
         }
 
-        $expiresAt = $this->normalizeExpiry($row['expires'] ?? null);
+        $expiresAt = ScyllaValueNormalizer::expiry($row['expires'] ?? null);
         if ($expiresAt !== null && $expiresAt <= time()) {
             return $this->genericMiss($key);
         }
 
-        $payload = $this->normalizeString($row['payload'] ?? null);
+        $payload = ScyllaValueNormalizer::string($row['payload'] ?? null);
 
         return $this->genericFromBlobWithInvalidator(
             $key,
@@ -181,8 +181,8 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
                 [$this->ns, $bucket, ...$group],
             );
             foreach ($rows as $row) {
-                $tag = $this->normalizeString($row['tag'] ?? null);
-                $generation = $this->normalizeString($row['generation'] ?? null);
+                $tag = ScyllaValueNormalizer::string($row['tag'] ?? null);
+                $generation = ScyllaValueNormalizer::string($row['generation'] ?? null);
                 $generation = self::normalizeGeneration($generation);
                 if ($tag !== null && $generation !== null) {
                     $generations[$tag] = $generation;
@@ -368,7 +368,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
         );
         $byKey = [];
         foreach ($rows as $row) {
-            $physical = $this->normalizeString($row['ckey'] ?? null);
+            $physical = ScyllaValueNormalizer::string($row['ckey'] ?? null);
             if ($physical !== null) {
                 $byKey[$physical] = $row;
             }
@@ -377,7 +377,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
         $items = [];
         foreach ($keys as $key) {
             $row = $byKey[$this->mapData($key)] ?? null;
-            $payload = is_array($row) ? $this->normalizeString($row['payload'] ?? null) : null;
+            $payload = is_array($row) ? ScyllaValueNormalizer::string($row['payload'] ?? null) : null;
             $record = $payload === null ? null : $this->decodeRecordFromBlob($payload, $key);
             $items[$key] = $record === null
                 ? $this->genericMiss($key)
@@ -419,69 +419,6 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
     private function mapData(string $key): string
     {
         return 'd:' . $key;
-    }
-
-    private function normalizeExpiry(mixed $value): ?int
-    {
-        if (is_int($value)) {
-            return $value;
-        }
-
-        if (is_object($value) && is_callable([$value, 'toInt'])) {
-            $intValue = $value->toInt();
-
-            return is_int($intValue) ? $intValue : null;
-        }
-
-        if (is_float($value) || (is_string($value) && is_numeric($value))) {
-            return (int) $value;
-        }
-
-        if (is_object($value) && is_callable([$value, '__toString'])) {
-            $stringValue = (string) $value;
-            if (is_numeric($stringValue)) {
-                return (int) $stringValue;
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * @param array $rows The rows argument.
-     * @phpstan-param array<mixed, mixed> $rows
-     * @phpstan-return array<int, array<string, mixed>>
-     */
-    private function normalizeRows(array $rows): array
-    {
-        $normalized = [];
-        foreach ($rows as $row) {
-            $assoc = AdapterValueNormalizer::fromJsonOrArrayLike($row);
-            if ($assoc !== null) {
-                $normalized[] = $assoc;
-            }
-        }
-
-        return $normalized;
-    }
-
-    private function normalizeString(mixed $value): ?string
-    {
-        if (is_string($value)) {
-            return $value;
-        }
-
-        if (is_object($value) && is_callable([$value, 'toBinaryString'])) {
-            $stringValue = $value->toBinaryString();
-
-            return is_string($stringValue) ? $stringValue : null;
-        }
-
-        if (is_object($value) && is_callable([$value, '__toString'])) {
-            return (string) $value;
-        }
-
-        return null;
     }
 
     /**
