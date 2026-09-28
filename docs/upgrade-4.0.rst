@@ -1,6 +1,5 @@
-========================
 Upgrading from 3.x to 4.0
-========================
+=========================
 
 CacheLayer 4.0 is an intentional breaking release with a minimum runtime of
 PHP 8.4. It does not preserve 3.x API shape, named parameters, defaults,
