@@ -34,6 +34,8 @@ composer require infocyph/cachelayer
 
 Choose extensions and client packages only for the backends you use: APCu, Redis/Valkey, Memcached, PDO, SysV shared memory, MongoDB, or Cassandra/ScyllaDB.
 
+For 3.x upgrades, read `docs/upgrade-4.0.rst` before deployment. 4.0 raises the minimum runtime to PHP 8.4 and intentionally changes serialization, storage identity, cursor, counter, and cache-contract behavior.
+
 ## Cache
 
 ```php
