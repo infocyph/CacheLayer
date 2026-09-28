@@ -62,7 +62,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
             return false;
         }
 
-        $record = $this->decodeRecordFromBlob($blob);
+        $record = $this->decodeRecordFromBlob($blob, $key);
         if (!$record instanceof CacheRecord
             || $record->namespaceGeneration !== $this->namespaceGeneration()
             || $record->tags !== []
@@ -92,7 +92,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
             return $this->genericMiss($key);
         }
 
-        $record = $this->decodeRecordFromBlob($extended['value']);
+        $record = $this->decodeRecordFromBlob($extended['value'], $key);
         if (!$record instanceof CacheRecord
             || $record->namespaceGeneration !== $this->namespaceGeneration()
             || !$this->recordTagsAreCurrent($record)) {
@@ -137,7 +137,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         $current = $extended['value'];
         $record = $current === self::ATOMIC_TOMBSTONE
             ? null
-            : $this->decodeRecordFromBlob($current);
+            : $this->decodeRecordFromBlob($current, $item->getKey());
         if ($record instanceof CacheRecord
             && $record->namespaceGeneration === $this->namespaceGeneration()
             && $this->recordTagsAreCurrent($record)) {
@@ -197,7 +197,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         if ($blob === self::ATOMIC_TOMBSTONE) {
             return $this->genericMiss($key);
         }
-        $record = is_string($blob) ? $this->decodeRecordFromBlob($blob) : null;
+        $record = is_string($blob) ? $this->decodeRecordFromBlob($blob, $key) : null;
         if ($record !== null && $record->namespaceGeneration === $generation) {
             return $this->genericItemFromRecord($key, $record);
         }
@@ -261,7 +261,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
 
                 continue;
             }
-            $record = is_string($blob) ? $this->decodeRecordFromBlob($blob) : null;
+            $record = is_string($blob) ? $this->decodeRecordFromBlob($blob, $key) : null;
             if ($record === null || $record->namespaceGeneration !== $generation) {
                 $items[$key] = $this->genericMiss($key);
                 if (is_string($blob)) {

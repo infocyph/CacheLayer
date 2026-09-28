@@ -72,7 +72,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
 
         return $this->withExclusiveLock(function () use ($mapped, $expected, $replacementBlob): bool {
             $store = $this->loadStore();
-            $record = $this->cachedRecord($store, $mapped);
+            $record = $this->cachedRecord($store, $key, $mapped);
             if (!$record instanceof CacheRecord || $record->value !== $expected) {
                 return false;
             }
@@ -94,7 +94,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
                 return $this->genericMiss($key);
             }
 
-            $record = $this->decodeRecordFromBlob($blob);
+            $record = $this->decodeRecordFromBlob($blob, $key);
             unset($store[$mapped]);
             if (!$this->store($store)) {
                 throw new RuntimeException('Unable to persist shared-memory atomic consume.');
@@ -122,7 +122,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
 
         return $this->withExclusiveLock(function () use ($mapped, $blob): bool {
             $store = $this->loadStore();
-            if ($this->cachedRecord($store, $mapped) instanceof CacheRecord) {
+            if ($this->cachedRecord($store, $item->getKey(), $mapped) instanceof CacheRecord) {
                 return false;
             }
 
@@ -235,7 +235,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
             foreach ($keys as $key) {
                 $mapped = $this->map($key);
                 $blob = $store[$mapped] ?? null;
-                $record = is_string($blob) ? $this->decodeRecordFromBlob($blob) : null;
+                $record = is_string($blob) ? $this->decodeRecordFromBlob($blob, $key) : null;
                 $items[$key] = $record === null
                     ? $this->genericMiss($key)
                     : $this->genericItemFromRecord($key, $record);
@@ -365,14 +365,14 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
     }
 
     /** @param array<string, string> $store */
-    private function cachedRecord(array $store, string $mapped): ?CacheRecord
+    private function cachedRecord(array $store, string $key, string $mapped): ?CacheRecord
     {
         $blob = $store[$mapped] ?? null;
         if (!is_string($blob)) {
             return null;
         }
 
-        $record = $this->decodeRecordFromBlob($blob);
+        $record = $this->decodeRecordFromBlob($blob, $key);
 
         return $record instanceof CacheRecord && $this->recordTagsAreCurrent($record, $store)
             ? $record

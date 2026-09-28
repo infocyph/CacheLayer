@@ -281,7 +281,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
 
     private function hitItemFromBlob(string $key, string $blob): ?CacheItem
     {
-        $record = $this->decodeRecordFromBlob($blob);
+        $record = $this->decodeRecordFromBlob($blob, $key);
         if ($record === null) {
             return null;
         }

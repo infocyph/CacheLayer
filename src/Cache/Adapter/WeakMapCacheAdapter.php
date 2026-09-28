@@ -189,7 +189,7 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
                 continue;
             }
             $blob = $this->scalarStore[$mapped] ?? null;
-            $record = is_string($blob) ? $this->decodeRecordFromBlob($blob) : null;
+            $record = is_string($blob) ? $this->decodeRecordFromBlob($blob, $key) : null;
             $items[$key] = $record === null
                 ? $this->genericMiss($key)
                 : $this->genericItemFromRecord($key, $record);
