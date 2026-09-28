@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration;
 use Infocyph\CacheLayer\Memoize\Memoizer;
-use Infocyph\CacheLayer\Memoize\OnceMemoizer;
 
 if (!function_exists('memoize')) {
     /**
