@@ -110,7 +110,7 @@ LUA;
         if (!is_string($existing)) {
             return false;
         }
-        $record = $this->decodeRecordFromBlob($existing);
+        $record = $this->decodeRecordFromBlob($existing, $key);
         if (!$record instanceof CacheRecord || $record->tags !== [] || $record->value !== $expected) {
             return false;
         }
@@ -132,7 +132,7 @@ LUA;
             return $this->genericMiss($key);
         }
 
-        $record = $this->decodeRecordFromBlob($raw);
+        $record = $this->decodeRecordFromBlob($raw, $key);
         if (!$record instanceof CacheRecord || !$this->recordTagsAreCurrent($record)) {
             return $this->genericMiss($key);
         }
@@ -167,7 +167,7 @@ LUA;
             return (bool) $this->redis->set($key, $blob, $options);
         }
 
-        $record = $this->decodeRecordFromBlob($existing);
+        $record = $this->decodeRecordFromBlob($existing, $item->getKey());
         if ($record instanceof CacheRecord && $this->recordTagsAreCurrent($record)) {
             return false;
         }
@@ -224,7 +224,7 @@ LUA;
     {
         $raw = $this->redis->get($this->map($key));
         if (is_string($raw)) {
-            $record = $this->decodeRecordFromBlob($raw);
+            $record = $this->decodeRecordFromBlob($raw, $key);
             if ($record !== null) {
                 return $this->genericItemFromRecord($key, $record);
             }
