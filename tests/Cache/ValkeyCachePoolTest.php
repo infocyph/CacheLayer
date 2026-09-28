@@ -152,3 +152,14 @@ test('Valkey atomic counter initialization has exactly one winner under contenti
     expect($wins)->toBe(1)
         ->and($counters->get('contended-counter'))->toBe(8);
 });
+
+
+test('Valkey atomic counters expire fixed windows', function () {
+    $counters = AtomicCounters::valkey('valkey-tests', client: $this->valkeyClient);
+
+    expect($counters->increment('short-window', 1, 1)->initialized)->toBeTrue()
+        ->and($counters->get('short-window'))->toBe(1);
+    usleep(2_000_000);
+
+    expect($counters->get('short-window'))->toBeNull();
+});
