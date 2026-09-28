@@ -190,7 +190,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y libuv1t64 libgmp10
+          sudo apt-get install -y libuv1 libgmp10
           mkdir -p .ci/scylla-driver
           curl -fsSL https://github.com/he4rt/scylladb-php-driver/releases/download/v1.5.1/ubuntu-22.04-php8.4-nts-scylladb.tar.gz -o .ci/scylla-driver/driver.tar.gz
           tar -xzf .ci/scylla-driver/driver.tar.gz -C .ci/scylla-driver
