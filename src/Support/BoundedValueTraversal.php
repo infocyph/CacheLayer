@@ -31,7 +31,6 @@ final class BoundedValueTraversal
         }
     }
 
-    /** @param array<mixed> $value */
     /**
      * @param list<array{value:mixed,depth:int,references:array<string,true>}> $stack
      * @param array<mixed> $current
@@ -61,7 +60,7 @@ final class BoundedValueTraversal
         }
     }
 
-private static function assertNodeBudget(int $nodes): void
+    private static function assertNodeBudget(int $nodes): void
     {
         if ($nodes > self::MAX_NODES) {
             throw new InvalidArgumentException('The value graph exceeds the supported traversal budget.');

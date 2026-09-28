@@ -385,7 +385,7 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
         }
     }
 
-private function createSchemaIfMissing(): void
+    private function createSchemaIfMissing(): void
     {
         try {
             $this->connection->exec(
@@ -412,7 +412,7 @@ private function createSchemaIfMissing(): void
         return 'm:tag:' . $tag;
     }
 
-        private function rollBack(): void
+    private function rollBack(): void
     {
         if ($this->ownsTransaction && $this->connection->inTransaction()) {
             $this->connection->rollBack();

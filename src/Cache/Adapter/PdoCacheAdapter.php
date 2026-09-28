@@ -269,7 +269,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         return $this->deleteByKind(self::KIND_DATA, $expired) && $this->upsertRows($rows);
     }
 
-private static function assertSqliteTarget(string $dsn): void
+    private static function assertSqliteTarget(string $dsn): void
     {
         if (!str_starts_with($dsn, 'sqlite:')) {
             return;

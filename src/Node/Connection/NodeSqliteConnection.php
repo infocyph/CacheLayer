@@ -39,7 +39,7 @@ final class NodeSqliteConnection
         return $connection;
     }
 
-                private static function assertSecureDirectory(string $directory): void
+    private static function assertSecureDirectory(string $directory): void
     {
         if (!is_writable($directory)) {
             throw new NodeCacheConfigurationException("SQLite cache directory is not writable: {$directory}");
@@ -51,7 +51,7 @@ final class NodeSqliteConnection
         }
     }
 
-private static function assertSecureFile(string $file): void
+    private static function assertSecureFile(string $file): void
     {
         if (!is_file($file)) {
             return;
@@ -63,7 +63,7 @@ private static function assertSecureFile(string $file): void
         }
     }
 
-private static function assertTrustedFilePath(string $file): void
+    private static function assertTrustedFilePath(string $file): void
     {
         if (FilesystemTrust::containsSymlink($file)) {
             throw new NodeCacheConfigurationException("Refusing symlinked SQLite cache path: {$file}");
@@ -73,14 +73,14 @@ private static function assertTrustedFilePath(string $file): void
         }
     }
 
-private static function ensureDirectory(string $directory): void
+    private static function ensureDirectory(string $directory): void
     {
         if (!is_dir($directory) && !mkdir($directory, 0750, true) && !is_dir($directory)) {
             throw new NodeCacheConfigurationException("Unable to create SQLite cache directory: {$directory}");
         }
     }
 
-private static function prepareDirectory(string $file): void
+    private static function prepareDirectory(string $file): void
     {
         self::assertTrustedFilePath($file);
 
