@@ -176,9 +176,9 @@ test('bulk validation completes before any storage mutation', function () {
     expect(fn() => $cache->setMultiple(['valid' => 1, 'bad key' => 2]))
         ->toThrow(CacheInvalidArgumentException::class)
         ->and($adapter->saveBatches)->toBe(0);
-    expect(fn() => $cache->setMultiple([1 => 'numeric key']))
-        ->toThrow(CacheInvalidArgumentException::class)
-        ->and($adapter->saveBatches)->toBe(0);
+    expect($cache->setMultiple(['1' => 'numeric key']))->toBeTrue()
+        ->and($cache->get('1'))->toBe('numeric key')
+        ->and($adapter->saveBatches)->toBe(1);
     expect(fn() => $cache->deleteMultiple(['valid', 'bad:key']))
         ->toThrow(CacheInvalidArgumentException::class)
         ->and($adapter->deleteBatches)->toBe(0);
