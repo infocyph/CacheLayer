@@ -1,8 +1,7 @@
 .. _adapters.php_files:
 
-==============================
 PHP Files Adapter (``phpFiles``)
-==============================
+================================
 
 Factory: ``Cache::phpFiles(string $namespace = 'default', ?string $dir = null)``
 
