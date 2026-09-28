@@ -1,7 +1,7 @@
 # CacheLayer security, correctness, and release plan
 
 Date: 2026-09-28  
-Status: Implementation in progress; Batch 1 complete, Batch 2 in progress\
+Status: Implementation in progress; Batches 1-2 complete; Batch 3 next\
 Audited revision: `b064b8196ddc4672ce37be252bc7a4cadb78527e` (local tag `3.4`)  
 Release target: **4.0.0 — next major release**
 
@@ -14,8 +14,8 @@ Draft PR: [#29 — CacheLayer 4.0 security and correctness hardening](https://gi
 | Batch | Findings | Status | Current gate |
 | --- | --- | --- | --- |
 | 1 — Security and transaction containment | R01, R03, R04, R05, R09, R10 | **Complete** | Implemented and verified on exact commit `5a9f4bd553b4d97cca72d05affa32b6e7ce3c37e`; Security & Standards run #173 passed. |
-| 2 — Authenticated payload/storage identity | R02, R15, R18 | **In progress** | Contract tests added; R15 storage/topology identity implemented; R02 logical identity propagation and signed-payload binding are in progress; R18 SQL collation migration pending. |
-| 3 — Durable invalidation protocol | R06, R07 | Not started | Blocked on Batch 2 identity decisions. |
+| 2 — Authenticated payload/storage identity | R02, R15, R18 | **Complete** | Implemented and verified on exact commit `1924a74da3b9d6474696631405e839bd52ec158b`; Security & Standards run #210 passed. |
+| 3 — Durable invalidation protocol | R06, R07 | Not started | Ready to start after verified Batch 2 closure; R15 topology follow-through is tracked with invalidation/coherence acceptance. |
 | 4 — Cache contracts and memoization | R08, R11, R12, R13, R16, R17 | Not started | Pending prior batches. |
 | 5 — Counters and backend races | R14 plus race review | Not started | Pending prior batches. |
 | 6 — Release gates and integration | R19 plus release acceptance / optional Runwire 2.1 | Not started | Final full-matrix and packaging gate. |
@@ -38,13 +38,13 @@ Draft PR: [#29 — CacheLayer 4.0 security and correctness hardening](https://gi
 
 | Finding | Implementation | Regression evidence | QA state |
 | --- | --- | --- | --- |
-| R02 — authenticated payload identity | **In progress** | Contract tests cover cross-key, cross-namespace, legacy signed payload rejection, tier promotion, and secure serialization defaults. Logical storage identity now propagates through facades/tiered/Node; bound HMAC envelope implemented; adapter read/atomic paths are being wired to verify logical keys. | Full Batch 2 QA pending. |
-| R15 — Node storage/topology identity | **Implemented; QA pending** | Node APCu identity and lock identity include the SQLite store; authority now reflects whether an L1 can serve stale state. | Contract tests added; full Batch 2 QA pending. |
-| R18 — SQL binary identity | **Implemented; QA pending** | MySQL/MariaDB regression test requires byte-sensitive cache and invalidation identity columns and verifies case-distinct namespaces/keys. Existing tables are migrated to `ascii_bin` identity columns by schema installation. | Full Batch 2 QA pending. |
+| R02 — authenticated payload identity | **Complete** | Bound `cache-record:v3` HMAC envelopes authenticate purpose, logical storage identity, and key. Cross-key/cross-namespace substitution, legacy unbound signed payloads, malformed/wrong-key payloads, tier promotion, secure defaults, and adapter/atomic verification paths have regression coverage. | Passed final Batch 2 QA on run #210. |
+| R15 — Node storage/topology identity | **Complete for Batch 2 scope** | Node APCu and lock identities include the SQLite store; `NodeCacheConfig` carries one cohesive `CacheOptions` policy; failed L1 mutations fence that L1 from later reads so stale promoted state cannot override authoritative SQLite. Broader cross-process/node invalidation coherence remains coupled to Batch 3 acceptance. | Passed final Batch 2 QA on run #210. |
+| R18 — SQL binary identity | **Complete** | New MySQL/MariaDB cache and invalidation schemas create identity columns as `ascii_bin`; existing schemas are metadata-checked and hardened only when required, avoiding repeated identity `ALTER TABLE` work. Backend regressions verify byte-sensitive identity and case-distinct namespaces/keys. | Passed final Batch 2 QA on run #210. Consolidated upgrade/rollback instructions remain a Batch 6 release-documentation gate. |
 
-**Batch 2 implementation commits so far:** `df108d47309b84c9334b5747e08172b03460933b` (contracts), `a0da9349ecffe94d3e4491c8ca149fe37b31d710` (Node identity/topology), `0f9cce33e2763910b637709e534373f634af9d75` (logical storage identity propagation), `47e0f05cf0245f7d69bbc12a892f3ddbcc81ea99` (bound signed envelope and secure serialization defaults), `3ee8e84ca21ce2eac63a0b1552750ef83beb7556`, `edef15420895cee62b179c7fa9d6513479b3b336`, `045d5ff89949370744f6d95646165a9b11efd721`, and `f2c3e55db67ecc3237dc87494c2828c66f33d5ee` (adapter identity verification wiring), `7e4a26f9f3c9e0ae4902229edc68a4429fbdaef0` (remaining atomic/backend identity verification and codec complexity cleanup), `8b2dbfffa7805e8bcd8b31f4ee527ba20ef91b01` (MySQL/MariaDB binary-collation migration), and `62f984c13c342c9faa37400cd4a6a262c3f627a3` (SharedMemory identity binding fix).
+**Batch 2 implementation/closure commits:** `df108d47309b84c9334b5747e08172b03460933b` (contracts), `a0da9349ecffe94d3e4491c8ca149fe37b31d710` (Node identity/topology), `0f9cce33e2763910b637709e534373f634af9d75` (logical storage identity propagation), `47e0f05cf0245f7d69bbc12a892f3ddbcc81ea99` (bound signed envelope and secure serialization defaults), `3ee8e84ca21ce2eac63a0b1552750ef83beb7556`, `edef15420895cee62b179c7fa9d6513479b3b336`, `045d5ff89949370744f6d95646165a9b11efd721`, `f2c3e55db67ecc3237dc87494c2828c66f33d5ee`, and `7e4a26f9f3c9e0ae4902229edc68a4429fbdaef0` (adapter/atomic identity verification and codec hardening), `8b2dbfffa7805e8bcd8b31f4ee527ba20ef91b01` and `62f984c13c342c9faa37400cd4a6a262c3f627a3` (SQL/shared-memory identity), `64fc9ba5fcdfceb12e92efd2912192486e0a1cd6` through `1924a74da3b9d6474696631405e839bd52ec158b` (final schema idempotence, unified Node policy, L1 coherence fencing, regressions/docs, and exact PHPForge formatting).
 
-## Decision
+**Batch 2 closure evidence:** exact commit `1924a74da3b9d6474696631405e839bd52ec158b` passed Security & Standards run #210: clean install, PHP 8.4/8.5 analysis, PHP 8.4/8.5 benchmarks, and all four stable/lowest QA jobs. Pest, Pint, PHPCS, Deptrac, Rector, skip-directive, reference-integrity, duplicate-code, and comment-policy gates all passed.\n\n## Decision
 
 The library needs changes before another release can be called ready. The audit reproduced security-sensitive failures, incorrect cache results, transaction data loss, and release-gate failures. Existing tests and clean static/security analysis do not cover these cases.
 
@@ -459,4 +459,4 @@ The temporary network probe uses the audit's allocated ports; recreate disposabl
 - [Redis Lua API conversion rules](https://redis.io/docs/latest/develop/programmability/lua-api/) explain numeric reply conversion relevant to the reproduced R14 precision failure.
 - [PHP Memcached expiration rules](https://www.php.net/manual/en/memcached.expiration.php) specify the 30-day relative/absolute cutoff underlying R16.
 - [PHP object ID lifetime](https://www.php.net/manual/en/function.spl-object-id.php) documents ID reuse after destruction, relevant to R08.
-- [MySQL case sensitivity and collation](https://dev.mysql.com/doc/refman/8.4/en/case-sensitivity.html) explains why inherited case-insensitive collations affect the identity columns in R18. That backend-specific finding still requires the listed integration test.
+- [MySQL case sensitivity and collation](https://dev.mysql.com/doc/refman/8.4/en/case-sensitivity.html) explains why inherited case-insensitive collations affect the identity columns in R18. The Batch 2 backend regression now covers the required byte-sensitive identity behavior; broader final backend-matrix coverage remains under R19.
