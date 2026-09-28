@@ -188,17 +188,40 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
     public function getTagGenerations(array $tags): array
     {
         $generations = $this->readTagGenerations($tags);
-        $missing = [];
         foreach ($tags as $tag) {
-            if (!isset($generations[$tag])) {
-                $missing[$tag] = self::newGeneration();
+            if (isset($generations[$tag])) {
+                continue;
+            }
+
+            $candidate = self::newGeneration();
+            try {
+                $this->collection->updateOne(
+                    ['_id' => $this->mapTag($tag)],
+                    [
+                        '$setOnInsert' => [
+                            'ns' => $this->ns,
+                            'kind' => 'metadata',
+                            'tag' => $tag,
+                            'generation' => $candidate,
+                        ],
+                    ],
+                    ['upsert' => true],
+                );
+            } catch (Throwable $failure) {
+                if (!$this->isDuplicateKeyFailure($failure)) {
+                    throw $failure;
+                }
             }
         }
-        if ($missing !== [] && !$this->storeTagGenerations($missing)) {
-            throw new RuntimeException('Unable to initialize MongoDB tag generations.');
+
+        $actual = $this->readTagGenerations($tags);
+        foreach ($tags as $tag) {
+            if (!isset($actual[$tag])) {
+                throw new RuntimeException('Unable to initialize MongoDB tag generations.');
+            }
         }
 
-        return $generations + $missing;
+        return $actual;
     }
 
     public function hasItem(string $key): bool
