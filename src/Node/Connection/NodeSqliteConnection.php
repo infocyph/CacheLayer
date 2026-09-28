@@ -6,6 +6,7 @@ namespace Infocyph\CacheLayer\Node\Connection;
 
 use Infocyph\CacheLayer\Node\Exception\NodeCacheConfigurationException;
 use Infocyph\CacheLayer\Node\NodeCacheConfig;
+use Infocyph\CacheLayer\Support\FilesystemTrust;
 use PDO;
 use PDOException;
 
@@ -40,19 +41,20 @@ final class NodeSqliteConnection
 
     private static function prepareDirectory(string $file): void
     {
-        if (is_link($file)) {
-            throw new NodeCacheConfigurationException("Refusing symlinked SQLite cache file: {$file}");
+        if (FilesystemTrust::containsSymlink($file)) {
+            throw new NodeCacheConfigurationException("Refusing symlinked SQLite cache path: {$file}");
+        }
+        if (file_exists($file) && !is_file($file)) {
+            throw new NodeCacheConfigurationException("SQLite cache file path is not a regular file: {$file}");
         }
 
         $directory = dirname($file);
-        if (is_link($directory)) {
-            throw new NodeCacheConfigurationException("Refusing symlinked SQLite cache directory: {$directory}");
-        }
-
         if (!is_dir($directory) && !mkdir($directory, 0750, true) && !is_dir($directory)) {
             throw new NodeCacheConfigurationException("Unable to create SQLite cache directory: {$directory}");
         }
-
+        if (FilesystemTrust::containsSymlink($file)) {
+            throw new NodeCacheConfigurationException("Refusing symlinked SQLite cache path: {$file}");
+        }
         if (!is_writable($directory)) {
             throw new NodeCacheConfigurationException("SQLite cache directory is not writable: {$directory}");
         }
@@ -60,6 +62,12 @@ final class NodeSqliteConnection
         $permissions = fileperms($directory);
         if ($permissions !== false && (($permissions & 0x0002) === 0x0002)) {
             throw new NodeCacheConfigurationException("SQLite cache directory must not be world-writable: {$directory}");
+        }
+        if (is_file($file)) {
+            $filePermissions = fileperms($file);
+            if ($filePermissions !== false && (($filePermissions & 0x0002) === 0x0002)) {
+                throw new NodeCacheConfigurationException("SQLite cache file must not be world-writable: {$file}");
+            }
         }
     }
 }

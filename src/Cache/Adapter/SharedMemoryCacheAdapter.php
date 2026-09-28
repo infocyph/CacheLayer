@@ -388,6 +388,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
             . 'shared-memory';
         $this->prepareDirectory($directory);
         $tokenFile = $directory . DIRECTORY_SEPARATOR . hash('xxh128', $this->ns) . '.tok';
+        $this->assertPathNotSymlink($tokenFile, 'Shared-memory token file');
         if (!is_file($tokenFile)) {
             if (file_put_contents($tokenFile, '', LOCK_EX) === false) {
                 throw new RuntimeException('Unable to create the shared-memory token file');
@@ -446,6 +447,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
     /** @phpstan-return resource */
     private function openLockHandle(): mixed
     {
+        $this->assertPathNotSymlink($this->tokenFile, 'Shared-memory token file');
         $lockHandle = fopen($this->tokenFile, 'c+');
         if (is_resource($lockHandle)) {
             return $lockHandle;

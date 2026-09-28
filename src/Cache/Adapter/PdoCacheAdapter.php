@@ -6,6 +6,7 @@ namespace Infocyph\CacheLayer\Cache\Adapter;
 
 use Infocyph\CacheLayer\Cache\CacheInput;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
+use Infocyph\CacheLayer\Support\FilesystemTrust;
 use PDO;
 use PDOException;
 use Psr\Cache\CacheItemInterface;
@@ -49,6 +50,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         $this->namespace = CacheInput::namespace($namespace);
         $this->table = $table;
         $resolvedDsn = $dsn ?? 'sqlite:' . self::defaultSqliteFileForNamespace($this->namespace);
+        self::assertSqliteTarget($resolvedDsn);
         if ($pdo instanceof PDO) {
             $this->pdo = $pdo;
         } else {
@@ -74,7 +76,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         $directory = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR)
             . DIRECTORY_SEPARATOR
             . str_replace('/', DIRECTORY_SEPARATOR, self::DEFAULT_SQLITE_DIR);
-        if (is_link($directory)) {
+        if (FilesystemTrust::containsSymlink($directory)) {
             throw new RuntimeException("Refusing symlinked SQLite cache directory: {$directory}");
         }
         if (!is_dir($directory) && !mkdir($directory, 0700, true) && !is_dir($directory)) {
@@ -86,6 +88,24 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         }
 
         return $directory . DIRECTORY_SEPARATOR . 'cache_' . CacheInput::namespace($namespace) . '.sqlite';
+    }
+
+    private static function assertSqliteTarget(string $dsn): void
+    {
+        if (!str_starts_with($dsn, 'sqlite:')) {
+            return;
+        }
+
+        $file = substr($dsn, strlen('sqlite:'));
+        if ($file === '' || $file === ':memory:') {
+            return;
+        }
+        if (FilesystemTrust::containsSymlink($file)) {
+            throw new RuntimeException("Refusing symlinked SQLite cache path: {$file}");
+        }
+        if (file_exists($file) && !is_file($file)) {
+            throw new RuntimeException("SQLite cache path is not a regular file: {$file}");
+        }
     }
 
     public function clear(): bool
