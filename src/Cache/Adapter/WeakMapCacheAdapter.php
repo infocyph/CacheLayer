@@ -97,6 +97,7 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
 
     public function deleteItem(string $key): bool
     {
+        $this->discardDeferredKey($key);
         $mapped = $this->map($key);
         unset($this->scalarStore[$mapped], $this->weakExpires[$mapped], $this->weakTags[$mapped]);
 
@@ -111,6 +112,7 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
      */
     public function deleteItems(array $keys): bool
     {
+        $this->discardDeferredKeys($keys);
         foreach ($keys as $key) {
             $this->deleteItem((string) $key);
         }
