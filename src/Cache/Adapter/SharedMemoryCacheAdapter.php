@@ -480,6 +480,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
     private function recordTagsAreCurrent(CacheRecord $record, array $store): bool
     {
         foreach ($record->tags as $tag => $generation) {
+            $tag = (string) $tag;
             if (($store[$this->mapTag($tag)] ?? null) !== $generation) {
                 return false;
             }
