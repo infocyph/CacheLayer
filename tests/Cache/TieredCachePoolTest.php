@@ -68,3 +68,41 @@ test('tiered cache rejects unsupported driver descriptors', function () {
     expect(fn() => Cache::tiered([['driver' => 'unknown-tier']]))
         ->toThrow(CacheInvalidArgumentException::class);
 });
+
+
+test('skipped L1 write-through invalidates promoted values before later reads', function () {
+    $l1 = new ArrayCacheAdapter('skip-stale');
+    $l2 = new ArrayCacheAdapter('skip-stale');
+    $cache = Cache::tiered([$l1, $l2], writeToL1: false);
+
+    expect($cache->set('single', 'old'))->toBeTrue()
+        ->and($cache->get('single'))->toBe('old')
+        ->and($l1->getItem('single')->get())->toBe('old')
+        ->and($cache->set('single', 'new'))->toBeTrue()
+        ->and($l1->getItem('single')->isHit())->toBeFalse()
+        ->and($cache->get('single'))->toBe('new');
+
+    expect($cache->setMultiple(['one' => 'old-1', 'two' => 'old-2']))->toBeTrue()
+        ->and($cache->getMultiple(['one', 'two']))->toBe(['one' => 'old-1', 'two' => 'old-2'])
+        ->and($cache->setMultiple(['one' => 'new-1', 'two' => 'new-2']))->toBeTrue()
+        ->and($l1->getItem('one')->isHit())->toBeFalse()
+        ->and($l1->getItem('two')->isHit())->toBeFalse()
+        ->and($cache->getMultiple(['one', 'two']))->toBe(['one' => 'new-1', 'two' => 'new-2']);
+});
+
+test('tiered bulk reads preserve numeric-string logical keys', function () {
+    $l1 = new ArrayCacheAdapter('numeric-tier');
+    $l2 = new ArrayCacheAdapter('numeric-tier');
+    $cache = Cache::tiered([$l1, $l2], writeToL1: false);
+
+    foreach (['0', '123', '-1', '01'] as $key) {
+        expect($cache->set($key, 'value-' . $key))->toBeTrue();
+    }
+
+    expect($cache->getMultiple(['0', '123', '-1', '01']))->toBe([
+        0 => 'value-0',
+        123 => 'value-123',
+        -1 => 'value--1',
+        '01' => 'value-01',
+    ]);
+});
