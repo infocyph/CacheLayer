@@ -72,20 +72,18 @@ jobs:
       - name: Install independent consumer
         working-directory: tools/release/psr-consumer
         run: composer update --no-interaction --prefer-dist --no-progress --prefer-stable
-      - name: Materialize independent integration fixture
+      - name: Materialize independent integration fixtures
         working-directory: tools/release/psr-consumer
         shell: bash
         run: |
           mkdir -p tests
-          cat > tests/PsrIntegrationTest.php <<'PHP'
+          cat > tests/Psr6MemoryIntegrationTest.php <<'PHP'
           <?php
           declare(strict_types=1);
 
           use Cache\IntegrationTests\CachePoolTest;
-          use Cache\IntegrationTests\SimpleCacheTest;
           use Infocyph\CacheLayer\Cache\Cache;
           use Psr\Cache\CacheItemPoolInterface;
-          use Psr\SimpleCache\CacheInterface;
 
           final class Psr6MemoryIntegrationTest extends CachePoolTest
           {
@@ -94,6 +92,15 @@ jobs:
                   return Cache::memory('psr6-' . bin2hex(random_bytes(6)));
               }
           }
+          PHP
+
+          cat > tests/Psr16MemoryIntegrationTest.php <<'PHP'
+          <?php
+          declare(strict_types=1);
+
+          use Cache\IntegrationTests\SimpleCacheTest;
+          use Infocyph\CacheLayer\Cache\Cache;
+          use Psr\SimpleCache\CacheInterface;
 
           final class Psr16MemoryIntegrationTest extends SimpleCacheTest
           {
