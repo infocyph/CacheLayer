@@ -15,7 +15,7 @@ final class TieredPoolFactory
      * @phpstan-param array<int, mixed> $tiers
      * @phpstan-return list<InternalCachePoolInterface>
      */
-    public static function fromArray(array $tiers): array
+    public static function fromArray(#[\SensitiveParameter] array $tiers): array
     {
         if ($tiers === []) {
             throw new CacheInvalidArgumentException('Cache::tiered() requires at least one tier.');

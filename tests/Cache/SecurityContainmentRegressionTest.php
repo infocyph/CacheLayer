@@ -6,6 +6,9 @@ use Infocyph\CacheLayer\Cache\Adapter\ArrayCacheAdapter;
 use Infocyph\CacheLayer\Cache\Adapter\PdoCacheAdapter;
 use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Cache\CacheOptions;
+use Infocyph\CacheLayer\Cache\Tiering\TieredPoolFactory;
+use Infocyph\CacheLayer\Serializer\ClosureSerializer;
+use Infocyph\CacheLayer\Support\RedisConnection;
 use Infocyph\CacheLayer\Counter\AtomicCounters;
 use Infocyph\CacheLayer\Node\Adapter\NodeSqliteCacheAdapter;
 use Infocyph\CacheLayer\Node\Exception\NodeCacheStorageException;
@@ -77,12 +80,22 @@ test('Redis DSN errors never echo credentials', function () {
     $secret = 'audit-password';
     $dsn = 'redis://user:' . $secret . '@localhost/not-a-database';
 
+    $previous = ini_set('zend.exception_ignore_args', '0');
+
     try {
-        AtomicCounters::redis('secret-test', $dsn);
+        RedisConnection::connect($dsn);
         test()->fail('Expected invalid Redis DSN.');
     } catch (Throwable $failure) {
-        expect($failure->getMessage())->not->toContain($secret)
-            ->and($failure->getMessage())->not->toContain($dsn);
+        for ($current = $failure; $current instanceof Throwable; $current = $current->getPrevious()) {
+            expect($current->getMessage())->not->toContain($secret)
+                ->and($current->getMessage())->not->toContain($dsn);
+        }
+        expect((string) $failure)->not->toContain($secret)
+            ->and((string) $failure)->not->toContain($dsn);
+    } finally {
+        if ($previous !== false) {
+            ini_set('zend.exception_ignore_args', $previous);
+        }
     }
 });
 
@@ -94,11 +107,15 @@ test('secret-bearing public parameters are marked sensitive', function () {
         [Cache::class, 'mongodb', 'uri'],
         [Cache::class, 'pdo', 'dsn'],
         [Cache::class, 'pdo', 'password'],
+        [Cache::class, 'tiered', 'tiers'],
         [PdoCacheAdapter::class, '__construct', 'dsn'],
         [PdoCacheAdapter::class, '__construct', 'password'],
         [AtomicCounters::class, 'redis', 'dsn'],
         [AtomicCounters::class, 'valkey', 'dsn'],
         [SignedClosureSerializer::class, '__construct', 'key'],
+        [ClosureSerializer::class, 'signed', 'key'],
+        [RedisConnection::class, 'connect', 'dsn'],
+        [TieredPoolFactory::class, 'fromArray', 'tiers'],
     ];
 
     foreach ($parameters as [$class, $method, $parameter]) {
