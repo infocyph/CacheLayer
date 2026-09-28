@@ -6,7 +6,7 @@
 ![Packagist Version](https://img.shields.io/packagist/v/infocyph/CacheLayer)
 ![Packagist PHP Version](https://img.shields.io/packagist/dependency-v/infocyph/CacheLayer/php)
 
-CacheLayer is a PHP 8.3+ caching toolkit built around four deliberately separate concerns:
+CacheLayer is a PHP 8.4+ caching toolkit built around four deliberately separate concerns:
 
 ```text
 CacheLayer
