@@ -120,7 +120,7 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
             return $this->genericItemFromRecord($key, $record);
         }
 
-        return new CacheItem($this, $key);
+        return $this->genericMiss($key);
     }
 
     /**
