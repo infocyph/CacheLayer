@@ -76,7 +76,7 @@ test('saveDeferred() and commit()', function () {
     $this->cache->getItem('a')->set('A')->saveDeferred();
     $this->cache->getItem('b')->set('B')->saveDeferred();
 
-    expect($this->cache->get('a'))->toBeNull();   // not yet persisted
+    expect($this->cache->get('a'))->toBe('A');
 
     $this->cache->commit();
 
