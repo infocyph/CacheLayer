@@ -37,7 +37,7 @@ final class AtomicCounterProcessProbe
                 $initialized = $counter->increment($key)->initialized;
                 pcntl_exec('/bin/sh', ['-c', $initialized ? 'true' : 'false']);
 
-                exit(255);
+                throw new RuntimeException('Unable to terminate atomic counter child process.');
             }
             if ($pid > 0) {
                 $children[] = $pid;
