@@ -3,15 +3,22 @@
 declare(strict_types=1);
 
 use Infocyph\CacheLayer\Cache\Adapter\ArrayCacheAdapter;
+use Infocyph\CacheLayer\Cache\Adapter\SharedMemoryCacheAdapter;
+use Infocyph\CacheLayer\Cache\Adapter\TieredCacheAdapter;
 use Infocyph\CacheLayer\Cache\Adapter\PdoCacheAdapter;
 use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Cache\CacheOptions;
+use Infocyph\CacheLayer\Cache\Lock\FileLockProvider;
 use Infocyph\CacheLayer\Cache\Tiering\TieredPoolFactory;
 use Infocyph\CacheLayer\Serializer\ClosureSerializer;
 use Infocyph\CacheLayer\Support\RedisConnection;
 use Infocyph\CacheLayer\Counter\AtomicCounters;
+use Infocyph\CacheLayer\Node\Adapter\NodeCacheAdapter;
 use Infocyph\CacheLayer\Node\Adapter\NodeSqliteCacheAdapter;
+use Infocyph\CacheLayer\Node\Connection\NodeSqliteConnection;
+use Infocyph\CacheLayer\Node\Exception\NodeCacheConfigurationException;
 use Infocyph\CacheLayer\Node\Exception\NodeCacheStorageException;
+use Infocyph\CacheLayer\Node\NodeCacheConfig;
 use Infocyph\CacheLayer\Serializer\SignedClosureSerializer;
 
 test('adapter policy is immutable from the first facade binding', function () {
@@ -264,5 +271,109 @@ test('file atomic consumption reports deletion failure instead of returning the 
             $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
         }
         rmdir($base);
+    }
+});
+
+
+test('composite adapters preflight policy conflicts without partial binding', function () {
+    $strict = new CacheOptions(allowObjects: false, allowClosures: false, integrityKey: 'strict');
+    $permissive = new CacheOptions(allowObjects: true, allowClosures: true);
+
+    $tierFirst = new ArrayCacheAdapter('tier-first');
+    $tierConflict = new ArrayCacheAdapter('tier-conflict');
+    new Cache($tierConflict, options: $strict);
+
+    $tiered = new TieredCacheAdapter([$tierFirst, $tierConflict]);
+    expect(fn() => new Cache($tiered, options: $permissive))
+        ->toThrow(LogicException::class)
+        ->and(fn() => new Cache($tierFirst, options: $strict))
+        ->not->toThrow(LogicException::class);
+
+    $connection = new PDO('sqlite::memory:');
+    $l1 = new ArrayCacheAdapter('node-policy');
+    $l2 = new NodeSqliteCacheAdapter($connection, 'node-policy');
+    new Cache($l1, options: $strict);
+
+    $node = new NodeCacheAdapter($l1, $l2, false);
+    expect(fn() => new Cache($node, options: $permissive))
+        ->toThrow(LogicException::class)
+        ->and(fn() => new Cache($l2, options: $strict))
+        ->not->toThrow(LogicException::class);
+});
+
+test('SQLite and file-lock owners reject symlinked path components', function () {
+    if (DIRECTORY_SEPARATOR === '\\' || !function_exists('symlink')) {
+        test()->markTestSkipped('POSIX symlink semantics are required for this regression.');
+    }
+
+    $base = sys_get_temp_dir() . '/cachelayer-path-trust-' . bin2hex(random_bytes(4));
+    $target = $base . '/target';
+    $link = $base . '/linked';
+    mkdir($target, 0700, true);
+    expect(symlink($target, $link))->toBeTrue();
+
+    try {
+        $config = new NodeCacheConfig(
+            sqliteFile: $link . '/node.sqlite',
+            namespace: 'path-trust',
+            apcuEnabled: false,
+        );
+        expect(fn() => NodeSqliteConnection::create($config))
+            ->toThrow(NodeCacheConfigurationException::class)
+            ->and(fn() => Cache::sqlite('path-trust', $link . '/pdo.sqlite'))
+            ->toThrow(RuntimeException::class);
+
+        $locks = $base . '/locks';
+        mkdir($locks, 0700);
+        $targetFile = $base . '/lock-target';
+        touch($targetFile);
+        $lockPath = $locks . DIRECTORY_SEPARATOR . hash('xxh128', 'claim') . '.lock';
+        expect(symlink($targetFile, $lockPath))->toBeTrue()
+            ->and((new FileLockProvider($locks))->acquire('claim', 0.0))->toBeNull();
+    } finally {
+        if (is_link($base . '/locks/' . hash('xxh128', 'claim') . '.lock')) {
+            unlink($base . '/locks/' . hash('xxh128', 'claim') . '.lock');
+        }
+        if (is_link($link)) {
+            unlink($link);
+        }
+        foreach ([$base . '/lock-target', $base . '/locks'] as $path) {
+            is_dir($path) ? rmdir($path) : (is_file($path) ? unlink($path) : null);
+        }
+        if (is_dir($target)) {
+            rmdir($target);
+        }
+        if (is_dir($base)) {
+            rmdir($base);
+        }
+    }
+});
+
+test('shared-memory token creation rejects a pre-created symlink', function () {
+    if (DIRECTORY_SEPARATOR === '\\' || !function_exists('symlink') || !function_exists('shm_attach')) {
+        test()->markTestSkipped('Shared-memory and POSIX symlink support are required.');
+    }
+
+    $namespace = 'token-' . bin2hex(random_bytes(4));
+    $directory = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR)
+        . DIRECTORY_SEPARATOR . 'cachelayer' . DIRECTORY_SEPARATOR . 'shared-memory';
+    if (!is_dir($directory)) {
+        mkdir($directory, 0700, true);
+    }
+    $target = tempnam(sys_get_temp_dir(), 'cachelayer-token-target-');
+    expect($target)->not->toBeFalse();
+    $token = $directory . DIRECTORY_SEPARATOR . hash('xxh128', $namespace) . '.tok';
+    expect(symlink($target, $token))->toBeTrue();
+
+    try {
+        expect(fn() => new SharedMemoryCacheAdapter($namespace))
+            ->toThrow(RuntimeException::class);
+    } finally {
+        if (is_link($token)) {
+            unlink($token);
+        }
+        if (is_string($target) && is_file($target)) {
+            unlink($target);
+        }
     }
 });
