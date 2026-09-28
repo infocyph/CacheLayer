@@ -94,6 +94,7 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
         if ($record !== null && $record->namespaceGeneration === $generation) {
             return $this->genericItemFromRecord($key, $record);
         }
+
         return $this->genericMiss($key);
     }
 
