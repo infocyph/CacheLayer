@@ -39,14 +39,9 @@ final class OptionalCassandra
     }
 
     /** @param array<int, mixed> $arguments */
-    public static function executionOptions(array $arguments): mixed
+    public static function executionOptions(array $arguments): array
     {
-        $class = self::nestedClass('ExecutionOptions');
-        if (!class_exists($class)) {
-            return ['arguments' => $arguments];
-        }
-
-        return new $class(['arguments' => $arguments]);
+        return ['arguments' => $arguments];
     }
 
     public static function simpleStatement(string $cql): mixed
