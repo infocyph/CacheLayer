@@ -145,7 +145,7 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         }
 
         if (!isset($this->scalarStore[$mapped])) {
-            return new CacheItem($this, $key);
+            return $this->genericMiss($key);
         }
 
         return $this->genericFromBlobWithInvalidator(
