@@ -12,5 +12,7 @@ interface CursorStoreInterface
 
     public function reset(?string $eventId): void;
 
+    public function requiresRecovery(): bool;
+
     public function updatedAt(): ?int;
 }
