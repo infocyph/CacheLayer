@@ -70,7 +70,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         $mapped = $this->map($key);
         $replacementBlob = $this->encodeItem($replacement, $expiration['expiresAt']);
 
-        return $this->withExclusiveLock(function () use ($mapped, $expected, $replacementBlob): bool {
+        return $this->withExclusiveLock(function () use ($key, $mapped, $expected, $replacementBlob): bool {
             $store = $this->loadStore();
             $record = $this->cachedRecord($store, $key, $mapped);
             if (!$record instanceof CacheRecord || $record->value !== $expected) {
@@ -117,12 +117,13 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
             return false;
         }
 
-        $mapped = $this->map($item->getKey());
+        $key = $item->getKey();
+        $mapped = $this->map($key);
         $blob = $this->encodeItem($item, $expiration['expiresAt']);
 
-        return $this->withExclusiveLock(function () use ($mapped, $blob): bool {
+        return $this->withExclusiveLock(function () use ($key, $mapped, $blob): bool {
             $store = $this->loadStore();
-            if ($this->cachedRecord($store, $item->getKey(), $mapped) instanceof CacheRecord) {
+            if ($this->cachedRecord($store, $key, $mapped) instanceof CacheRecord) {
                 return false;
             }
 
