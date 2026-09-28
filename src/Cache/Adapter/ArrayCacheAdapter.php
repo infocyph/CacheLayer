@@ -144,20 +144,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
 
     public function hasItem(string $key): bool
     {
-        $mapped = $this->map($key);
-        $blob = $this->store[$mapped] ?? null;
-        if (!is_string($blob)) {
-            return false;
-        }
-
-        $record = $this->decodeRecordFromBlob($blob, $key);
-        if ($record === null) {
-            unset($this->store[$mapped]);
-
-            return false;
-        }
-
-        return true;
+        return $this->getItem($key)->isHit();
     }
 
     /**
