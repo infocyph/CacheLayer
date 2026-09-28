@@ -15,7 +15,11 @@ use Infocyph\CacheLayer\Cache\AtomicCacheInterface;
 use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Cache\CacheOptions;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
+use Infocyph\CacheLayer\Counter\AtomicCounters;
+use Infocyph\CacheLayer\Counter\Exception\AtomicCounterException;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
+use Infocyph\CacheLayer\Support\RedisValueGuard;
+use Infocyph\CacheLayer\Tests\Support\AtomicCounterProcessProbe;
 
 /* ── skip whole file when Redis unavailable ───────────────────────── */
 if (! class_exists(Redis::class)) {
@@ -61,13 +65,13 @@ beforeEach(function () use ($redisHost, $redisPort, $redisPassword) {
     }
     $client->flushDB();                               // fresh DB 0
 
+    $this->redisClient = $client;
     $this->cache = Cache::redis(
         'tests',
         sprintf('redis://%s:%d', $redisHost, $redisPort),
         $client,
         new CacheOptions(allowClosures: true),
     );
-
 });
 
 afterEach(function () {
@@ -347,4 +351,72 @@ test('Redis atomic consumption has one winner under process contention', functio
     }
 
     expect($wins)->toBe(1);
+});
+
+
+test('Redis cache clear does not reset isolated atomic counters and large integers stay exact', function () {
+    $counters = AtomicCounters::redis('tests', client: $this->redisClient);
+    $large = 9_007_199_254_740_993;
+
+    expect($counters->increment('large', $large))
+        ->value->toBe($large)
+        ->and($this->cache->set('ordinary', 'value'))->toBeTrue()
+        ->and($this->cache->clear())->toBeTrue()
+        ->and($counters->get('large'))->toBe($large);
+});
+
+test('Redis atomic counters preserve TTL, decrement, overflow, and invalid-value contracts', function () {
+    $counters = AtomicCounters::redis('tests', client: $this->redisClient);
+    $first = $counters->increment('window', 5, 30);
+    $physical = 'cachelayer:counter:tests:window';
+    $ttlBefore = $this->redisClient->ttl($physical);
+    $later = $counters->decrement('window', 2, 30);
+    $ttlAfter = $this->redisClient->ttl($physical);
+
+    expect($first->initialized)->toBeTrue()
+        ->and($later->initialized)->toBeFalse()
+        ->and($later->value)->toBe(3)
+        ->and($ttlBefore)->toBeGreaterThan(0)
+        ->and($ttlAfter)->toBeGreaterThan(0)
+        ->and($ttlAfter)->toBeLessThanOrEqual($ttlBefore);
+
+    $this->redisClient->set('cachelayer:counter:tests:max', (string) PHP_INT_MAX);
+    expect($counters->get('max'))->toBe(PHP_INT_MAX)
+        ->and(fn () => $counters->increment('max'))->toThrow(AtomicCounterException::class);
+
+    $this->redisClient->set('cachelayer:counter:tests:out-of-range', '9223372036854775808');
+    $this->redisClient->set('cachelayer:counter:tests:malformed', '12x');
+    expect(fn () => $counters->get('out-of-range'))->toThrow(AtomicCounterException::class)
+        ->and(fn () => $counters->get('malformed'))->toThrow(AtomicCounterException::class);
+});
+
+test('Redis atomic counter initialization has exactly one winner under contention', function () use ($redisHost, $redisPort, $redisPassword) {
+    $counters = AtomicCounters::redis('tests', client: $this->redisClient);
+    $wins = AtomicCounterProcessProbe::initializedWinners(
+        'redis',
+        $redisHost,
+        $redisPort,
+        $redisPassword,
+        'tests',
+        'contended-counter',
+    );
+
+    expect($wins)->toBe(1)
+        ->and($counters->get('contended-counter'))->toBe(8);
+});
+
+test('Redis stale cleanup never deletes or overwrites a concurrent replacement', function () {
+    $key = 'cachelayer:guard:race';
+
+    $this->redisClient->set($key, 'fresh');
+    expect(RedisValueGuard::deleteIfUnchanged($this->redisClient, $key, 'stale'))->toBeFalse()
+        ->and($this->redisClient->get($key))->toBe('fresh')
+        ->and(RedisValueGuard::replaceIfUnchanged($this->redisClient, $key, 'stale', 'repair'))->toBe('fresh')
+        ->and($this->redisClient->get($key))->toBe('fresh');
+
+    $this->redisClient->set($key, 'stale');
+    expect(RedisValueGuard::replaceIfUnchanged($this->redisClient, $key, 'stale', 'repair'))->toBe('repair')
+        ->and($this->redisClient->get($key))->toBe('repair')
+        ->and(RedisValueGuard::deleteIfUnchanged($this->redisClient, $key, 'repair'))->toBeTrue()
+        ->and($this->redisClient->get($key))->toBeFalse();
 });
