@@ -27,8 +27,6 @@ final readonly class CachePayloadCodec
 
     private const string SIGNATURE_PURPOSE = 'cache-record:v3';
 
-    private const string SIGNED_PREFIX = 'cl2-sig:';
-
     public function __construct(private CacheOptions $options = new CacheOptions()) {}
 
     /** @return array{ttl:int|null,expiresAt:int|null} */
@@ -150,9 +148,9 @@ final readonly class CachePayloadCodec
             return $payload;
         }
         if ($storageIdentity === null || $key === null) {
-            $signature = hash_hmac('sha256', $payload, $this->options->integrityKey);
-
-            return self::SIGNED_PREFIX . $signature . ':' . $payload;
+            throw new InvalidArgumentException(
+                'Signed cache payloads require a logical storage identity and key.',
+            );
         }
 
         $signature = hash_hmac(
@@ -323,31 +321,9 @@ final readonly class CachePayloadCodec
             . "\0" . $payload;
     }
 
-    private function signaturePrefix(
-        string $blob,
-        ?string $storageIdentity,
-        ?string $key,
-    ): ?string {
-        if (str_starts_with($blob, self::BOUND_SIGNED_PREFIX)) {
-            return $storageIdentity !== null && $key !== null
-                ? self::BOUND_SIGNED_PREFIX
-                : null;
-        }
-        if (!str_starts_with($blob, self::SIGNED_PREFIX)) {
-            return null;
-        }
-
-        return $storageIdentity === null && $key === null
-            ? self::SIGNED_PREFIX
-            : null;
-    }
-
     private function unsignedPayload(string $blob): ?string
     {
-        return str_starts_with($blob, self::SIGNED_PREFIX)
-            || str_starts_with($blob, self::BOUND_SIGNED_PREFIX)
-            ? null
-            : $blob;
+        return str_starts_with($blob, self::BOUND_SIGNED_PREFIX) ? null : $blob;
     }
 
     private function verifyAndExtractSignature(
@@ -359,27 +335,31 @@ final readonly class CachePayloadCodec
         if ($integrityKey === null) {
             return $this->unsignedPayload($blob);
         }
-
-        $prefix = $this->signaturePrefix($blob, $storageIdentity, $key);
-        if ($prefix === null) {
+        if ($storageIdentity === null || $key === null
+            || !str_starts_with($blob, self::BOUND_SIGNED_PREFIX)) {
             return null;
         }
 
-        $separator = strpos($blob, ':', strlen($prefix));
+        $separator = strpos($blob, ':', strlen(self::BOUND_SIGNED_PREFIX));
         if ($separator === false) {
             return null;
         }
 
-        $signature = substr($blob, strlen($prefix), $separator - strlen($prefix));
+        $signature = substr(
+            $blob,
+            strlen(self::BOUND_SIGNED_PREFIX),
+            $separator - strlen(self::BOUND_SIGNED_PREFIX),
+        );
         $payload = substr($blob, $separator + 1);
         if (strlen($signature) !== 64 || !ctype_xdigit($signature)) {
             return null;
         }
 
-        $signed = $prefix === self::BOUND_SIGNED_PREFIX
-            ? $this->signatureInput($payload, (string) $storageIdentity, (string) $key)
-            : $payload;
-        $expected = hash_hmac('sha256', $signed, $integrityKey);
+        $expected = hash_hmac(
+            'sha256',
+            $this->signatureInput($payload, $storageIdentity, $key),
+            $integrityKey,
+        );
 
         return hash_equals($expected, strtolower($signature)) ? $payload : null;
     }

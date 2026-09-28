@@ -7,23 +7,38 @@ use Infocyph\CacheLayer\Cache\Adapter\ArrayCacheAdapter;
 use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Cache\CacheOptions;
 
-test('payload codec signs and verifies CacheLayer v2 records', function () {
+test('payload codec signs and verifies identity-bound CacheLayer records', function () {
     $codec = new CachePayloadCodec(new CacheOptions(integrityKey: 'secret-key-123'));
 
     $generation = bin2hex(random_bytes(16));
-    $blob = $codec->encode(['k' => 'v'], null, ['group' => $generation]);
-    expect(str_starts_with($blob, 'cl2-sig:'))->toBeTrue();
+    $blob = $codec->encode(
+        ['k' => 'v'],
+        null,
+        ['group' => $generation],
+        storageIdentity: 'tenant',
+        key: 'record',
+    );
+    expect(str_starts_with($blob, 'cl3-sig:'))->toBeTrue();
 
-    $record = $codec->decode($blob);
+    $record = $codec->decode($blob, 'tenant', 'record');
     expect($record?->value)->toBe(['k' => 'v'])
         ->and($record?->tags)->toBe(['group' => $generation]);
 });
 
 test('payload codec rejects tampered signed payload', function () {
     $codec = new CachePayloadCodec(new CacheOptions(integrityKey: 'secret-key-123'));
-    $blob = $codec->encode('value', null);
+    $blob = $codec->encode('value', null, storageIdentity: 'tenant', key: 'record');
 
-    expect($codec->decode($blob . 'x'))->toBeNull();
+    expect($codec->decode($blob . 'x', 'tenant', 'record'))->toBeNull();
+});
+
+test('signed codec rejects legacy unbound operation', function () {
+    $codec = new CachePayloadCodec(new CacheOptions(integrityKey: 'secret-key-123'));
+
+    expect(fn() => $codec->encode('value', null))
+        ->toThrow(InvalidArgumentException::class)
+        ->and($codec->decode('cl2-sig:' . str_repeat('0', 64) . ':cl2:payload'))
+        ->toBeNull();
 });
 
 test('cache treats a corrupted signed record as a miss and deletes it', function () {
