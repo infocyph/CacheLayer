@@ -120,16 +120,6 @@ final class PdoInvalidationSchema
         );
     }
 
-    private static function mysqlEventIdentityColumnsAreBinary(PDO $connection): bool
-    {
-        return self::mysqlBinaryIdentityCount($connection, self::EVENT_TABLE) === 5;
-    }
-
-    private static function mysqlLockIdentityIsBinary(PDO $connection): bool
-    {
-        return self::mysqlBinaryIdentityCount($connection, self::LOCK_TABLE) === 1;
-    }
-
     private static function mysqlBinaryIdentityCount(PDO $connection, string $table): int
     {
         $columns = $table === self::EVENT_TABLE
@@ -144,5 +134,15 @@ final class PdoInvalidationSchema
         $statement->execute([$table, ...$columns]);
 
         return (int) $statement->fetchColumn();
+    }
+
+    private static function mysqlEventIdentityColumnsAreBinary(PDO $connection): bool
+    {
+        return self::mysqlBinaryIdentityCount($connection, self::EVENT_TABLE) === 5;
+    }
+
+    private static function mysqlLockIdentityIsBinary(PDO $connection): bool
+    {
+        return self::mysqlBinaryIdentityCount($connection, self::LOCK_TABLE) === 1;
     }
 }
