@@ -105,7 +105,7 @@ jobs:
           PHP
       - name: Run upstream integration suites
         working-directory: tools/release/psr-consumer
-        run: vendor/bin/phpunit tests/PsrIntegrationTest.php
+        run: vendor/bin/phpunit tests
 
   docs:
     name: Documentation warnings as errors
