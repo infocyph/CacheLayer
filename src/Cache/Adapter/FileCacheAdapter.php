@@ -316,6 +316,7 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
     private function recordTagsAreCurrent(CacheRecord $record): bool
     {
         foreach ($record->tags as $tag => $generation) {
+            $tag = (string) $tag;
             $current = is_file($this->metadataFileFor($tag))
                 ? file_get_contents($this->metadataFileFor($tag))
                 : false;
