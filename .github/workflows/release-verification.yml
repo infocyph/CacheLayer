@@ -81,11 +81,11 @@ jobs:
           <?php
           declare(strict_types=1);
 
-          use Cache\\IntegrationTests\\CachePoolTest;
-          use Cache\\IntegrationTests\\SimpleCacheTest;
-          use Infocyph\\CacheLayer\\Cache\\Cache;
-          use Psr\\Cache\\CacheItemPoolInterface;
-          use Psr\\SimpleCache\\CacheInterface;
+          use Cache\IntegrationTests\CachePoolTest;
+          use Cache\IntegrationTests\SimpleCacheTest;
+          use Infocyph\CacheLayer\Cache\Cache;
+          use Psr\Cache\CacheItemPoolInterface;
+          use Psr\SimpleCache\CacheInterface;
 
           final class Psr6MemoryIntegrationTest extends CachePoolTest
           {
