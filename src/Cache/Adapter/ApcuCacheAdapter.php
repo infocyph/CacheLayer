@@ -86,7 +86,6 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
                 return $item;
             }
 
-            apcu_delete($apcuKey);
         }
 
         return $this->genericMiss($key);
@@ -108,8 +107,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
                 $candidate = self::newGeneration();
                 $generation = self::normalizeGeneration(apcu_add($key, $candidate) ? $candidate : apcu_fetch($key));
                 if ($generation === null) {
-                    $generation = self::newGeneration();
-                    apcu_store($key, $generation);
+                    throw new RuntimeException('Unable to initialize APCu tag generation.');
                 }
             }
             $generations[$tag] = $generation;
@@ -141,17 +139,12 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
         }
 
         $items = [];
-        $stale = [];
         foreach ($keys as $k) {
-            if ($this->appendFetchedHit($items, $stale, $k, $raw)) {
+            if ($this->appendFetchedHit($items, $k, $raw)) {
                 continue;
             }
 
-            $items[$k] = new CacheItem($this, $k);
-        }
-
-        if ($stale !== []) {
-            apcu_delete($stale);
+            $items[$k] = $this->genericMiss($k);
         }
 
         return $items;
@@ -263,7 +256,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
      * @phpstan-param list<string> $stale
      * @phpstan-param array<mixed> $raw
      */
-    private function appendFetchedHit(array &$items, array &$stale, string $key, array $raw): bool
+    private function appendFetchedHit(array &$items, string $key, array $raw): bool
     {
         $mapped = $this->map($key);
         if (!isset($raw[$mapped]) || !is_string($raw[$mapped])) {
@@ -276,8 +269,6 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
 
             return true;
         }
-
-        $stale[] = $mapped;
 
         return false;
     }
