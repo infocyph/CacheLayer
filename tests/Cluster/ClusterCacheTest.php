@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 use Infocyph\CacheLayer\Cluster\ClusterCache;
 use Infocyph\CacheLayer\Cluster\ClusterCacheConfig;
-use Infocyph\CacheLayer\Cache\Adapter\AbstractCacheAdapter;
 use Infocyph\CacheLayer\Cache\Cache;
-use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Cluster\Consumer\InvalidationConsumer;
 use Infocyph\CacheLayer\Cluster\Consumer\InvalidationHandler;
 use Infocyph\CacheLayer\Cluster\Cursor\SqliteCursorStore;
@@ -21,65 +19,7 @@ use Infocyph\CacheLayer\Cluster\Transport\Pdo\PdoInvalidationTransport;
 use Infocyph\CacheLayer\Cluster\Transport\Pdo\PdoInvalidationSchema;
 use Infocyph\CacheLayer\Node\NodeCacheConfig;
 use Infocyph\CacheLayer\Tests\Cluster\Support\InMemoryInvalidationTransport;
-use Psr\Cache\CacheItemInterface;
-
-final class RejectingClusterCacheAdapter extends AbstractCacheAdapter
-{
-    /** @var array<string, mixed> */
-    public array $rejectedOperations = [];
-
-    public function clear(): bool
-    {
-        return $this->reject('clear');
-    }
-
-    public function deleteItem(string $key): bool
-    {
-        return $this->reject('deleteItem', $key);
-    }
-
-    public function deleteItems(array $keys): bool
-    {
-        return $this->reject('deleteItems', $keys);
-    }
-
-    public function getItem(string $key): CacheItem
-    {
-        return $this->genericMiss($key);
-    }
-
-    public function hasItem(string $key): bool
-    {
-        return $this->reject('hasItem', $key);
-    }
-
-    public function multiFetch(array $keys): array
-    {
-        $items = [];
-        foreach ($keys as $key) {
-            $items[$key] = $this->genericMiss($key);
-        }
-
-        return $items;
-    }
-
-    public function save(CacheItemInterface $item): bool
-    {
-        return $this->reject('save', $item);
-    }
-
-    public function saveItems(array $items): bool
-    {
-        return $this->reject('saveItems', $items);
-    }
-
-    private function reject(string $operation, mixed $argument = null): bool
-    {
-        $this->rejectedOperations[$operation] = $argument;
-
-        return false;
-    }
-}
+use Infocyph\CacheLayer\Tests\Cluster\Support\RejectingClusterCacheAdapter;
 
 beforeEach(function () {
     $this->clusterDirectory = sys_get_temp_dir() . '/cachelayer-cluster-' . uniqid();

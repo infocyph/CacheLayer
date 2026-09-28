@@ -19,6 +19,7 @@ use Infocyph\CacheLayer\Cache\Metrics\InMemoryCacheMetricsCollector;
 use Infocyph\CacheLayer\Cache\Tiering\TieredPoolFactory;
 use Infocyph\CacheLayer\Exceptions\CacheBackendException;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
+use Infocyph\CacheLayer\Support\OptionalCassandra;
 use MongoDB\Client;
 use Psr\Cache\CacheItemInterface;
 use Throwable;
@@ -236,12 +237,12 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         ?CacheOptions $options = null,
     ): self {
         if ($session === null) {
-            if (!class_exists(\Cassandra::class)) {
+            if (!OptionalCassandra::available()) {
                 throw new CacheInvalidArgumentException(
                     'ext-cassandra is required unless a ScyllaDB/Cassandra session is provided.',
                 );
             }
-            $session = \Cassandra::cluster()->build()->connect($keyspace);
+            $session = OptionalCassandra::connect($keyspace);
         }
 
         return new self(

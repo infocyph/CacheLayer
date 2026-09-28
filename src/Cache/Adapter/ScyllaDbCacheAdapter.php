@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace Infocyph\CacheLayer\Cache\Adapter;
 
-use Cassandra\ExecutionOptions;
-use Cassandra\SimpleStatement;
 use Infocyph\CacheLayer\Cache\CacheInput;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
+use Infocyph\CacheLayer\Support\OptionalCassandra;
 use Psr\Cache\CacheItemInterface;
 use RuntimeException;
 use Traversable;
@@ -346,12 +345,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
      */
     private function executionOptions(array $arguments): mixed
     {
-        $options = ['arguments' => $arguments];
-        if (class_exists(ExecutionOptions::class)) {
-            return new ExecutionOptions($options);
-        }
-
-        return $options;
+        return OptionalCassandra::executionOptions($arguments);
     }
 
     /**
@@ -537,11 +531,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
             return $this->preparedStatements[$cql];
         }
 
-        if (class_exists(SimpleStatement::class)) {
-            return new SimpleStatement($cql);
-        }
-
-        return $cql;
+        return OptionalCassandra::simpleStatement($cql);
     }
 
     private function supportsSessionMethod(string $method): bool

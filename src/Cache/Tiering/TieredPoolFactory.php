@@ -7,6 +7,7 @@ namespace Infocyph\CacheLayer\Cache\Tiering;
 use Infocyph\CacheLayer\Cache\Adapter;
 use Infocyph\CacheLayer\Cache\Adapter\InternalCachePoolInterface;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
+use Infocyph\CacheLayer\Support\OptionalCassandra;
 
 final class TieredPoolFactory
 {
@@ -49,14 +50,13 @@ final class TieredPoolFactory
 
     private static function buildScyllaSession(string $keyspace): object
     {
-        if (!class_exists(\Cassandra::class)) {
+        if (!OptionalCassandra::available()) {
             throw new CacheInvalidArgumentException(
                 'ext-cassandra is required unless a ScyllaDB/Cassandra session is provided.',
             );
         }
 
-        /** @var object */
-        return \Cassandra::cluster()->build()->connect($keyspace);
+        return OptionalCassandra::connect($keyspace);
     }
 
     /**

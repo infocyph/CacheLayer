@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Infocyph\CacheLayer\Cache\Adapter\ScyllaDbCacheAdapter;
 use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
+use Infocyph\CacheLayer\Support\OptionalCassandra;
 
 beforeEach(function () {
     $this->session = new class
@@ -172,9 +173,11 @@ test('scylladb cache factory accepts injected session', function () {
     expect($cache->get('x'))->toBe('X');
 });
 
-test('scylladb cache factory requires extension when session is missing', function () {
-    if (class_exists(Cassandra::class)) {
-        $this->markTestSkipped('Cassandra extension loaded in this environment.');
+test('scylladb cache factory handles the optional extension explicitly', function () {
+    if (OptionalCassandra::available()) {
+        expect(Cache::scylla('scylla-tests'))->toBeInstanceOf(Cache::class);
+
+        return;
     }
 
     expect(fn () => Cache::scylla('scylla-tests'))
