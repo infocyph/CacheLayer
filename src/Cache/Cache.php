@@ -649,9 +649,6 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
     {
         $normalized = [];
         foreach ($values as $key => $value) {
-            if (!is_string($key) && !is_int($key)) {
-                throw new CacheInvalidArgumentException('Cache keys must be strings.');
-            }
             $key = (string) $key;
             CacheInput::key($key);
             $normalized[] = [$key, $value];
@@ -793,7 +790,9 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
      */
     private function fetchItems(array $keys): array
     {
-        return $this->adapter->getItems($keys);
+        $items = $this->adapter->getItems($keys);
+
+        return is_array($items) ? $items : iterator_to_array($items);
     }
 
     private function jitteredTtl(?int $ttl): ?int
