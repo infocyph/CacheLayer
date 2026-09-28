@@ -22,15 +22,29 @@ final readonly class ClusterRecoveryManager
     {
         $cursor = $this->cursorStore->current();
         $oldest = $this->transport->oldestAvailableId($this->cluster);
-        if ($cursor === null || $oldest === null || !$this->transport->isCursorBefore($cursor, $oldest)) {
+        if ($oldest === null) {
             return false;
         }
 
-        if (!$this->cache->clear()) {
-            throw new ClusterCacheException('Unable to clear the local cache during cluster recovery.');
+        if ($cursor === null) {
+            $this->clearLocalCache();
+
+            return true;
         }
+        if (!$this->transport->isCursorBefore($cursor, $oldest)) {
+            return false;
+        }
+
+        $this->clearLocalCache();
         $this->cursorStore->reset($oldest);
 
         return true;
+    }
+
+    private function clearLocalCache(): void
+    {
+        if (!$this->cache->clear()) {
+            throw new ClusterCacheException('Unable to clear the local cache during cluster recovery.');
+        }
     }
 }
