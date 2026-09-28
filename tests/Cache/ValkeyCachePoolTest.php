@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 use Infocyph\CacheLayer\Cache\AtomicCacheInterface;
 use Infocyph\CacheLayer\Cache\Cache;
+use Infocyph\CacheLayer\Counter\AtomicCounters;
+use Infocyph\CacheLayer\Counter\Exception\AtomicCounterException;
+use Infocyph\CacheLayer\Tests\Support\AtomicCounterProcessProbe;
 
 if (! class_exists(Redis::class)) {
     throw new RuntimeException('phpredis is required for the configured Valkey test matrix.');
@@ -32,6 +35,7 @@ beforeEach(function () use ($valkeyHost, $valkeyPort, $valkeyPassword) {
     }
     $client->flushDB();
 
+    $this->valkeyClient = $client;
     $this->cache = Cache::valkey(
         'valkey-tests',
         sprintf('valkey://%s:%d', $valkeyHost, $valkeyPort),
@@ -108,4 +112,43 @@ test('valkey atomic ttl permits a later claim', function () {
 
     expect($atomic->setIfAbsent('claim', 'second', 30))->toBeTrue()
         ->and($this->cache->get('claim'))->toBe('second');
+});
+
+
+test('Valkey atomic counters stay isolated from cache clear and preserve exact integers', function () {
+    $counters = AtomicCounters::valkey('valkey-tests', client: $this->valkeyClient);
+    $large = 9_007_199_254_740_993;
+    $first = $counters->increment('window', $large, 30);
+    $physical = 'cachelayer:counter:valkey-tests:window';
+    $ttlBefore = $this->valkeyClient->ttl($physical);
+    $later = $counters->decrement('window', 2, 30);
+    $ttlAfter = $this->valkeyClient->ttl($physical);
+
+    expect($first->value)->toBe($large)
+        ->and($first->initialized)->toBeTrue()
+        ->and($later->value)->toBe($large - 2)
+        ->and($later->initialized)->toBeFalse()
+        ->and($ttlAfter)->toBeGreaterThan(0)
+        ->and($ttlAfter)->toBeLessThanOrEqual($ttlBefore)
+        ->and($this->cache->set('ordinary', 'value'))->toBeTrue()
+        ->and($this->cache->clear())->toBeTrue()
+        ->and($counters->get('window'))->toBe($large - 2);
+
+    $this->valkeyClient->set('cachelayer:counter:valkey-tests:invalid', '9223372036854775808');
+    expect(fn () => $counters->get('invalid'))->toThrow(AtomicCounterException::class);
+});
+
+test('Valkey atomic counter initialization has exactly one winner under contention', function () use ($valkeyHost, $valkeyPort, $valkeyPassword) {
+    $counters = AtomicCounters::valkey('valkey-tests', client: $this->valkeyClient);
+    $wins = AtomicCounterProcessProbe::initializedWinners(
+        'valkey',
+        $valkeyHost,
+        $valkeyPort,
+        $valkeyPassword,
+        'valkey-tests',
+        'contended-counter',
+    );
+
+    expect($wins)->toBe(1)
+        ->and($counters->get('contended-counter'))->toBe(8);
 });
