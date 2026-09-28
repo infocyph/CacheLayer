@@ -134,21 +134,24 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
     public function publish(InvalidationEvent $event): string
     {
         $ownsTransaction = !$this->connection->inTransaction();
+        $transactionStarted = false;
 
         try {
             if ($ownsTransaction) {
                 $this->connection->beginTransaction();
+                $transactionStarted = true;
             }
 
             $id = $this->publishLocked($this->connection, $event);
 
             if ($ownsTransaction) {
                 $this->connection->commit();
+                $transactionStarted = false;
             }
 
             return $id;
         } catch (Throwable $exception) {
-            if ($ownsTransaction && $this->connection->inTransaction()) {
+            if ($transactionStarted) {
                 $this->connection->rollBack();
             }
             if ($exception instanceof ClusterTransportException) {
