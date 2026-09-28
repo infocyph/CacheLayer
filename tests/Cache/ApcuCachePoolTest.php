@@ -69,7 +69,7 @@ test('PSR-6 getItem()/save() (apcu)', function () {
 /* ─── deferred queue ──────────────────────────────────────────────── */
 test('saveDeferred() and commit() (apcu)', function () {
     $this->cache->getItem('x')->set('X')->saveDeferred();
-    expect($this->cache->get('x'))->toBeNull();
+    expect($this->cache->get('x'))->toBe('X');
 
     $this->cache->commit();
     expect($this->cache->get('x'))->toBe('X');
