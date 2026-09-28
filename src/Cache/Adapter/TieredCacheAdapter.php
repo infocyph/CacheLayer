@@ -37,8 +37,20 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
     }
 
     #[\Override]
+    public function assertOptionsCompatible(CacheOptions $options): void
+    {
+        parent::assertOptionsCompatible($options);
+        foreach ($this->pools as $pool) {
+            if ($pool instanceof AbstractCacheAdapter) {
+                $pool->assertOptionsCompatible($options);
+            }
+        }
+    }
+
+    #[\Override]
     public function configureOptions(CacheOptions $options): void
     {
+        $this->assertOptionsCompatible($options);
         parent::configureOptions($options);
         foreach ($this->pools as $pool) {
             if ($pool instanceof AbstractCacheAdapter) {

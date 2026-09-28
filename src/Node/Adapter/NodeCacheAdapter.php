@@ -33,8 +33,19 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
     }
 
     #[\Override]
+    public function assertOptionsCompatible(CacheOptions $options): void
+    {
+        parent::assertOptionsCompatible($options);
+        $this->l2->assertOptionsCompatible($options);
+        if ($this->l1 instanceof AbstractCacheAdapter) {
+            $this->l1->assertOptionsCompatible($options);
+        }
+    }
+
+    #[\Override]
     public function configureOptions(CacheOptions $options): void
     {
+        $this->assertOptionsCompatible($options);
         parent::configureOptions($options);
         $this->l2->configureOptions($options);
         if ($this->l1 instanceof AbstractCacheAdapter) {

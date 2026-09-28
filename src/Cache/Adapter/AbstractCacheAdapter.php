@@ -47,18 +47,18 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
     }
 
     /** @internal */
+    public function assertOptionsCompatible(CacheOptions $options): void
+    {
+        if ($this->options !== null && $this->options != $options) {
+            throw new \LogicException('Cache options cannot change after the adapter is bound to a facade.');
+        }
+    }
+
+    /** @internal */
     public function configureOptions(CacheOptions $options): void
     {
-        if ($this->options === null) {
-            $this->options = $options;
-
-            return;
-        }
-        if ($this->options == $options) {
-            return;
-        }
-
-        throw new \LogicException('Cache options cannot change after the adapter is bound to a facade.');
+        $this->assertOptionsCompatible($options);
+        $this->options ??= $options;
     }
 
     public function createItem(string $key): CacheItemInterface
