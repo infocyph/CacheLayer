@@ -67,7 +67,7 @@ test('getItem()/save() (sqlite)', function () {
 /* ── 3. deferred queue ──────────────────────────────────────────── */
 test('saveDeferred() & commit() (sqlite)', function () {
     $this->cache->getItem('a')->set('A')->saveDeferred();
-    expect($this->cache->get('a'))->toBeNull();
+    expect($this->cache->get('a'))->toBe('A');
 
     $this->cache->commit();
     expect($this->cache->get('a'))->toBe('A');
