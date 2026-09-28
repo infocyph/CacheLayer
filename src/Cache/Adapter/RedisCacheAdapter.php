@@ -78,6 +78,7 @@ LUA;
      */
     public function __construct(
         string $namespace = 'default',
+        #[\SensitiveParameter]
         string $dsn = 'redis://127.0.0.1:6379',
         ?\Redis $client = null,
     ) {
@@ -384,12 +385,12 @@ LUA;
         return $ok && $this->saveExpiring($expiring);
     }
 
-    private function connect(string $dsn): \Redis
+    private function connect(#[\SensitiveParameter] string $dsn): \Redis
     {
         try {
             return RedisConnection::connect($dsn);
         } catch (InvalidArgumentException $exception) {
-            throw new RuntimeException("Invalid Redis DSN: $dsn", 0, $exception);
+            throw new RuntimeException('Invalid Redis-compatible DSN.', 0, $exception);
         }
     }
 
