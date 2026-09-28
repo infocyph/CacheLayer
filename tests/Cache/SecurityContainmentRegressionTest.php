@@ -3,22 +3,23 @@
 declare(strict_types=1);
 
 use Infocyph\CacheLayer\Cache\Adapter\ArrayCacheAdapter;
-use Infocyph\CacheLayer\Cache\Adapter\SharedMemoryCacheAdapter;
 use Infocyph\CacheLayer\Cache\Adapter\PdoCacheAdapter;
+use Infocyph\CacheLayer\Cache\Adapter\SharedMemoryCacheAdapter;
 use Infocyph\CacheLayer\Cache\Adapter\TieredCacheAdapter;
 use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Cache\CacheOptions;
 use Infocyph\CacheLayer\Cache\Lock\FileLockProvider;
 use Infocyph\CacheLayer\Cache\Tiering\TieredPoolFactory;
-use Infocyph\CacheLayer\Serializer\ClosureSerializer;
-use Infocyph\CacheLayer\Support\RedisConnection;
+use Infocyph\CacheLayer\Counter\AtomicCounters;
 use Infocyph\CacheLayer\Node\Adapter\NodeCacheAdapter;
 use Infocyph\CacheLayer\Node\Adapter\NodeSqliteCacheAdapter;
 use Infocyph\CacheLayer\Node\Connection\NodeSqliteConnection;
 use Infocyph\CacheLayer\Node\Exception\NodeCacheConfigurationException;
 use Infocyph\CacheLayer\Node\Exception\NodeCacheStorageException;
 use Infocyph\CacheLayer\Node\NodeCacheConfig;
+use Infocyph\CacheLayer\Serializer\ClosureSerializer;
 use Infocyph\CacheLayer\Serializer\SignedClosureSerializer;
+use Infocyph\CacheLayer\Support\RedisConnection;
 
 test('adapter policy is immutable from the first facade binding', function () {
     $adapter = new ArrayCacheAdapter('shared-policy');

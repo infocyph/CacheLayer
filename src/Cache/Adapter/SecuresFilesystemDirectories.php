@@ -30,6 +30,21 @@ trait SecuresFilesystemDirectories
         }
     }
 
+    protected function deleteFile(string $path): bool
+    {
+        if (!is_file($path)) {
+            return true;
+        }
+
+        set_error_handler(static fn(): bool => true);
+
+        try {
+            return unlink($path);
+        } finally {
+            restore_error_handler();
+        }
+    }
+
     protected function atomicReplace(string $path, string $contents): bool
     {
         $this->assertPathNotSymlink($path . '.lock', 'Cache metadata lock file');

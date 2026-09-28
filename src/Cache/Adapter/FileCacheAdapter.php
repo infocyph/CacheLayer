@@ -228,7 +228,7 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
     {
         $file = $this->fileFor($key);
 
-        return !is_file($file) || unlink($file);
+        return $this->deleteFile($file);
     }
 
     private function ensureBaseDirectoryExists(string $baseDir): void

@@ -234,7 +234,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         $file = $this->fileFor($key);
         $this->invalidateOpcache($file);
 
-        return !is_file($file) || unlink($file);
+        return $this->deleteFile($file);
     }
 
     private function fileFor(string $key): string
