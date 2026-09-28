@@ -15,33 +15,76 @@ final class BoundedValueTraversal
 
     public static function assertSafe(mixed $value): void
     {
-        $stack = [[$value, 0, []]];
+        /** @var list<array{value:mixed,depth:int,references:array<string,true>}> $stack */
+        $stack = [['value' => $value, 'depth' => 0, 'references' => []]];
         $nodes = 0;
 
-        while ($stack !== []) {
-            [$current, $depth, $references] = array_pop($stack);
-            if (++$nodes > self::MAX_NODES) {
-                throw new InvalidArgumentException('The value graph exceeds the supported traversal budget.');
-            }
+        while (($frame = array_pop($stack)) !== null) {
+            self::assertNodeBudget(++$nodes);
+            $current = $frame['value'];
             if (!is_array($current)) {
                 continue;
             }
-            if ($depth >= self::MAX_DEPTH && $current !== []) {
-                throw new InvalidArgumentException('The value graph exceeds the supported nesting depth.');
-            }
 
-            foreach ($current as $key => $item) {
-                $childReferences = $references;
-                $reference = ReflectionReference::fromArrayElement($current, $key);
-                if ($reference instanceof ReflectionReference) {
-                    $id = bin2hex($reference->getId());
-                    if (isset($childReferences[$id])) {
-                        throw new InvalidArgumentException('Recursive array references are not supported.');
-                    }
-                    $childReferences[$id] = true;
-                }
-                $stack[] = [$item, $depth + 1, $childReferences];
-            }
+            self::assertDepth($frame['depth'], $current);
+            self::appendChildren($stack, $current, $frame['depth'], $frame['references']);
         }
+    }
+
+    /** @param array<mixed> $value */
+    private static function assertDepth(int $depth, array $value): void
+    {
+        if ($depth >= self::MAX_DEPTH && $value !== []) {
+            throw new InvalidArgumentException('The value graph exceeds the supported nesting depth.');
+        }
+    }
+
+    private static function assertNodeBudget(int $nodes): void
+    {
+        if ($nodes > self::MAX_NODES) {
+            throw new InvalidArgumentException('The value graph exceeds the supported traversal budget.');
+        }
+    }
+
+    /**
+     * @param list<array{value:mixed,depth:int,references:array<string,true>}> $stack
+     * @param array<mixed> $current
+     * @param array<string,true> $references
+     */
+    private static function appendChildren(
+        array &$stack,
+        array $current,
+        int $depth,
+        array $references,
+    ): void {
+        foreach ($current as $key => $item) {
+            $childReferences = self::childReferences($current, $key, $references);
+            $stack[] = [
+                'value' => $item,
+                'depth' => $depth + 1,
+                'references' => $childReferences,
+            ];
+        }
+    }
+
+    /**
+     * @param array<mixed> $current
+     * @param array<string,true> $references
+     * @return array<string,true>
+     */
+    private static function childReferences(array $current, int|string $key, array $references): array
+    {
+        $reference = ReflectionReference::fromArrayElement($current, $key);
+        if (!$reference instanceof ReflectionReference) {
+            return $references;
+        }
+
+        $id = bin2hex($reference->getId());
+        if (isset($references[$id])) {
+            throw new InvalidArgumentException('Recursive array references are not supported.');
+        }
+        $references[$id] = true;
+
+        return $references;
     }
 }
