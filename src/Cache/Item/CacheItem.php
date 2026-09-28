@@ -8,6 +8,7 @@ use DateInterval;
 use DateTimeImmutable;
 use DateTimeInterface;
 use Infocyph\CacheLayer\Cache\Adapter\InternalCachePoolInterface;
+use Infocyph\CacheLayer\Cache\CacheInput;
 use Psr\Cache\CacheItemInterface;
 
 final class CacheItem implements CacheItemInterface
@@ -22,7 +23,9 @@ final class CacheItem implements CacheItemInterface
         private readonly bool $hit = false,
         private ?DateTimeInterface $expiration = null,
         private array $tags = [],
-    ) {}
+    ) {
+        CacheInput::key($key);
+    }
 
     public function belongsTo(InternalCachePoolInterface $pool): bool
     {
