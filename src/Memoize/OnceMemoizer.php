@@ -26,6 +26,12 @@ final class OnceMemoizer
         return self::$instance ??= new self();
     }
 
+    /** @internal Create lifecycle-isolated memoization state. */
+    public static function isolated(): self
+    {
+        return new self();
+    }
+
     public function flush(): void
     {
         $this->cache = [];
