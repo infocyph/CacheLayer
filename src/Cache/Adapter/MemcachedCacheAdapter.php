@@ -80,7 +80,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
             $extended['cas'],
             $mapped,
             $replacementBlob,
-            $ttl ?? 0,
+            MemcachedExpiration::fromRelative($ttl),
         );
     }
 
@@ -125,13 +125,13 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
             $this->namespaceGeneration(),
         );
 
-        if ($this->client->add($mapped, $blob, $ttl ?? 0)) {
+        if ($this->client->add($mapped, $blob, MemcachedExpiration::fromRelative($ttl))) {
             return true;
         }
 
         $extended = $this->extendedGet($mapped);
         if ($extended === null) {
-            return $this->client->add($mapped, $blob, $ttl ?? 0);
+            return $this->client->add($mapped, $blob, MemcachedExpiration::fromRelative($ttl));
         }
 
         $current = $extended['value'];
@@ -144,7 +144,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
             return false;
         }
 
-        return $this->client->cas($extended['cas'], $mapped, $blob, $ttl ?? 0);
+        return $this->client->cas($extended['cas'], $mapped, $blob, MemcachedExpiration::fromRelative($ttl));
     }
 
     public function clear(): bool
@@ -324,8 +324,8 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
 
                 continue;
             }
-            $ttl = $expiration['ttl'] ?? 0;
-            $groups[$ttl][$this->mapData($item->getKey())] = $this->encodeItem(
+            $memcachedExpiration = MemcachedExpiration::fromRelative($expiration['ttl']);
+            $groups[$memcachedExpiration][$this->mapData($item->getKey())] = $this->encodeItem(
                 $item,
                 $expiration['expiresAt'],
                 $generation,
@@ -335,8 +335,8 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         if (!$this->deleteItems($expired)) {
             return false;
         }
-        foreach ($groups as $ttl => $records) {
-            if (!$this->client->setMulti($records, (int) $ttl)) {
+        foreach ($groups as $memcachedExpiration => $records) {
+            if (!$this->client->setMulti($records, (int) $memcachedExpiration)) {
                 return false;
             }
         }
