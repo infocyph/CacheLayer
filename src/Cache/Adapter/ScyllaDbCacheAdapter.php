@@ -126,17 +126,26 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
     public function getTagGenerations(array $tags): array
     {
         $generations = $this->readTagGenerations($tags);
-        $missing = [];
         foreach ($tags as $tag) {
-            if (!isset($generations[$tag])) {
-                $missing[$tag] = self::newGeneration();
+            if (isset($generations[$tag])) {
+                continue;
             }
-        }
-        if ($missing !== [] && !$this->storeTagGenerations($missing)) {
-            throw new RuntimeException('Unable to initialize ScyllaDB tag generations.');
+
+            $this->executeCql(
+                "INSERT INTO {$this->metadataTable} (ns, bucket, tag, generation) "
+                . 'VALUES (?, ?, ?, ?) IF NOT EXISTS',
+                [$this->ns, $this->bucket($tag), $tag, self::newGeneration()],
+            );
         }
 
-        return $generations + $missing;
+        $actual = $this->readTagGenerations($tags);
+        foreach ($tags as $tag) {
+            if (!isset($actual[$tag])) {
+                throw new RuntimeException('Unable to initialize ScyllaDB tag generation.');
+            }
+        }
+
+        return $actual;
     }
 
     public function hasItem(string $key): bool
@@ -347,7 +356,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
 
     /**
      * @param list<string> $keys
-     * @return array{items:array<string, CacheItem>, invalid:list<string>}
+     * @return array<string, CacheItem>
      */
     private function fetchBucketItems(int $bucket, array $keys): array
     {
