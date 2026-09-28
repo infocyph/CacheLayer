@@ -260,6 +260,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
     public function storeTagGenerations(array $generations): bool
     {
         foreach ($generations as $tag => $generation) {
+            $tag = (string) $tag;
             if (!self::isGeneration($generation)) {
                 return false;
             }
