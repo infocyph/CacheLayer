@@ -237,7 +237,7 @@ Failed local invalidation stops consumption without advancing the cursor; operat
 
 ## Atomic counters and memoization
 
-`AtomicCounters` uses an `AtomicCounterStoreInterface`; Redis/Valkey is the distributed implementation. Counters are never emulated with cache `get()` plus `set()`. Atomic counters are separate from `Cache::atomic()`: counters mutate numeric state, while the cache capability provides conditional claim/replace/consume primitives for encoded cache records.
+`AtomicCounters` uses an `AtomicCounterStoreInterface`; Redis/Valkey is the distributed implementation. Counters are never emulated with cache `get()` plus `set()`. They live in a dedicated `cachelayer:counter:<namespace>:` keyspace, so ordinary cache `clear()` does not reset them, and the Lua update returns an exact decimal string before PHP range validation. Atomic counters are separate from `Cache::atomic()`: counters mutate numeric state, while the cache capability provides conditional claim/replace/consume primitives for encoded cache records.
 
 The `memoize()`, `remember(object: ...)`, and `once()` helpers plus `MemoizeTrait` provide bounded process-local memoization. Their state survives requests in persistent workers until evicted or reset with `flush_memoizers()`; call that reset at request boundaries when cross-request reuse is not intended. They are independent of persistent backend caching.
 
