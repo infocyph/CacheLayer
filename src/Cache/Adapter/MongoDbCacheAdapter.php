@@ -194,6 +194,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
             }
 
             $candidate = self::newGeneration();
+
             try {
                 $this->collection->updateOne(
                     ['_id' => $this->mapTag($tag)],
