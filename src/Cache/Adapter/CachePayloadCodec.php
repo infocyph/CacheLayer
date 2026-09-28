@@ -47,7 +47,7 @@ final readonly class CachePayloadCodec
 
     public static function toDateTime(?int $expiresAt): ?DateTimeInterface
     {
-        return $expiresAt === null ? null : (new DateTimeImmutable())->setTimestamp($expiresAt);
+        return $expiresAt === null ? null : new DateTimeImmutable()->setTimestamp($expiresAt);
     }
 
     public function decode(
