@@ -11,6 +11,7 @@ declare(strict_types=1);
  */
 
 use Infocyph\CacheLayer\Cache\Cache;
+use Infocyph\CacheLayer\Cache\CacheOptions;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 
@@ -26,7 +27,7 @@ if (! apcu_enabled()) {
 /* ── boilerplate ──────────────────────────────────────────────────── */
 beforeEach(function () {
     apcu_clear_cache();                           // fresh memory
-    $this->cache = Cache::apcu('tests');          // APCu-backed pool
+    $this->cache = Cache::apcu('tests', new CacheOptions(allowClosures: true));          // APCu-backed pool
 });
 
 afterEach(function () {

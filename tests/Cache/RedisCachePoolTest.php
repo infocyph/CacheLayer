@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 use Infocyph\CacheLayer\Cache\AtomicCacheInterface;
 use Infocyph\CacheLayer\Cache\Cache;
+use Infocyph\CacheLayer\Cache\CacheOptions;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 
@@ -63,7 +64,8 @@ beforeEach(function () use ($redisHost, $redisPort, $redisPassword) {
     $this->cache = Cache::redis(
         'tests',
         sprintf('redis://%s:%d', $redisHost, $redisPort),
-        $client
+        $client,
+        new CacheOptions(allowClosures: true),
     );
 
 });

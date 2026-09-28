@@ -63,18 +63,6 @@ final class PdoInvalidationSchema
             . 'created_at BIGINT NOT NULL)';
     }
 
-    private static function hardenMysqlIdentityColumns(PDO $connection): void
-    {
-        $connection->exec(
-            'ALTER TABLE ' . self::TABLE . ' '
-            . 'MODIFY cluster_name VARCHAR(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, '
-            . 'MODIFY namespace_name VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, '
-            . 'MODIFY event_type VARCHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, '
-            . 'MODIFY identifier VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL, '
-            . 'MODIFY origin_node_id VARCHAR(255) CHARACTER SET ascii COLLATE ascii_bin NOT NULL',
-        );
-    }
-
     private static function driver(PDO $connection, bool $allowSqliteForTesting): string
     {
         $driver = $connection->getAttribute(PDO::ATTR_DRIVER_NAME);
@@ -88,4 +76,16 @@ final class PdoInvalidationSchema
 
         return $driver;
     }
+    private static function hardenMysqlIdentityColumns(PDO $connection): void
+    {
+        $connection->exec(
+            'ALTER TABLE ' . self::TABLE . ' '
+            . 'MODIFY cluster_name VARCHAR(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, '
+            . 'MODIFY namespace_name VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, '
+            . 'MODIFY event_type VARCHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, '
+            . 'MODIFY identifier VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL, '
+            . 'MODIFY origin_node_id VARCHAR(255) CHARACTER SET ascii COLLATE ascii_bin NOT NULL',
+        );
+    }
+
 }

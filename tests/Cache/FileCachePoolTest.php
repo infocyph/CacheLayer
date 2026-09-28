@@ -5,6 +5,7 @@ declare(strict_types=1);
 /**  tests/FileCachePoolTest.php  */
 
 use Infocyph\CacheLayer\Cache\Cache;
+use Infocyph\CacheLayer\Cache\CacheOptions;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 
@@ -13,7 +14,7 @@ beforeEach(function () {
     $this->cacheDir = sys_get_temp_dir().'/pest_cache_'.uniqid();
 
     /* build a file-backed cachepool via static factory */
-    $this->cache = Cache::file('tests', $this->cacheDir);
+    $this->cache = Cache::file('tests', $this->cacheDir, new CacheOptions(allowClosures: true));
 });
 
 afterEach(function () {

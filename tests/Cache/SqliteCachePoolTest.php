@@ -9,6 +9,7 @@ declare(strict_types=1);
  */
 
 use Infocyph\CacheLayer\Cache\Cache;
+use Infocyph\CacheLayer\Cache\CacheOptions;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 
@@ -20,7 +21,7 @@ if (! in_array('sqlite', PDO::getAvailableDrivers(), true)) {
 /* ── bootstrap / teardown ────────────────────────────────────────── */
 beforeEach(function () {
     $this->dbFile = sys_get_temp_dir().'/pest_sqlite_'.uniqid().'.sqlite';
-    $this->cache = Cache::sqlite('tests', $this->dbFile);
+    $this->cache = Cache::sqlite('tests', $this->dbFile, new CacheOptions(allowClosures: true));
 });
 
 afterEach(function () {

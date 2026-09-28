@@ -10,6 +10,7 @@ declare(strict_types=1);
  */
 
 use Infocyph\CacheLayer\Cache\Cache;
+use Infocyph\CacheLayer\Cache\CacheOptions;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Cache\Lock\MemcachedLockProvider;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
@@ -41,7 +42,8 @@ beforeEach(function () use ($memcachedHost, $memcachedPort) {
     $this->cache = Cache::memcached(
         'tests',
         [[$memcachedHost, $memcachedPort, 0]],
-        $client
+        $client,
+        new CacheOptions(allowClosures: true),
     );
 
 });

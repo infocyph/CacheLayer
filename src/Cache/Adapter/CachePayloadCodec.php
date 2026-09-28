@@ -299,6 +299,14 @@ final readonly class CachePayloadCodec
         return new CacheRecord($value['value'], $expiresAt, $tags, $namespaceGeneration);
     }
 
+    private function signatureInput(string $payload, string $storageIdentity, string $key): string
+    {
+        return self::SIGNATURE_PURPOSE
+            . "\0" . strlen($storageIdentity) . ':' . $storageIdentity
+            . "\0" . strlen($key) . ':' . $key
+            . "\0" . $payload;
+    }
+
     private function unserializeNative(string $payload): mixed
     {
         set_error_handler(static fn(): bool => true);
@@ -313,14 +321,6 @@ final readonly class CachePayloadCodec
         }
     }
 
-    private function signatureInput(string $payload, string $storageIdentity, string $key): string
-    {
-        return self::SIGNATURE_PURPOSE
-            . "\0" . strlen($storageIdentity) . ':' . $storageIdentity
-            . "\0" . strlen($key) . ':' . $key
-            . "\0" . $payload;
-    }
-
     private function unsignedPayload(string $blob): ?string
     {
         return str_starts_with($blob, self::BOUND_SIGNED_PREFIX) ? null : $blob;
@@ -330,7 +330,8 @@ final readonly class CachePayloadCodec
         string $blob,
         ?string $storageIdentity,
         ?string $key,
-    ): ?string {
+    ): ?string
+    {
         $integrityKey = $this->options->integrityKey;
         if ($integrityKey === null) {
             return $this->unsignedPayload($blob);
