@@ -16,23 +16,31 @@ final class CacheTagSnapshots
      */
     public static function collectTags(array $items): array
     {
-        $tagSet = [];
+        $tags = [];
+        $seen = [];
         foreach ($items as $item) {
             if (!$item instanceof CacheItem || !$item->isHit()) {
                 continue;
             }
             foreach ($item->getTagGenerations() as $tag => $_generation) {
-                $tagSet[$tag] = true;
+                $tag = (string) $tag;
+                $identity = 'tag:' . $tag;
+                if (isset($seen[$identity])) {
+                    continue;
+                }
+                $seen[$identity] = true;
+                $tags[] = $tag;
             }
         }
 
-        return array_keys($tagSet);
+        return $tags;
     }
 
     /** @param array<string, string> $generations */
     public static function isCurrent(CacheItem $item, array $generations): bool
     {
         foreach ($item->getTagGenerations() as $tag => $expected) {
+            $tag = (string) $tag;
             $current = $generations[$tag] ?? null;
             if (!is_string($current) || !hash_equals($expected, $current)) {
                 return false;
@@ -51,7 +59,8 @@ final class CacheTagSnapshots
     {
         foreach ($items as $key => $item) {
             if (self::isTaggedHit($item)) {
-                $items[$key] = $miss($key);
+                $logicalKey = (string) $key;
+                $items[$key] = $miss($logicalKey);
             }
         }
 
@@ -71,8 +80,9 @@ final class CacheTagSnapshots
             if (!$item instanceof CacheItem || !$item->isHit() || self::isCurrent($item, $generations)) {
                 continue;
             }
-            $stale[] = $key;
-            $items[$key] = $miss($key);
+            $logicalKey = (string) $key;
+            $stale[] = $logicalKey;
+            $items[$key] = $miss($logicalKey);
         }
 
         return ['items' => $items, 'stale' => $stale];
