@@ -65,8 +65,9 @@ final class PdoTagGenerationStore
         return $generations;
     }
 
-    /** @param list<string> $tags
-     *  @return array<string, string>
+    /**
+     * @param list<string> $tags
+     * @return array<string, string>
      */
     private static function fetch(PDO $pdo, string $table, string $namespace, array $tags): array
     {
