@@ -17,9 +17,7 @@ use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 /* ── Skip suite if Memcached unavailable ─────────────────────────── */
 
 if (! class_exists(Memcached::class)) {
-    test('Memcached ext not loaded – skipping')->skip();
-
-    return;
+    throw new RuntimeException('Memcached extension is required for the configured cache test matrix.');
 }
 
 $memcachedHost = getenv('IC_MEMCACHED_HOST') ?: getenv('CACHELAYER_MEMCACHED_HOST') ?: '127.0.0.1';
@@ -29,9 +27,7 @@ $probe = new Memcached;
 $probe->addServer($memcachedHost, $memcachedPort);
 $probe->set('ping', 'pong');
 if ($probe->getResultCode() !== Memcached::RES_SUCCESS) {
-    test('No Memcached server available – skipping')->skip();
-
-    return;
+    throw new RuntimeException('Memcached service is required for the configured cache test matrix.');
 }
 
 /* ── Test bootstrap / teardown ───────────────────────────────────── */

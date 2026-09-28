@@ -6,9 +6,7 @@ use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Cache\Lock\PdoLockProvider;
 
 if (! in_array('pgsql', PDO::getAvailableDrivers(), true)) {
-    test('PostgreSQL PDO driver not present')->skip();
-
-    return;
+    throw new RuntimeException('PDO PostgreSQL is required for the configured cache test matrix.');
 }
 
 $dsn = getenv('IC_POSTGRES_DSN') ?: getenv('CACHELAYER_PG_DSN') ?: 'pgsql:host=127.0.0.1;port=5432;dbname=cachelayer';
@@ -19,10 +17,8 @@ try {
     $probe = new PDO($dsn, $user, $pass);
     $probe->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     $probe->query('SELECT 1');
-} catch (Throwable) {
-    test('PostgreSQL server unreachable')->skip();
-
-    return;
+} catch (Throwable $failure) {
+    throw new RuntimeException('PostgreSQL service is required for the configured cache test matrix.', 0, $failure);
 }
 
 beforeEach(function () use ($dsn, $user, $pass) {

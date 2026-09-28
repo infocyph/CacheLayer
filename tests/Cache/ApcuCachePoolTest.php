@@ -16,15 +16,11 @@ use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 
 /* ── skip entirely if APCu unavailable ─────────────────────────────── */
 if (! extension_loaded('apcu')) {
-    test('APCu not loaded – skipping adapter tests')->skip();
-
-    return;
+    throw new RuntimeException('APCu is required for the configured cache test matrix.');
 }
 ini_set('apcu.enable_cli', 1);
 if (! apcu_enabled()) {
-    test('APCu not enabled – skipping adapter tests')->skip();
-
-    return;
+    throw new RuntimeException('APCu must be enabled for CLI tests.');
 }
 
 /* ── boilerplate ──────────────────────────────────────────────────── */

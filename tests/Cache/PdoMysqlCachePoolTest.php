@@ -5,9 +5,7 @@ declare(strict_types=1);
 use Infocyph\CacheLayer\Cache\Cache;
 
 if (! in_array('mysql', PDO::getAvailableDrivers(), true)) {
-    test('MySQL PDO driver not present')->skip();
-
-    return;
+    throw new RuntimeException('PDO MySQL is required for the configured cache test matrix.');
 }
 
 $dsn = getenv('IC_MYSQL_DSN') ?: getenv('CACHELAYER_MYSQL_DSN') ?: 'mysql:host=127.0.0.1;port=3306;dbname=cachelayer';
@@ -21,10 +19,8 @@ try {
     $probe = new PDO($dsn, $user, $pass);
     $probe->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     $probe->query('SELECT 1');
-} catch (Throwable) {
-    test('MySQL server unreachable')->skip();
-
-    return;
+} catch (Throwable $failure) {
+    throw new RuntimeException('MySQL service is required for the configured cache test matrix.', 0, $failure);
 }
 
 beforeEach(function () use ($dsn, $user, $pass) {

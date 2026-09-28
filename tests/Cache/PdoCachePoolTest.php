@@ -7,9 +7,7 @@ use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Cache\Lock\FileLockProvider;
 
 if (! in_array('sqlite', PDO::getAvailableDrivers(), true)) {
-    test('PDO SQLite driver not present')->skip();
-
-    return;
+    throw new RuntimeException('PDO SQLite is required for the configured cache test matrix.');
 }
 
 beforeEach(function () {

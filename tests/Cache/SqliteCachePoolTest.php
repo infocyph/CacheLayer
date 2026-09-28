@@ -14,9 +14,7 @@ use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 
 /* ── Skip entire suite if SQLite missing ─────────────────────────── */
 if (! in_array('sqlite', PDO::getAvailableDrivers(), true)) {
-    test('SQLite PDO driver not present – skipping')->skip();
-
-    return;
+    throw new RuntimeException('PDO SQLite is required for the configured cache test matrix.');
 }
 
 /* ── bootstrap / teardown ────────────────────────────────────────── */
