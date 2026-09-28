@@ -230,6 +230,7 @@ test('node lock identity includes the SQLite store', function () {
 
         public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): ?LockHandle
         {
+            unset($waitSeconds);
             $this->keys[] = $key;
 
             return new LockHandle($key, bin2hex(random_bytes(16)), leaseSeconds: $leaseSeconds);

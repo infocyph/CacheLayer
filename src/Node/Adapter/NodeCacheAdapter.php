@@ -124,6 +124,11 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         return $this->getItem($key)->isHit();
     }
 
+    public function isAuthoritative(): bool
+    {
+        return $this->l1 === null;
+    }
+
     /**
      * @param list<string> $keys
      * @return array<string, CacheItem>

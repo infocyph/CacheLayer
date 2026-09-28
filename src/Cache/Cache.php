@@ -52,11 +52,12 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         private readonly string $namespace = 'default',
     ) {
         CacheInput::namespace($namespace);
-        $this->authoritative = !in_array(
-            $adapter::class,
-            [Adapter\TieredCacheAdapter::class, Adapter\NullCacheAdapter::class],
-            true,
-        );
+        $this->authoritative = match (true) {
+            $adapter instanceof \Infocyph\CacheLayer\Node\Adapter\NodeCacheAdapter => $adapter->isAuthoritative(),
+            $adapter instanceof Adapter\TieredCacheAdapter,
+            $adapter instanceof Adapter\NullCacheAdapter => false,
+            default => true,
+        };
         $this->lockProvider = $lockProvider ?? new FileLockProvider();
         $this->authenticationStateLockCapable = $lockProvider !== null;
         $this->options = $options ?? new CacheOptions();
