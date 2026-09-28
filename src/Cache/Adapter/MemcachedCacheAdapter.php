@@ -351,8 +351,6 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         return true;
     }
 
-    /** @return array{value:string, cas:int|float}|null */
-
     private function deleteResultSucceeded(): bool
     {
         return in_array(
@@ -381,6 +379,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         return $generation;
     }
 
+    /** @return array{value:string, cas:float}|null */
     private function extendedGet(string $key): ?array
     {
         $value = $this->client->get($key, null, \Memcached::GET_EXTENDED);
@@ -392,7 +391,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
             return null;
         }
 
-        return ['value' => $value['value'], 'cas' => $cas];
+        return ['value' => $value['value'], 'cas' => (float) $cas];
     }
 
     private function generationKey(): string
