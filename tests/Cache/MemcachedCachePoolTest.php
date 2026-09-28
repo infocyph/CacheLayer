@@ -88,7 +88,7 @@ test('PSR-6 getItem()/save()', function () {
 
 test('saveDeferred() + commit()', function () {
     $this->cache->getItem('a')->set('A')->saveDeferred();
-    expect($this->cache->get('a'))->toBeNull();
+    expect($this->cache->get('a'))->toBe('A');
 
     $this->cache->commit();
     expect($this->cache->get('a'))->toBe('A');
