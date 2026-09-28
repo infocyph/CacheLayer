@@ -28,7 +28,7 @@ trait PdoAtomicOperations
 
         return $this->atomicTransaction(function () use ($key, $expected, $replacement, $expiration): bool {
             $row = $this->atomicFetchRow($key);
-            $record = $row === null ? null : $this->atomicRecordFromRow($row);
+            $record = $row === null ? null : $this->atomicRecordFromRow($key, $row);
             if (!$record instanceof CacheRecord
                 || !$this->atomicRecordTagsAreCurrent($record)
                 || $record->value !== $expected) {
@@ -55,7 +55,7 @@ trait PdoAtomicOperations
                 return $this->genericMiss($key);
             }
 
-            $record = $this->atomicRecordFromRow($row);
+            $record = $this->atomicRecordFromRow($key, $row);
             $this->deleteItem($key);
             if (!$record instanceof CacheRecord || !$this->atomicRecordTagsAreCurrent($record)) {
                 return $this->genericMiss($key);
@@ -78,7 +78,7 @@ trait PdoAtomicOperations
         return $this->atomicTransaction(function () use ($item, $expiration): bool {
             $key = $item->getKey();
             $row = $this->atomicFetchRow($key);
-            $record = $row === null ? null : $this->atomicRecordFromRow($row);
+            $record = $row === null ? null : $this->atomicRecordFromRow($key, $row);
             if ($record instanceof CacheRecord && $this->atomicRecordTagsAreCurrent($record)) {
                 return false;
             }
@@ -141,13 +141,13 @@ trait PdoAtomicOperations
     }
 
     /** @param array{payload:string, expires:int|null} $row */
-    private function atomicRecordFromRow(array $row): ?CacheRecord
+    private function atomicRecordFromRow(string $key, array $row): ?CacheRecord
     {
         if (CachePayloadCodec::isExpired($row['expires'])) {
             return null;
         }
 
-        $record = $this->decodeRecordFromBlob($row['payload']);
+        $record = $this->decodeRecordFromBlob($row['payload'], $key);
 
         return $record instanceof CacheRecord ? $record : null;
     }

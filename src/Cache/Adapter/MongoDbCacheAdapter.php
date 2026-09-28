@@ -80,7 +80,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
             return false;
         }
 
-        $record = $this->recordFromRow($row);
+        $record = $this->recordFromRow($key, $row);
         if (!$record instanceof CacheRecord || $record->tags !== [] || $record->value !== $expected) {
             return false;
         }
@@ -97,7 +97,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
     {
         $document = $this->collection->findOneAndDelete(['_id' => $this->mapData($key)]);
         $row = AdapterValueNormalizer::fromJsonOrArrayLike($document);
-        $record = is_array($row) ? $this->recordFromRow($row) : null;
+        $record = is_array($row) ? $this->recordFromRow($key, $row) : null;
 
         return $record instanceof CacheRecord
             ? $this->genericItemFromRecord($key, $record)
@@ -121,7 +121,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
                 return true;
             }
 
-            $replaced = $this->tryReplaceInvalidAtomic($id, $replacement);
+            $replaced = $this->tryReplaceInvalidAtomic($item->getKey(), $id, $replacement);
             if ($replaced !== null) {
                 return $replaced;
             }
@@ -431,13 +431,13 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
     }
 
     /** @param array<string, mixed> $row */
-    private function recordFromRow(array $row): ?CacheRecord
+    private function recordFromRow(string $key, array $row): ?CacheRecord
     {
         $payload = $this->binaryString($row['payload'] ?? null);
         if (!is_string($payload)) {
             return null;
         }
-        $record = $this->decodeRecordFromBlob($payload);
+        $record = $this->decodeRecordFromBlob($payload, $key);
         if (!$record instanceof CacheRecord || !$this->recordTagsAreCurrent($record)) {
             return null;
         }
@@ -481,7 +481,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
      * @param array{ns:string, kind:string, payload:mixed, expires:int|null} $replacement
      * @return bool|null True when replaced, false when a live/non-replaceable value exists, null on a race retry.
      */
-    private function tryReplaceInvalidAtomic(string $id, array $replacement): ?bool
+    private function tryReplaceInvalidAtomic(string $key, string $id, array $replacement): ?bool
     {
         $row = AdapterValueNormalizer::fromJsonOrArrayLike(
             $this->collection->findOne(['_id' => $id]),
@@ -489,7 +489,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         if (!is_array($row)) {
             return null;
         }
-        if ($this->recordFromRow($row) instanceof CacheRecord || !array_key_exists('payload', $row)) {
+        if ($this->recordFromRow($key, $row) instanceof CacheRecord || !array_key_exists('payload', $row)) {
             return false;
         }
 

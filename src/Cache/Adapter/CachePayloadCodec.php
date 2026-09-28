@@ -323,31 +323,48 @@ final readonly class CachePayloadCodec
             . "\0" . $payload;
     }
 
+    private function signaturePrefix(
+        string $blob,
+        ?string $storageIdentity,
+        ?string $key,
+    ): ?string {
+        if (str_starts_with($blob, self::BOUND_SIGNED_PREFIX)) {
+            return $storageIdentity !== null && $key !== null
+                ? self::BOUND_SIGNED_PREFIX
+                : null;
+        }
+        if (!str_starts_with($blob, self::SIGNED_PREFIX)) {
+            return null;
+        }
+
+        return $storageIdentity === null && $key === null
+            ? self::SIGNED_PREFIX
+            : null;
+    }
+
+    private function unsignedPayload(string $blob): ?string
+    {
+        return str_starts_with($blob, self::SIGNED_PREFIX)
+            || str_starts_with($blob, self::BOUND_SIGNED_PREFIX)
+            ? null
+            : $blob;
+    }
+
     private function verifyAndExtractSignature(
         string $blob,
         ?string $storageIdentity,
         ?string $key,
     ): ?string {
-        if ($this->options->integrityKey === null) {
-            return str_starts_with($blob, self::SIGNED_PREFIX)
-                || str_starts_with($blob, self::BOUND_SIGNED_PREFIX)
-                ? null
-                : $blob;
+        $integrityKey = $this->options->integrityKey;
+        if ($integrityKey === null) {
+            return $this->unsignedPayload($blob);
         }
 
-        $bound = str_starts_with($blob, self::BOUND_SIGNED_PREFIX);
-        $legacy = str_starts_with($blob, self::SIGNED_PREFIX);
-        if (!$bound && !$legacy) {
-            return null;
-        }
-        if ($legacy && ($storageIdentity !== null || $key !== null)) {
-            return null;
-        }
-        if ($bound && ($storageIdentity === null || $key === null)) {
+        $prefix = $this->signaturePrefix($blob, $storageIdentity, $key);
+        if ($prefix === null) {
             return null;
         }
 
-        $prefix = $bound ? self::BOUND_SIGNED_PREFIX : self::SIGNED_PREFIX;
         $separator = strpos($blob, ':', strlen($prefix));
         if ($separator === false) {
             return null;
@@ -359,10 +376,10 @@ final readonly class CachePayloadCodec
             return null;
         }
 
-        $signed = $bound
-            ? $this->signatureInput($payload, $storageIdentity, $key)
+        $signed = $prefix === self::BOUND_SIGNED_PREFIX
+            ? $this->signatureInput($payload, (string) $storageIdentity, (string) $key)
             : $payload;
-        $expected = hash_hmac('sha256', $signed, $this->options->integrityKey);
+        $expected = hash_hmac('sha256', $signed, $integrityKey);
 
         return hash_equals($expected, strtolower($signature)) ? $payload : null;
     }
