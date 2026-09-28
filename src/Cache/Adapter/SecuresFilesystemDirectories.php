@@ -4,26 +4,15 @@ declare(strict_types=1);
 
 namespace Infocyph\CacheLayer\Cache\Adapter;
 
+use Infocyph\CacheLayer\Support\FilesystemTrust;
 use RuntimeException;
 
 trait SecuresFilesystemDirectories
 {
     protected function assertPathNotSymlink(string $path, string $label): void
     {
-        $cursor = rtrim($path, DIRECTORY_SEPARATOR);
-        if ($cursor === '') {
-            $cursor = DIRECTORY_SEPARATOR;
-        }
-
-        while (true) {
-            if (is_link($cursor)) {
-                throw new RuntimeException($label . " must not contain symlinks: {$path}");
-            }
-            $parent = dirname($cursor);
-            if ($parent === $cursor || $parent === '.') {
-                return;
-            }
-            $cursor = $parent;
+        if (FilesystemTrust::containsSymlink($path)) {
+            throw new RuntimeException($label . " must not contain symlinks: {$path}");
         }
     }
 
@@ -43,6 +32,7 @@ trait SecuresFilesystemDirectories
 
     protected function atomicReplace(string $path, string $contents): bool
     {
+        $this->assertPathNotSymlink($path . '.lock', 'Cache metadata lock file');
         $lock = fopen($path . '.lock', 'c');
         if (!is_resource($lock) || !flock($lock, LOCK_EX)) {
             if (is_resource($lock)) {
