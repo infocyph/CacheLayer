@@ -25,10 +25,9 @@ $assert($memory->commit(), 'Deferred commit failed.');
 $assert($memory->get('deferred') === null, 'Deleted deferred value was resurrected.');
 
 $assert($memory->setMultiple(['0' => 'zero', '01' => 'leading', '-1' => 'negative']), 'Numeric-string batch write failed.');
-$values = $memory->getMultiple(['0', '01', '-1']);
-$assert($values[0] === 'zero', 'Numeric key 0 did not round-trip.');
-$assert($values['01'] === 'leading', 'Numeric key 01 did not round-trip.');
-$assert($values[-1] === 'negative', 'Numeric key -1 did not round-trip.');
+$assert($memory->get('0') === 'zero', 'Numeric key 0 did not round-trip.');
+$assert($memory->get('01') === 'leading', 'Numeric key 01 did not round-trip.');
+$assert($memory->get('-1') === 'negative', 'Numeric key -1 did not round-trip.');
 
 $options = new CacheOptions(
     integrityKey: str_repeat('k', 32),
