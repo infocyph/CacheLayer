@@ -24,9 +24,11 @@ trait SecuresFilesystemDirectories
             throw new RuntimeException($label . " must be a writable directory: {$path}");
         }
 
-        $perms = fileperms($path);
-        if ($perms !== false && (($perms & 0x0002) === 0x0002)) {
-            throw new RuntimeException($label . " must not be world-writable: {$path}");
+        if (DIRECTORY_SEPARATOR === '/') {
+            $perms = fileperms($path);
+            if ($perms !== false && (($perms & 0x0002) === 0x0002)) {
+                throw new RuntimeException($label . " must not be world-writable: {$path}");
+            }
         }
     }
 
