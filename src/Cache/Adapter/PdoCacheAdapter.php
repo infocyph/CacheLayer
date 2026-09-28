@@ -101,6 +101,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
 
     public function deleteItem(string $key): bool
     {
+        $this->discardDeferredKey($key);
         $statement = $this->pdo->prepare(
             "DELETE FROM {$this->table} WHERE namespace = ? AND kind = ? AND cache_key = ?",
         );
@@ -111,6 +112,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
     /** @param list<string> $keys */
     public function deleteItems(array $keys): bool
     {
+        $this->discardDeferredKeys($keys);
         return $this->deleteByKind(self::KIND_DATA, $keys);
     }
 
