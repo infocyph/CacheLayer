@@ -186,13 +186,10 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
                 return false;
             }
         }
-        foreach ($this->groupItemsByBucket($items) as $bucket => $group) {
-            if (!$this->saveBucket($bucket, $group)) {
-                return false;
-            }
-        }
-
-        return true;
+        return array_all(
+            $this->groupItemsByBucket($items),
+            fn(array $group, int $bucket): bool => $this->saveBucket($bucket, $group),
+        );
     }
 
     private function bucket(string $key): int
