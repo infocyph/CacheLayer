@@ -353,11 +353,11 @@ Batches 1-6 are complete. The optional Runwire 2.1 workstream remains deliberate
    - [x] Update README, security/serialization/atomic/Node/Cluster docs and executable examples to the final behavior.
    - [x] Complete migrations, benchmark/soak evidence, clean consumer tests, and exact-revision CI before tagging.
 
-7. **Optional Runwire 2.1 integration — candidate scope, not a 4.0 release blocker.**
-   - [ ] If this workstream is selected, implement automatic use of relevant active Runwire capabilities with the normal path as fallback, and demonstrate it in an executable invalidation-worker example after R06, R07, and R15 are resolved.
-   - [ ] Evaluate bounded maintenance scheduling and persistent-request lifecycle integration; implement where an actual consumer or the example establishes a concrete need.
-   - [ ] Evaluate Runwire for isolated crash/concurrency regression tests during earlier batches without making it a core dependency.
-   - [ ] Complete the compatibility, lifecycle, coherence, and performance gates below for every shipped integration capability.
+7. **Optional Runwire 2.1 integration — deferred from the 4.0 release.**
+   - [x] Record the scope decision: Runwire integration is not selected for CacheLayer 4.0 and is not advertised as shipped functionality.
+   - [x] Keep Runwire out of the core runtime dependency and preserve the normal CacheLayer execution path.
+   - [x] Move maintenance scheduling, persistent-request lifecycle integration, and Runwire-assisted crash/concurrency experiments to post-4.0 follow-up scope.
+   - [x] Mark the conditional Runwire compatibility/lifecycle/coherence/performance gates below as not applicable to the 4.0 release because no Runwire capability is shipped.
 
 ## Optional Runwire 2.1 integration workstream
 
@@ -392,18 +392,18 @@ Existing PDO, filesystem, and synchronous native-client calls remain blocking in
 
 ### Integration acceptance gates
 
-The entire Runwire workstream, including the invalidation-worker example, may be deferred without blocking 4.0.0. Record an inclusion/defer decision based on concrete need and evidence; the checkboxes in this section apply only to capabilities selected for shipping. Every shipped capability must pass its applicable gates; deferred capabilities must remain explicitly unadvertised. None of these decisions excuses any R01–R19 requirement.
+**4.0 disposition: not applicable; integration deferred.** No Runwire-specific runtime capability, example, dependency, or performance claim ships in CacheLayer 4.0. The following criteria remain the acceptance checklist if this optional workstream is selected in a future release; they are deliberately not represented as incomplete 4.0 tasks:
 
-- [ ] Keep the default core test environment working without Runwire. Test the optional environment on supported 64-bit PHP 8.4/8.5 with lowest and highest supported dependencies; record the resolved Runwire version and native extensions.
-- [ ] Verify automatic selection with Runwire absent, installed but inactive, active with each relevant capability, and active with partial capabilities. Cover calls outside a request/task scope and contexts after shutdown, fork, and worker replacement. Confirm the normal path remains usable without Runwire classes loaded.
-- [ ] Run the same cache contract cases through normal and runtime-assisted paths. Prove no duplicate mutation on failure/cancellation, no changed integrity or distributed-atomicity guarantees, no cross-request scope leakage, and no automatic job startup from package presence. Verify the bootstrap binding and lifecycle cleanup in the executable example.
-- [ ] Declare topology prerequisites. Native prefork supervision needs PCNTL/POSIX; portable single-process execution relies on external supervision for restarts. Test supported modes explicitly and fail clearly for unsupported requested capabilities.
-- [ ] Demonstrate no skipped committed invalidations through reversed commits, duplicate replay, worker death before/after application and cursor persistence, restart, retention, backend outage, and graceful shutdown. Prove cursor ownership and L1 coherence for each advertised deployment topology.
-- [ ] Bound batch work, queueing, retry frequency, backend wait time, shutdown duration, and retained memory. Test crash loops and verify that backoff does not starve lifecycle handling. Maintenance must not overlap unexpectedly or exceed the recorded SQLite contention budget.
-- [ ] Soak-test sequential and, if supported, concurrent requests with changing tenants, failures, cancellations, deadlines, and deferred writes. Require no memoizer leakage, cross-request resets, abandoned request state, or unbounded memory growth.
-- [ ] Compare representative host-application successful RPM with and without the integration under equivalent correctness guarantees, topology, resources, and workloads. Record invalidation lag, p95/p99 latency, errors/timeouts, CPU/RSS, backend calls, and maintenance contention using the release measurement method below. Set acceptable budgets before selecting an implementation.
-- [ ] Treat Runwire 2.1 adaptive HTTP scheduling as a separate host-level experiment. Begin with protocol defaults (`FIXED`), and evaluate `LATENCY`, `THROUGHPUT`, or `AUTO` only through repeated representative measurements, including load transitions and fairness. Do not attribute HTTP scheduling gains to CacheLayer storage or change protocol hard limits.
-- [ ] Run executable examples and integration jobs on the exact final revision, and document startup, shutdown, connection ownership, prerequisites, topology limits, recovery, and rollback. Keep integration evidence separate from core/backend gate results.
+- Keep the default core test environment working without Runwire. Test the optional environment on supported 64-bit PHP 8.4/8.5 with lowest and highest supported dependencies; record the resolved Runwire version and native extensions.
+- Verify automatic selection with Runwire absent, installed but inactive, active with each relevant capability, and active with partial capabilities. Cover calls outside a request/task scope and contexts after shutdown, fork, and worker replacement. Confirm the normal path remains usable without Runwire classes loaded.
+- Run the same cache contract cases through normal and runtime-assisted paths. Prove no duplicate mutation on failure/cancellation, no changed integrity or distributed-atomicity guarantees, no cross-request scope leakage, and no automatic job startup from package presence. Verify the bootstrap binding and lifecycle cleanup in the executable example.
+- Declare topology prerequisites. Native prefork supervision needs PCNTL/POSIX; portable single-process execution relies on external supervision for restarts. Test supported modes explicitly and fail clearly for unsupported requested capabilities.
+- Demonstrate no skipped committed invalidations through reversed commits, duplicate replay, worker death before/after application and cursor persistence, restart, retention, backend outage, and graceful shutdown. Prove cursor ownership and L1 coherence for each advertised deployment topology.
+- Bound batch work, queueing, retry frequency, backend wait time, shutdown duration, and retained memory. Test crash loops and verify that backoff does not starve lifecycle handling. Maintenance must not overlap unexpectedly or exceed the recorded SQLite contention budget.
+- Soak-test sequential and, if supported, concurrent requests with changing tenants, failures, cancellations, deadlines, and deferred writes. Require no memoizer leakage, cross-request resets, abandoned request state, or unbounded memory growth.
+- Compare representative host-application successful RPM with and without the integration under equivalent correctness guarantees, topology, resources, and workloads. Record invalidation lag, p95/p99 latency, errors/timeouts, CPU/RSS, backend calls, and maintenance contention using the release measurement method below. Set acceptable budgets before selecting an implementation.
+- Treat Runwire 2.1 adaptive HTTP scheduling as a separate host-level experiment. Begin with protocol defaults (`FIXED`), and evaluate `LATENCY`, `THROUGHPUT`, or `AUTO` only through repeated representative measurements, including load transitions and fairness. Do not attribute HTTP scheduling gains to CacheLayer storage or change protocol hard limits.
+- Run executable examples and integration jobs on the exact final revision, and document startup, shutdown, connection ownership, prerequisites, topology limits, recovery, and rollback. Keep integration evidence separate from core/backend gate results.
 
 ## Improvements that require measurement or a separate scope decision
 
@@ -430,14 +430,14 @@ These are not substitutes for the required fixes:
 
 ### Performance and worker stability follow-up (non-blocking)
 
-The 4.0 release does not claim a host-application throughput improvement. These broader production-equivalent RPM/soak measurements remain follow-up work and do not replace the correctness/security/backend gates completed above.
+**4.0 disposition: separated from release acceptance.** CacheLayer 4.0 makes no host-application throughput-improvement claim. The PHPForge benchmark jobs pass on PHP 8.4/8.5, while the broader production-equivalent RPM/soak program below remains post-release measurement work rather than an unfinished 4.0 gate:
 
-- [ ] Before hot-path changes, record a reproducible baseline on production-equivalent hardware; correctness fixes remain required even if they add necessary work.
-- [ ] Measure both component operations and representative host-application **successful RPM**. Do not convert a PHPBench microbenchmark into an application-throughput claim.
-- [ ] Cover cold/warm initialization, hits/misses/fill, invalid/tampered inputs, signed/compressed payloads, bulk/tagged reads, atomic/counter contention, and invalidation consumption at several concurrency levels.
-- [ ] Use at least three warmed steady-state runs per important workload; compare median sustained successful RPM and variance. Record RPS/RPM, duration, counts, errors/timeouts, validation failures, p50/p95/p99, CPU, memory, queue/consumer lag, connections, cache hit rate, and backend calls where relevant.
-- [ ] Set workload-specific latency, memory, connection, and throughput budgets from that baseline before accepting optimizations. A provisional 2% RPM regression budget may be used only in a matching stable environment with noise below the decision threshold; define exact capacity limits in the recorded benchmark configuration.
-- [ ] Run persistent-worker soak tests with changing tenants, collected/reused objects, request resets, cache churn, and dependency failures. Require bounded memory and lag and no stale identity reuse.
+- Before future hot-path optimization work, record a reproducible baseline on production-equivalent hardware; correctness fixes remain required even if they add necessary work.
+- Measure both component operations and representative host-application **successful RPM**. Do not convert a PHPBench microbenchmark into an application-throughput claim.
+- Cover cold/warm initialization, hits/misses/fill, invalid/tampered inputs, signed/compressed payloads, bulk/tagged reads, atomic/counter contention, and invalidation consumption at several concurrency levels.
+- Use at least three warmed steady-state runs per important workload; compare median sustained successful RPM and variance. Record RPS/RPM, duration, counts, errors/timeouts, validation failures, p50/p95/p99, CPU, memory, queue/consumer lag, connections, cache hit rate, and backend calls where relevant.
+- Set workload-specific latency, memory, connection, and throughput budgets from that baseline before accepting optimizations. A provisional 2% RPM regression budget may be used only in a matching stable environment with noise below the decision threshold; define exact capacity limits in the recorded benchmark configuration.
+- Run persistent-worker soak tests with changing tenants, collected/reused objects, request resets, cache churn, and dependency failures. Require bounded memory and lag and no stale identity reuse.
 
 ### Tooling and packaging
 
