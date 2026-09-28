@@ -64,6 +64,7 @@ test('MySQL-family cache and invalidation identities use byte-sensitive collatio
                 ->and($lower->get('key'))->toBe('lower');
 
             $pdo->exec('DROP TABLE IF EXISTS cachelayer_invalidation_events');
+            $pdo->exec('DROP TABLE IF EXISTS cachelayer_invalidation_clusters');
             $pdo->exec(
                 'CREATE TABLE cachelayer_invalidation_events ('
                 . 'event_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, '
@@ -94,6 +95,260 @@ test('MySQL-family cache and invalidation identities use byte-sensitive collatio
         } finally {
             $pdo->exec("DROP TABLE IF EXISTS {$cacheTable}");
             $pdo->exec('DROP TABLE IF EXISTS cachelayer_invalidation_events');
+            $pdo->exec('DROP TABLE IF EXISTS cachelayer_invalidation_clusters');
+        }
+    }
+});
+
+
+$orderingBackends = static function (): array {
+    $servicePassword = getenv('IC_SERVICE_PASSWORD');
+    $servicePassword = $servicePassword === false ? '' : $servicePassword;
+    $serviceUser = getenv('IC_SERVICE_USERNAME') ?: 'phpforge';
+
+    return [
+        'mysql' => [
+            getenv('IC_MYSQL_DSN') ?: 'mysql:host=127.0.0.1;port=3306;dbname=phpforge;charset=utf8mb4',
+            getenv('IC_MYSQL_USER') ?: $serviceUser,
+            getenv('IC_MYSQL_PASSWORD') ?: $servicePassword,
+        ],
+        'pgsql' => [
+            getenv('IC_POSTGRES_DSN') ?: 'pgsql:host=127.0.0.1;port=5432;dbname=cachelayer',
+            getenv('IC_POSTGRES_USER') ?: $serviceUser,
+            getenv('IC_POSTGRES_PASSWORD') ?: $servicePassword,
+        ],
+    ];
+};
+
+$connectOrderingBackend = static function (array $backend): PDO {
+    [$dsn, $user, $password] = $backend;
+
+    return new PDO($dsn, $user, $password, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+};
+
+$resetInvalidationSchema = static function (PDO $pdo): void {
+    $pdo->exec('DROP TABLE IF EXISTS cachelayer_invalidation_events');
+    $pdo->exec('DROP TABLE IF EXISTS cachelayer_invalidation_clusters');
+    PdoInvalidationSchema::install($pdo);
+};
+
+$waitForSignal = static function (string $path): void {
+    for ($attempt = 0; $attempt < 200; ++$attempt) {
+        clearstatcache(true, $path);
+        if (is_file($path) && filesize($path) > 0) {
+            return;
+        }
+        usleep(10_000);
+    }
+
+    throw new RuntimeException('Timed out waiting for the concurrent invalidation publisher.');
+};
+
+$forkPublisher = static function (
+    array $backend,
+    string $cluster,
+    string $identifier,
+    string $startedFile,
+    string $resultFile,
+    bool $commit = true,
+    int $holdMicros = 0,
+): int {
+    $pid = pcntl_fork();
+    if ($pid === -1) {
+        throw new RuntimeException('Unable to fork the invalidation publisher test process.');
+    }
+    if ($pid !== 0) {
+        return $pid;
+    }
+
+    try {
+        [$dsn, $user, $password] = $backend;
+        $connection = new PDO($dsn, $user, $password, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+        $transport = new PdoInvalidationTransport($connection, initializeSchema: false);
+        $connection->beginTransaction();
+        file_put_contents($startedFile, 'started');
+        $id = $transport->publishWithinTransaction(
+            $connection,
+            InvalidationEvent::key($cluster, 'application', $identifier, 'worker'),
+        );
+        if ($holdMicros > 0) {
+            usleep($holdMicros);
+        }
+        if ($commit) {
+            $connection->commit();
+            file_put_contents($resultFile, $id);
+        }
+        exit(0);
+    } catch (Throwable $failure) {
+        file_put_contents($resultFile, 'error:' . $failure->getMessage());
+        exit(1);
+    }
+};
+
+test('PDO invalidation publication serializes ID allocation through transaction completion', function () use (
+    $orderingBackends,
+    $connectOrderingBackend,
+    $resetInvalidationSchema,
+    $waitForSignal,
+    $forkPublisher,
+) {
+    expect(extension_loaded('pcntl'))->toBeTrue();
+
+    foreach ($orderingBackends() as $backend) {
+        $admin = $connectOrderingBackend($backend);
+        $resetInvalidationSchema($admin);
+        $firstConnection = $connectOrderingBackend($backend);
+        $firstTransport = new PdoInvalidationTransport($firstConnection, initializeSchema: false);
+        $firstConnection->beginTransaction();
+        $firstId = $firstTransport->publishWithinTransaction(
+            $firstConnection,
+            InvalidationEvent::key('ordered-cluster', 'application', 'first', 'worker-a'),
+        );
+
+        $startedFile = tempnam(sys_get_temp_dir(), 'cachelayer-order-start-');
+        $resultFile = tempnam(sys_get_temp_dir(), 'cachelayer-order-result-');
+        if ($startedFile === false || $resultFile === false) {
+            throw new RuntimeException('Unable to allocate invalidation concurrency test files.');
+        }
+        file_put_contents($startedFile, '');
+        file_put_contents($resultFile, '');
+
+        $pid = $forkPublisher(
+            $backend,
+            'ordered-cluster',
+            'second',
+            $startedFile,
+            $resultFile,
+        );
+
+        try {
+            $waitForSignal($startedFile);
+            usleep(150_000);
+            expect(file_get_contents($resultFile))->toBe('');
+
+            $firstConnection->commit();
+            pcntl_waitpid($pid, $status);
+            $secondId = trim((string) file_get_contents($resultFile));
+            $events = (new PdoInvalidationTransport($admin, initializeSchema: false))
+                ->consumeAfter('ordered-cluster', null, 10)
+                ->events;
+
+            expect(pcntl_wexitstatus($status))->toBe(0)
+                ->and($secondId)->not->toStartWith('error:')
+                ->and(array_map(static fn($event): string => (string) $event->id, $events))
+                ->toBe([$firstId, $secondId])
+                ->and(array_map(static fn($event): ?string => $event->identifier, $events))
+                ->toBe(['first', 'second']);
+        } finally {
+            if ($firstConnection->inTransaction()) {
+                $firstConnection->rollBack();
+            }
+            @unlink($startedFile);
+            @unlink($resultFile);
+            $admin->exec('DROP TABLE IF EXISTS cachelayer_invalidation_events');
+            $admin->exec('DROP TABLE IF EXISTS cachelayer_invalidation_clusters');
+        }
+    }
+});
+
+test('PDO invalidation publication survives rollback and publisher process death', function () use (
+    $orderingBackends,
+    $connectOrderingBackend,
+    $resetInvalidationSchema,
+    $waitForSignal,
+    $forkPublisher,
+) {
+    expect(extension_loaded('pcntl'))->toBeTrue();
+
+    foreach ($orderingBackends() as $backend) {
+        $admin = $connectOrderingBackend($backend);
+        $resetInvalidationSchema($admin);
+
+        $abortedConnection = $connectOrderingBackend($backend);
+        $abortedTransport = new PdoInvalidationTransport($abortedConnection, initializeSchema: false);
+        $abortedConnection->beginTransaction();
+        $abortedTransport->publishWithinTransaction(
+            $abortedConnection,
+            InvalidationEvent::key('rollback-cluster', 'application', 'aborted', 'worker-a'),
+        );
+
+        $startedFile = tempnam(sys_get_temp_dir(), 'cachelayer-rollback-start-');
+        $resultFile = tempnam(sys_get_temp_dir(), 'cachelayer-rollback-result-');
+        if ($startedFile === false || $resultFile === false) {
+            throw new RuntimeException('Unable to allocate invalidation rollback test files.');
+        }
+        file_put_contents($startedFile, '');
+        file_put_contents($resultFile, '');
+
+        $pid = $forkPublisher(
+            $backend,
+            'rollback-cluster',
+            'committed',
+            $startedFile,
+            $resultFile,
+        );
+
+        try {
+            $waitForSignal($startedFile);
+            usleep(150_000);
+            expect(file_get_contents($resultFile))->toBe('');
+
+            $abortedConnection->rollBack();
+            pcntl_waitpid($pid, $status);
+            $events = (new PdoInvalidationTransport($admin, initializeSchema: false))
+                ->consumeAfter('rollback-cluster', null, 10)
+                ->events;
+
+            expect(pcntl_wexitstatus($status))->toBe(0)
+                ->and(array_map(static fn($event): ?string => $event->identifier, $events))
+                ->toBe(['committed']);
+        } finally {
+            if ($abortedConnection->inTransaction()) {
+                $abortedConnection->rollBack();
+            }
+            @unlink($startedFile);
+            @unlink($resultFile);
+        }
+
+        $resetInvalidationSchema($admin);
+        $startedFile = tempnam(sys_get_temp_dir(), 'cachelayer-death-start-');
+        $resultFile = tempnam(sys_get_temp_dir(), 'cachelayer-death-result-');
+        if ($startedFile === false || $resultFile === false) {
+            throw new RuntimeException('Unable to allocate invalidation process-death test files.');
+        }
+        file_put_contents($startedFile, '');
+        file_put_contents($resultFile, '');
+
+        $pid = $forkPublisher(
+            $backend,
+            'death-cluster',
+            'aborted',
+            $startedFile,
+            $resultFile,
+            commit: false,
+            holdMicros: 150_000,
+        );
+
+        try {
+            $waitForSignal($startedFile);
+            $survivor = new PdoInvalidationTransport($connectOrderingBackend($backend), initializeSchema: false);
+            $survivorId = $survivor->publish(
+                InvalidationEvent::key('death-cluster', 'application', 'survivor', 'worker-b'),
+            );
+            pcntl_waitpid($pid, $status);
+            $events = (new PdoInvalidationTransport($admin, initializeSchema: false))
+                ->consumeAfter('death-cluster', null, 10)
+                ->events;
+
+            expect(pcntl_wexitstatus($status))->toBe(0)
+                ->and($survivorId)->not->toBe('')
+                ->and(array_map(static fn($event): ?string => $event->identifier, $events))
+                ->toBe(['survivor']);
+        } finally {
+            @unlink($startedFile);
+            @unlink($resultFile);
+            $admin->exec('DROP TABLE IF EXISTS cachelayer_invalidation_events');
+            $admin->exec('DROP TABLE IF EXISTS cachelayer_invalidation_clusters');
         }
     }
 });
