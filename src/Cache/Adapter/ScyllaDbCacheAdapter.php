@@ -333,24 +333,6 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
     }
 
     /**
-     * @param array $rows The rows argument.
-     * @phpstan-param array<mixed, mixed> $rows
-     * @phpstan-return array<int, array<string, mixed>>
-     */
-    private function normalizeRows(array $rows): array
-    {
-        $normalized = [];
-        foreach ($rows as $row) {
-            $assoc = AdapterValueNormalizer::fromJsonOrArrayLike($row);
-            if ($assoc !== null) {
-                $normalized[] = $assoc;
-            }
-        }
-
-        return $normalized;
-    }
-
-    /**
      * @param string $cql The cql argument.
      * @param array $arguments The arguments argument.
      * @phpstan-param array<int, mixed> $arguments
@@ -437,6 +419,24 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
     private function mapData(string $key): string
     {
         return 'd:' . $key;
+    }
+
+    /**
+     * @param array $rows The rows argument.
+     * @phpstan-param array<mixed, mixed> $rows
+     * @phpstan-return array<int, array<string, mixed>>
+     */
+    private function normalizeRows(array $rows): array
+    {
+        $normalized = [];
+        foreach ($rows as $row) {
+            $assoc = AdapterValueNormalizer::fromJsonOrArrayLike($row);
+            if ($assoc !== null) {
+                $normalized[] = $assoc;
+            }
+        }
+
+        return $normalized;
     }
 
     /**
