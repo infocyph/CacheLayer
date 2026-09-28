@@ -649,20 +649,21 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
     {
         $normalized = [];
         foreach ($values as $key => $value) {
-            if (!is_string($key)) {
+            if (!is_string($key) && !is_int($key)) {
                 throw new CacheInvalidArgumentException('Cache keys must be strings.');
             }
+            $key = (string) $key;
             CacheInput::key($key);
-            $normalized[$key] = $value;
+            $normalized[] = [$key, $value];
         }
         $ttlSeconds = CacheInput::ttl($ttl);
         if ($ttlSeconds !== null && $ttlSeconds <= 0) {
-            return $this->deleteItems(array_keys($normalized));
+            return $this->deleteItems(array_column($normalized, 0));
         }
 
         $items = [];
-        foreach ($normalized as $key => $value) {
-            $items[$key] = $this->adapter->createItem($key)->set($value)->expiresAfter($ttlSeconds);
+        foreach ($normalized as [$key, $value]) {
+            $items["key:\0" . $key] = $this->adapter->createItem($key)->set($value)->expiresAfter($ttlSeconds);
         }
         $saved = $this->backendBool(fn(): bool => $this->adapter->saveItems($items));
         $this->metric('set_batch');
@@ -775,6 +776,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
 
         $generations = [];
         foreach ($tags as $tag) {
+            $tag = (string) $tag;
             $generation = $stored[$tag] ?? null;
             if (!is_string($generation) || strlen($generation) !== 32 || !ctype_xdigit($generation)) {
                 return null;
@@ -880,7 +882,10 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
             return true;
         }
 
-        $current = $this->captureTagGenerations(array_keys($expected));
+        $current = $this->captureTagGenerations(array_map(
+            static fn(int|string $tag): string => (string) $tag,
+            array_keys($expected),
+        ));
 
         return $current !== null && $current === $expected;
     }
