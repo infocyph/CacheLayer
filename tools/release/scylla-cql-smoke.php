@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Infocyph\CacheLayer\Cache\Cache;
+use Infocyph\CacheLayer\Cache\CacheOptions;
 use Infocyph\CacheLayer\Support\OptionalCassandra;
 
 require dirname(__DIR__, 2) . '/vendor/autoload.php';
@@ -11,7 +12,13 @@ if (!OptionalCassandra::available()) {
     throw new RuntimeException('Real Scylla CQL verification requires ext-cassandra.');
 }
 
-$cache = Cache::scylla('release-cql', keyspace: 'cachelayer', table: 'cachelayer_entries', bucketCount: 16);
+$cache = Cache::scylla(
+    'release-cql',
+    keyspace: 'cachelayer',
+    table: 'cachelayer_entries',
+    bucketCount: 16,
+    options: new CacheOptions(failOpen: false),
+);
 $assert = static function (bool $condition, string $message): void {
     if (!$condition) {
         throw new RuntimeException($message);
