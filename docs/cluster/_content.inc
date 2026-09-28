@@ -58,7 +58,7 @@ Cluster Cache is not:
 Cluster identity, nodes, and namespaces
 ---------------------------------------
 
-``ClusterCacheConfig`` has four settings:
+``ClusterCacheConfig`` has five settings:
 
 .. code-block:: php
 
@@ -67,6 +67,7 @@ Cluster identity, nodes, and namespaces
    $clusterConfig = new ClusterCacheConfig(
        cluster: 'production',
        nodeId: 'catalog-web-01',
+       transportIdentity: 'primary-postgres',
        consumerBatchSize: 1_000,
        invalidateLocallyFirst: true,
    );
@@ -84,6 +85,13 @@ Cluster identity, nodes, and namespaces
    the same cluster. The producer's own events are not applied a second time,
    but their cursor still advances. A stable hostname is suitable for long-lived
    hosts; use a unique instance/pod identity for ephemeral infrastructure.
+
+``transportIdentity``
+   A stable 1--128 character identity for the replay log backing this runtime.
+   It is part of local cursor ownership together with cluster, node, and
+   namespace. Use the same value when reconnecting to the same durable event
+   log and a different value when switching to a different database, Redis
+   deployment, stream prefix/domain, or other independent transport history.
 
 ``consumerBatchSize``
    Maximum events fetched by ``consume()`` when no explicit limit is supplied.
@@ -110,6 +118,7 @@ Every node needs:
 * a local writable SQLite file and optional APCu, as described in
   :doc:`/node/index`;
 * the same cluster name and a unique node ID;
+* a stable ``transportIdentity`` for the durable event log being consumed;
 * access to the same durable, replayable event transport;
 * a consumer process or scheduled task that calls ``consume()``;
 * retention longer than the largest expected node outage plus an operational
@@ -560,8 +569,8 @@ ensure the identity remains unique and monitor for unexpected backlog replay.
 Retention, recovery, and offline nodes
 --------------------------------------
 
-Each node stores ``(cluster, nodeId, lastEventId)`` in its local Node Cache
-SQLite database. The transport retains only a finite event history. If a node's
+Each node stores ``(cluster, nodeId, namespace, transportIdentity, lastEventId)``
+in its local Node Cache SQLite database. The transport retains only a finite event history. If a node's
 cursor predates the oldest available event, it cannot know every invalidation it
 missed. Before normal consumption, Cluster Cache therefore:
 
@@ -576,6 +585,12 @@ calls are mainly useful for health checks or explicit startup handling.
 If the clear returns ``false`` or throws, recovery fails and preserves the old
 cursor. The node therefore cannot acknowledge a retention gap while stale
 local data remains.
+
+During the 4.0 cursor upgrade, legacy cluster/node cursors and the intermediate
+cluster/node/namespace cursor format are never copied into the new full scope.
+If an affected legacy scope is detected, recovery clears that namespace before
+establishing new cursor progress. This deliberately trades cache warmth for
+proof that an old shared cursor cannot skip invalidations.
 
 This safe reset is why event retention is an availability and cache-warmth
 decision rather than a correctness shortcut. Short retention causes more full
@@ -713,7 +728,8 @@ At deployment:
 
 * create a local, private cache directory on every node;
 * configure one shared durable transport per logical cluster;
-* give every node a unique ID and use the same cluster name;
+* give every node a unique ID, use the same cluster name, and configure a
+  stable transport identity for the shared replay log;
 * start a consumer on every node before or alongside application traffic;
 * set event retention longer than the expected maximum outage;
 * choose bounded cache TTLs even with fast consumers.
