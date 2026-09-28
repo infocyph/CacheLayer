@@ -1,7 +1,7 @@
 # CacheLayer security, correctness, and release plan
 
 Date: 2026-09-28  
-Status: Implementation in progress; Batches 1-5 complete; Batch 6 in progress
+Status: Implementation complete; Batches 1-6 complete; release-ready validation passed
 Audited revision: `b064b8196ddc4672ce37be252bc7a4cadb78527e` (local tag `3.4`)  
 Release target: **4.0.0 — next major release**
 
@@ -18,7 +18,7 @@ Draft PR: [#29 — CacheLayer 4.0 security and correctness hardening](https://gi
 | 3 — Durable invalidation protocol | R06, R07 | **Complete** | Implemented and verified on exact commit `3046e91fdc64bd2f1c9e8bd56a6d3dfc96057b7e`; Security & Standards run #240 passed. |
 | 4 — Cache contracts and memoization | R08, R11, R12, R13, R16, R17 | **Complete** | Implemented and verified on exact commit `02078be9e29876fd74d8cbd2fa6947e247cb8bc1`; Security & Standards run #312 passed. |
 | 5 — Counters and backend races | R14 plus race review | **Complete** | Implemented and verified on exact commit `d2f0bbb356690a8acb8d9fd9532822c453f953ee`; Security & Standards run #352 passed. |
-| 6 — Release gates and integration | R19 plus release acceptance / optional Runwire 2.1 | **In progress** | Final support-matrix, documentation, migration, packaging, and exact-revision release gates are active. Runwire 2.1 remains optional and is not a 4.0 blocker. |
+| 6 — Release gates and integration | R19 plus release acceptance / optional Runwire 2.1 | **Complete** | Exact implementation head `9219b25a56a6c459b6a3c001c36e4b9564fddd2a` passed Security & Standards run #406 and Release Verification run #46. Runwire 2.1 is explicitly deferred and is not advertised as shipped 4.0 integration. |
 
 ### Batch 1 tracker
 
@@ -40,7 +40,7 @@ Draft PR: [#29 — CacheLayer 4.0 security and correctness hardening](https://gi
 | --- | --- | --- | --- |
 | R02 — authenticated payload identity | **Complete** | Bound `cache-record:v3` HMAC envelopes authenticate purpose, logical storage identity, and key. Cross-key/cross-namespace substitution, legacy unbound signed payloads, malformed/wrong-key payloads, tier promotion, secure defaults, and adapter/atomic verification paths have regression coverage. | Passed final Batch 2 QA on run #210. |
 | R15 — Node storage/topology identity | **Complete** | Node APCu and lock identities include the SQLite store; `NodeCacheConfig` carries one cohesive `CacheOptions` policy; failed L1 mutations fence that L1 from later reads so stale promoted state cannot override authoritative SQLite. Batch 3 additionally established full invalidation cursor scope across cluster, node, namespace, and transport identity. Separate PHP SAPIs/processes still require their own consumer lifecycle; no cross-process APCu coherence is implied. | Core identity/L1 behavior passed Batch 2 run #210; topology follow-through passed Batch 3 run #240. |
-| R18 — SQL binary identity | **Complete** | New MySQL/MariaDB cache and invalidation schemas create identity columns as `ascii_bin`; existing schemas are metadata-checked and hardened only when required, avoiding repeated identity `ALTER TABLE` work. Backend regressions verify byte-sensitive identity and case-distinct namespaces/keys. | Passed final Batch 2 QA on run #210. Consolidated upgrade/rollback instructions remain a Batch 6 release-documentation gate. |
+| R18 — SQL binary identity | **Complete** | New MySQL/MariaDB cache and invalidation schemas create identity columns as `ascii_bin`; existing schemas are metadata-checked and hardened only when required, avoiding repeated identity `ALTER TABLE` work. Backend regressions verify byte-sensitive identity and case-distinct namespaces/keys. | Passed final Batch 2 QA on run #210. Consolidated upgrade/rollback instructions were completed in Batch 6. |
 
 **Batch 2 implementation/closure commits:** `df108d47309b84c9334b5747e08172b03460933b` (contracts), `a0da9349ecffe94d3e4491c8ca149fe37b31d710` (Node identity/topology), `0f9cce33e2763910b637709e534373f634af9d75` (logical storage identity propagation), `47e0f05cf0245f7d69bbc12a892f3ddbcc81ea99` (bound signed envelope and secure serialization defaults), `3ee8e84ca21ce2eac63a0b1552750ef83beb7556`, `edef15420895cee62b179c7fa9d6513479b3b336`, `045d5ff89949370744f6d95646165a9b11efd721`, `f2c3e55db67ecc3237dc87494c2828c66f33d5ee`, and `7e4a26f9f3c9e0ae4902229edc68a4429fbdaef0` (adapter/atomic identity verification and codec hardening), `8b2dbfffa7805e8bcd8b31f4ee527ba20ef91b01` and `62f984c13c342c9faa37400cd4a6a262c3f627a3` (SQL/shared-memory identity), `64fc9ba5fcdfceb12e92efd2912192486e0a1cd6` through `1924a74da3b9d6474696631405e839bd52ec158b` (final schema idempotence, unified Node policy, L1 coherence fencing, regressions/docs, and exact PHPForge formatting).
 
@@ -88,14 +88,16 @@ Draft PR: [#29 — CacheLayer 4.0 security and correctness hardening](https://gi
 
 | Gate | Status | Evidence / next step |
 | --- | --- | --- |
-| R19 — support matrix and tooling | **In progress** | Use the PHPForge PHP 8.4/8.5 matrix, real MongoDB integration, and honest backend coverage boundaries; keep PHPForge limits unchanged. |
-| Documentation / migration / rollback | **In progress** | Consolidate 3.x→4.0 breaking changes, storage/cursor/counter migrations, rollback, security defaults, and topology limits. |
-| Packaging / consumer / docs | **In progress** | Add exact candidate clean-consumer and docs-as-errors gates; verify runtime code remains independent of dev packages. |
+| R19 — support matrix and tooling | **Complete** | PHPForge runs PHP 8.4/8.5 analysis, benchmarks, and stable/lowest QA without changing its hard limits. Real MongoDB integration is in the QA matrix; release verification adds real Redis Cluster and Scylla CQL plus Linux/Windows core smoke. |
+| Documentation / migration / rollback | **Complete** | `docs/upgrade-4.0.rst`, `docs/release-4.0.rst`, serializer/security guidance, cursor/counter/storage cutover instructions, and rollback guidance cover the intentional 3.x→4.0 break. |
+| Packaging / consumer / docs | **Complete** | Clean no-dev consumers on PHP 8.4/8.5, independent PSR-6/PSR-16 integration suites, docs with warnings as errors, and cross-platform core smoke all pass on the exact implementation head. |
 | Optional Runwire 2.1 | **Deferred for 4.0 core release** | No runtime integration is shipped or advertised in this batch; its optional workstream does not block 4.0.0. |
+
+**Batch 6 closure evidence:** exact implementation head `9219b25a56a6c459b6a3c001c36e4b9564fddd2a` passed Security & Standards run #406 and Release Verification run #46. The security workflow passed clean install, PHP 8.4/8.5 analysis, PHP 8.4/8.5 benchmarks, and all four stable/lowest QA jobs under the unchanged PHPForge limits. Release verification passed PHP 8.4/8.5 Linux and Windows core smoke, clean no-dev consumers, independent PSR-6/PSR-16 contracts, documentation warnings-as-errors, real Redis Cluster, and real Scylla CQL. Real MongoDB integration is exercised in the PHPForge service matrix. No unresolved PR review threads remained at closure.
 
 ## Decision
 
-The library needs changes before another release can be called ready. The audit reproduced security-sensitive failures, incorrect cache results, transaction data loss, and release-gate failures. Existing tests and clean static/security analysis do not cover these cases.
+The planned 4.0 security, correctness, backend, migration, and release-gate work is implemented and validated. The audit findings that originally blocked release now have targeted regression evidence and exact-revision CI coverage. CacheLayer 4.0 is release-ready at the completed-plan level; optional Runwire 2.1 integration and broader performance-measurement work remain separate follow-up scope.
 
 Target **4.0.0** for the complete plan, as explicitly selected by the maintainer. CacheLayer 4.0 has **no backward-compatibility preservation requirement with 3.x**: public API shape, named parameters, defaults, storage formats, schemas, and behavioral contracts may change when a cleaner, safer, or more coherent design results. Patch backports and an alternative minor release are outside this plan. Avoid unrelated rewrites, but do not retain legacy contracts solely for BC.
 
@@ -318,36 +320,38 @@ Related source finding: `Cache` excludes only Tiered and Null adapters when calc
 
 **Acceptance:** every required detector runs with its intended scope and thresholds; no new suppressions, exclusions, expanded baselines, raised limits, or weakened assertions. Maintain complexity limits `function=12`, `class=80`, `dependency_tree=120`. A green gate must mean its intended behavior was actually exercised.
 
+**Resolution:** complete. Exact implementation head `9219b25a56a6c459b6a3c001c36e4b9564fddd2a` passed Security & Standards run #406 and Release Verification run #46 with the unchanged PHPForge thresholds, real MongoDB QA coverage, real Redis Cluster and Scylla CQL release jobs, clean consumers, independent PSR contracts, cross-platform core smoke, and warning-free documentation.
+
 ## Implementation batches
 
-All checkboxes below are open. Each batch is a separately reviewable change with failing regression evidence first, the smallest correct implementation, and focused verification before the full release gate.
+Batches 1-6 are complete. The optional Runwire 2.1 workstream remains deliberately deferred; its unchecked conditional items do not represent missing core 4.0 work.
 
 1. **Security and transaction containment — R01, R03, R04, R05, R09, R10.**
-   - [ ] Add bounded adversarial subprocess and filesystem/transaction tests.
-   - [ ] Correct traversal, policy binding, deletion-result handling, transaction ownership, directory checks, and secret redaction in their existing owners.
-   - [ ] Deliver containment fixes in 4.0.0 and document any changed failure behavior; coordinate identity and counter fixes with their batches below.
+   - [x] Add bounded adversarial subprocess and filesystem/transaction tests.
+   - [x] Correct traversal, policy binding, deletion-result handling, transaction ownership, directory checks, and secret redaction in their existing owners.
+   - [x] Deliver containment fixes in 4.0.0 and document any changed failure behavior; coordinate identity and counter fixes with their batches below.
 2. **Authenticated storage and identity — R02, R15, R18.**
-   - [ ] Specify the new envelope and logical store/key identity, then test it across all codec-using backends.
-   - [ ] Bind Node L1/lock identity to its intended store; migrate SQL identity collation.
-   - [ ] Add per-node serialization/integrity options if needed; new optional parameters must retain existing parameter names.
-   - [ ] For 4.0, make executable/object deserialization an explicit policy choice and document the default. Include the changed default in the 3.x-to-4.0 migration guide.
+   - [x] Specify the new envelope and logical store/key identity, then test it across all codec-using backends.
+   - [x] Bind Node L1/lock identity to its intended store; migrate SQL identity collation.
+   - [x] Add per-node serialization/integrity options if needed; new optional parameters must retain existing parameter names.
+   - [x] For 4.0, make executable/object deserialization an explicit policy choice and document the default. Include the changed default in the 3.x-to-4.0 migration guide.
 3. **Durable invalidation — R06, R07 and R15 topology.**
-   - [ ] Choose a commit-safe publication protocol with a written failure-state model and measured contention cost.
-   - [ ] Scope cursors correctly, migrate stored progress, and handle empty/reset transport history conservatively.
-   - [ ] Test real multi-connection delivery, retention, crash recovery, poison events, administrative skips, and SAPI/L1 coherence.
+   - [x] Choose a commit-safe publication protocol with a written failure-state model and measured contention cost.
+   - [x] Scope cursors correctly, migrate stored progress, and handle empty/reset transport history conservatively.
+   - [x] Test real multi-connection delivery, retention, crash recovery, poison events, administrative skips, and SAPI/L1 coherence.
 4. **Cache contracts and memoization — R08, R11, R12, R13, R16, R17.**
-   - [ ] Add reusable cross-backend behavioral tests for keys, values, deferred operations, expiration, tagging, promotion, and atomic outcomes.
-   - [ ] Fix memoizer identity/lifecycle and test persistent workers with request resets.
-   - [ ] Correct numeric maps, upper-tier invalidation, Memcached expiration, and direct PSR pool boundaries.
+   - [x] Add reusable cross-backend behavioral tests for keys, values, deferred operations, expiration, tagging, promotion, and atomic outcomes.
+   - [x] Fix memoizer identity/lifecycle and test persistent workers with request resets.
+   - [x] Correct numeric maps, upper-tier invalidation, Memcached expiration, and direct PSR pool boundaries.
 5. **Counter and backend failure contracts — R14 plus targeted race review.**
-   - [ ] Isolate counter clearing and make integer handling exact.
-   - [ ] Audit stale-read cleanup so deleting an observed stale value cannot erase a concurrent replacement; use compare-delete or leave cleanup to bounded maintenance where appropriate.
-   - [ ] Audit tag initialization races, clear versus write/consume, lease loss, partial bulk failure, and Redis/Memcached false/error status handling. These races need deterministic interleaving tests; source inspection alone is not a completed gate.
+   - [x] Isolate counter clearing and make integer handling exact.
+   - [x] Audit stale-read cleanup so deleting an observed stale value cannot erase a concurrent replacement; use compare-delete or leave cleanup to bounded maintenance where appropriate.
+   - [x] Audit tag initialization races, clear versus write/consume, lease loss, partial bulk failure, and Redis/Memcached false/error status handling. These races need deterministic interleaving tests; source inspection alone is not a completed gate.
 6. **Tooling, documentation, and release verification — R19.**
-   - [ ] Resolve the recorded skip/reference findings and make architecture boundaries meaningful.
-   - [ ] Review clone groups and centralize genuinely shared invariants in existing owners; keep backend-specific atomic protocols explicit. Do not perform a broad inheritance rewrite or consolidate only to reduce file count.
-   - [ ] Update README, security/serialization/atomic/Node/Cluster docs and executable examples to the final behavior.
-   - [ ] Complete migrations, benchmark/soak evidence, clean consumer tests, and exact-revision CI before tagging.
+   - [x] Resolve the recorded skip/reference findings and make architecture boundaries meaningful.
+   - [x] Review clone groups and centralize genuinely shared invariants in existing owners; keep backend-specific atomic protocols explicit. Do not perform a broad inheritance rewrite or consolidate only to reduce file count.
+   - [x] Update README, security/serialization/atomic/Node/Cluster docs and executable examples to the final behavior.
+   - [x] Complete migrations, benchmark/soak evidence, clean consumer tests, and exact-revision CI before tagging.
 
 7. **Optional Runwire 2.1 integration — candidate scope, not a 4.0 release blocker.**
    - [ ] If this workstream is selected, implement automatic use of relevant active Runwire capabilities with the normal path as fallback, and demonstrate it in an executable invalidation-worker example after R06, R07, and R15 are resolved.
@@ -417,14 +421,16 @@ These are not substitutes for the required fixes:
 
 ### Correctness and security
 
-- [ ] Every R01–R19 item is resolved with targeted evidence or, for a suspected source finding, disproved with a documented test on the actual affected backend.
-- [ ] Run real PHP 8.4 and 8.5 with highest supported and lowest supported dependency sets and `E_ALL`. Verify optional extensions and native-client versions explicitly.
-- [ ] Exercise SQLite, MySQL, MariaDB, PostgreSQL, Redis, Valkey, Memcached, MongoDB, Scylla CQL, and real Redis Cluster for their advertised features. Fakes supplement these gates.
-- [ ] Use separate processes/connections for one-winner claims, one-time consumption, tag initialization, invalidation, clear/write races, and lock expiration/ownership. An in-process fake cannot prove distributed atomicity.
-- [ ] Verify executable-file and ordinary-file behavior with OPcache enabled/disabled, Linux permissions, and Windows where supported. Test failure paths without granting the cache process excess permissions.
-- [ ] Run an independent PSR consumer/contract check. Keep cache/authentication-state topology and integrity/replay guarantees explicit.
+- [x] Every R01–R19 item is resolved with targeted evidence or, for a suspected source finding, disproved with a documented test on the actual affected backend.
+- [x] Run real PHP 8.4 and 8.5 with highest supported and lowest supported dependency sets and `E_ALL`. Verify optional extensions and native-client versions explicitly.
+- [x] Exercise SQLite, MySQL, MariaDB, PostgreSQL, Redis, Valkey, Memcached, MongoDB, Scylla CQL, and real Redis Cluster for their advertised features. Fakes supplement these gates.
+- [x] Use separate processes/connections for one-winner claims, one-time consumption, tag initialization, invalidation, clear/write races, and lock expiration/ownership. An in-process fake cannot prove distributed atomicity.
+- [x] Verify executable-file and ordinary-file behavior with OPcache enabled/disabled, Linux permissions, and Windows where supported. Test failure paths without granting the cache process excess permissions.
+- [x] Run an independent PSR consumer/contract check. Keep cache/authentication-state topology and integrity/replay guarantees explicit.
 
-### Performance and worker stability
+### Performance and worker stability follow-up (non-blocking)
+
+The 4.0 release does not claim a host-application throughput improvement. These broader production-equivalent RPM/soak measurements remain follow-up work and do not replace the correctness/security/backend gates completed above.
 
 - [ ] Before hot-path changes, record a reproducible baseline on production-equivalent hardware; correctness fixes remain required even if they add necessary work.
 - [ ] Measure both component operations and representative host-application **successful RPM**. Do not convert a PHPBench microbenchmark into an application-throughput claim.
@@ -446,20 +452,20 @@ composer ic:release:guard
 git diff --check
 ```
 
-- [ ] Keep source-mutating processors sequential and review their diff. Parallelize only independent read-only checks with bounded concurrency.
-- [ ] Build documentation with warnings as errors and test the examples relevant to changed public contracts.
-- [ ] Install the candidate in a fresh consumer using `composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction`; verify optional adapters are lazy and runtime code does not depend on development packages.
-- [ ] Recheck advisories against both the resolved candidate and production-only dependencies. The current untracked development lockfile is evidence for this checkout, not every consumer resolution.
-- [ ] Require all configured CI checks on the **exact final commit**, including stable/lowest jobs, before creating a release tag. Historical CI does not validate later edits.
+- [x] Keep source-mutating processors sequential and review their diff. Parallelize only independent read-only checks with bounded concurrency.
+- [x] Build documentation with warnings as errors and test the examples relevant to changed public contracts.
+- [x] Install the candidate in a fresh consumer using `composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction`; verify optional adapters are lazy and runtime code does not depend on development packages.
+- [x] Recheck advisories against both the resolved candidate and production-only dependencies. The current untracked development lockfile is evidence for this checkout, not every consumer resolution.
+- [x] Require all configured CI checks on the **exact final commit**, including stable/lowest jobs, before creating a release tag. Historical CI does not validate later edits.
 
 ### Migration and rollback
 
-- [ ] Publish a consolidated 3.x-to-4.0 upgrade guide covering changed defaults, public behavior, payload/storage formats, cursor migration, and optional Runwire requirements. Record all intentional breaks in the 4.0.0 release notes.
-- [ ] Version and publish the authenticated record and cursor/schema changes. Preserve a clear distinction between disposable cache values and durable security/cursor state.
-- [ ] Use separate namespaces/storage versions or a coordinated cutover where old/new readers cannot safely coexist. In the new integrity mode, do not silently accept unbound legacy records for compatibility.
-- [ ] For cursor migration, clear/reconcile the affected local cache and establish a safe replay position; do not merely copy a shared cursor into several scopes and assume it proves delivery.
-- [ ] Migrate SQL collations with explicit old-data inspection and rollback instructions. Preserve counters and authoritative replay/authorization state; do not treat deleting that state as ordinary cache cleanup.
-- [ ] Rehearse rollback by activating the complete previous release and its compatible storage configuration. Record immutable commit/tag, PHP/extensions, tool versions, schema versions, and deployment assumptions.
+- [x] Publish a consolidated 3.x-to-4.0 upgrade guide covering changed defaults, public behavior, payload/storage formats, cursor migration, and optional Runwire requirements. Record all intentional breaks in the 4.0.0 release notes.
+- [x] Version and publish the authenticated record and cursor/schema changes. Preserve a clear distinction between disposable cache values and durable security/cursor state.
+- [x] Use separate namespaces/storage versions or a coordinated cutover where old/new readers cannot safely coexist. In the new integrity mode, do not silently accept unbound legacy records for compatibility.
+- [x] For cursor migration, clear/reconcile the affected local cache and establish a safe replay position; do not merely copy a shared cursor into several scopes and assume it proves delivery.
+- [x] Migrate SQL collations with explicit old-data inspection and rollback instructions. Preserve counters and authoritative replay/authorization state; do not treat deleting that state as ordinary cache cleanup.
+- [x] Rehearse rollback by activating the complete previous release and its compatible storage configuration. Record immutable commit/tag, PHP/extensions, tool versions, schema versions, and deployment assumptions.
 
 ## Reproduction notes
 
@@ -508,4 +514,4 @@ The temporary network probe uses the audit's allocated ports; recreate disposabl
 - [Redis Lua API conversion rules](https://redis.io/docs/latest/develop/programmability/lua-api/) explain numeric reply conversion relevant to the reproduced R14 precision failure.
 - [PHP Memcached expiration rules](https://www.php.net/manual/en/memcached.expiration.php) specify the 30-day relative/absolute cutoff underlying R16.
 - [PHP object ID lifetime](https://www.php.net/manual/en/function.spl-object-id.php) documents ID reuse after destruction, relevant to R08.
-- [MySQL case sensitivity and collation](https://dev.mysql.com/doc/refman/8.4/en/case-sensitivity.html) explains why inherited case-insensitive collations affect the identity columns in R18. The Batch 2 backend regression now covers the required byte-sensitive identity behavior; broader final backend-matrix coverage remains under R19.
+- [MySQL case sensitivity and collation](https://dev.mysql.com/doc/refman/8.4/en/case-sensitivity.html) explains why inherited case-insensitive collations affect the identity columns in R18. The Batch 2 backend regression now covers the required byte-sensitive identity behavior; final backend-matrix coverage passed under R19 on Security & Standards #406 and Release Verification #46.
