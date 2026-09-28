@@ -50,6 +50,7 @@ Quick Start
    :caption: Guide
 
    cache
+   upgrade-4.0
    counters
    adapters/index
    cookbook
