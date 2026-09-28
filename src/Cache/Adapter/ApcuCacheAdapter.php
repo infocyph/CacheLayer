@@ -242,6 +242,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
     {
         $mapped = [];
         foreach ($generations as $tag => $generation) {
+            $tag = (string) $tag;
             if (!self::isGeneration($generation)) {
                 return false;
             }
