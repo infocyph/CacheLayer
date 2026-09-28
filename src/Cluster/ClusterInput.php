@@ -71,6 +71,13 @@ final class ClusterInput
         return $nodeId;
     }
 
+    public static function transportIdentity(string $transportIdentity): string
+    {
+        self::boundedName($transportIdentity, 128, 'transport identity', ClusterConfigurationException::class);
+
+        return $transportIdentity;
+    }
+
     /** @param class-string<ClusterCacheException> $exceptionClass */
     private static function boundedName(string $value, int $maximum, string $label, string $exceptionClass): void
     {
