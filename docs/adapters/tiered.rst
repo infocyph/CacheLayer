@@ -1,8 +1,7 @@
 .. _adapters.tiered:
 
-=========================
 Tiered Adapter (``tiered``)
-=========================
+===========================
 
 Factory: ``Cache::tiered(array $pools, bool $writeToL1 = true)``
 
