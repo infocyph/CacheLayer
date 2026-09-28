@@ -420,3 +420,14 @@ test('Redis stale cleanup never deletes or overwrites a concurrent replacement',
         ->and(RedisValueGuard::deleteIfUnchanged($this->redisClient, $key, 'repair'))->toBeTrue()
         ->and($this->redisClient->get($key))->toBeFalse();
 });
+
+
+test('Redis atomic counters expire fixed windows', function () {
+    $counters = AtomicCounters::redis('tests', client: $this->redisClient);
+
+    expect($counters->increment('short-window', 1, 1)->initialized)->toBeTrue()
+        ->and($counters->get('short-window'))->toBe(1);
+    usleep(2_000_000);
+
+    expect($counters->get('short-window'))->toBeNull();
+});
