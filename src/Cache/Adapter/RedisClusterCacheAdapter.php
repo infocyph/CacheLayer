@@ -61,6 +61,7 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
     public function deleteItem(string $key): bool
     {
         $this->discardDeferredKey($key);
+
         return $this->call('del', $this->mapData($key)) !== false;
     }
 
