@@ -206,18 +206,26 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
     #[\Override]
     public function getTagGenerations(array $tags): array
     {
-        $generations = $this->readTagGenerations($tags);
-        $missing = [];
-        foreach ($tags as $tag) {
-            if (!isset($generations[$tag])) {
-                $missing[$tag] = self::newGeneration();
+        return $this->withExclusiveLock(function () use ($tags): array {
+            $store = $this->loadStore();
+            $generations = [];
+            $changed = false;
+            foreach ($tags as $tag) {
+                $mapped = $this->mapTag($tag);
+                $generation = self::normalizeGeneration($store[$mapped] ?? null);
+                if ($generation === null) {
+                    $generation = self::newGeneration();
+                    $store[$mapped] = $generation;
+                    $changed = true;
+                }
+                $generations[$tag] = $generation;
             }
-        }
-        if ($missing !== []) {
-            $this->storeTagGenerations($missing);
-        }
+            if ($changed && !$this->store($store)) {
+                throw new RuntimeException('Unable to initialize shared-memory tag generations.');
+            }
 
-        return $generations + $missing;
+            return $generations;
+        });
     }
 
     public function hasItem(string $key): bool
