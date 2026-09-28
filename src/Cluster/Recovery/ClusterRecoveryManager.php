@@ -20,18 +20,16 @@ final readonly class ClusterRecoveryManager
 
     public function recoverIfRequired(): bool
     {
-        $cursor = $this->cursorStore->current();
-        $oldest = $this->transport->oldestAvailableId($this->cluster);
-        if ($oldest === null) {
-            return false;
-        }
-
-        if ($cursor === null) {
+        if ($this->cursorStore->requiresRecovery()) {
             $this->clearLocalCache();
+            $this->cursorStore->reset(null);
 
             return true;
         }
-        if (!$this->transport->isCursorBefore($cursor, $oldest)) {
+
+        $cursor = $this->cursorStore->current();
+        $oldest = $this->transport->oldestAvailableId($this->cluster);
+        if ($cursor === null || $oldest === null || !$this->transport->isCursorBefore($cursor, $oldest)) {
             return false;
         }
 
