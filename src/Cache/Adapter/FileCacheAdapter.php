@@ -342,6 +342,7 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
     private function withKeyLock(string $key, callable $callback): mixed
     {
         $path = $this->lockDirectory . hash('xxh128', $key) . '.lock';
+        $this->assertPathNotSymlink($path, 'File cache key lock');
         $handle = fopen($path, 'c');
         if (!is_resource($handle) || !flock($handle, LOCK_EX)) {
             if (is_resource($handle)) {

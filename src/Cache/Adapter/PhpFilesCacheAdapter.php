@@ -332,6 +332,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
     private function withKeyLock(string $key, callable $callback): mixed
     {
         $path = $this->lockDirectory . hash('xxh128', $key) . '.lock';
+        $this->assertPathNotSymlink($path, 'PHP-file cache key lock');
         $handle = fopen($path, 'c');
         if (!is_resource($handle) || !flock($handle, LOCK_EX)) {
             if (is_resource($handle)) {
