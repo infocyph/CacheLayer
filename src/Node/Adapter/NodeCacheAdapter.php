@@ -16,6 +16,8 @@ use Throwable;
 
 final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerationCacheInterface
 {
+    private bool $l1Readable = true;
+
     public function __construct(
         private readonly ?InternalCachePoolInterface $l1,
         private readonly NodeSqliteCacheAdapter $l2,
@@ -46,7 +48,11 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
     public function clear(): bool
     {
         $l2 = $this->attempt(fn(): bool => $this->l2->clear(), false, 'l2_failure');
-        $l1 = $this->l1 === null || $this->attempt(fn(): bool => $this->l1->clear(), false, 'l1_failure');
+        $l1 = $this->l1 === null || !$this->l1Readable
+            || $this->attempt(fn(): bool => $this->l1->clear(), false, 'l1_failure');
+        if (!$l1) {
+            $this->disableL1();
+        }
         $this->deferred = [];
 
         return $l2 && $l1;
@@ -77,8 +83,11 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
     public function deleteItem(string $key): bool
     {
         $l2 = $this->attempt(fn(): bool => $this->l2->deleteItem($key), false, 'l2_failure');
-        $l1 = $this->l1 === null
+        $l1 = $this->l1 === null || !$this->l1Readable
             || $this->attempt(fn(): bool => $this->l1->deleteItem($key), false, 'l1_failure');
+        if (!$l1) {
+            $this->disableL1();
+        }
 
         return $l2 && $l1;
     }
@@ -87,27 +96,41 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
     public function deleteItems(array $keys): bool
     {
         $l2 = $this->attempt(fn(): bool => $this->l2->deleteItems($keys), false, 'l2_failure');
-        $l1 = $this->l1 === null
+        $l1 = $this->l1 === null || !$this->l1Readable
             || $this->attempt(fn(): bool => $this->l1->deleteItems($keys), false, 'l1_failure');
+        if (!$l1) {
+            $this->disableL1();
+        }
 
         return $l2 && $l1;
     }
 
     public function getItem(string $key): CacheItem
     {
-        if ($this->l1 !== null) {
-            $l1 = $this->attempt(fn(): CacheItemInterface => $this->l1->getItem($key), $this->genericMiss($key), 'l1_failure');
+        if ($this->l1 !== null && $this->l1Readable) {
+            $l1 = $this->attempt(
+                fn(): CacheItemInterface => $this->l1->getItem($key),
+                $this->genericMiss($key),
+                'l1_failure',
+            );
             if ($l1->isHit()) {
                 return $this->nodeItem($l1);
             }
         }
-        $l2 = $this->attempt(fn(): CacheItemInterface => $this->l2->getItem($key), $this->genericMiss($key), 'l2_failure');
+
+        $l2 = $this->attempt(
+            fn(): CacheItemInterface => $this->l2->getItem($key),
+            $this->genericMiss($key),
+            'l2_failure',
+        );
         if (!$l2->isHit()) {
             return $this->genericMiss($key);
         }
+
         $item = $this->nodeItem($l2);
-        if ($this->l1 !== null) {
-            $this->saveOneInto($this->l1, $item, 'l1_failure');
+        if ($this->l1 !== null && $this->l1Readable
+            && !$this->saveOneInto($this->l1, $item, 'l1_failure')) {
+            $this->disableL1();
         }
 
         return $item;
@@ -120,7 +143,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
     #[\Override]
     public function getTagGenerations(array $tags): array
     {
-        $cached = !$this->l1 instanceof TagGenerationCacheInterface
+        $cached = !$this->l1Readable || !($this->l1 instanceof TagGenerationCacheInterface)
             ? []
             : $this->attempt(fn(): array => $this->l1->readTagGenerations($tags), [], 'l1_failure');
         $missing = array_values(array_diff($tags, array_keys($cached)));
@@ -133,8 +156,9 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
             $this->freshGenerations($missing),
             'l2_failure',
         );
-        if ($this->l1 instanceof TagGenerationCacheInterface) {
-            $this->attempt(fn(): bool => $this->l1->storeTagGenerations($loaded), false, 'l1_failure');
+        if ($this->l1Readable && $this->l1 instanceof TagGenerationCacheInterface
+            && !$this->attempt(fn(): bool => $this->l1->storeTagGenerations($loaded), false, 'l1_failure')) {
+            $this->disableL1();
         }
 
         return $cached + $loaded;
@@ -147,7 +171,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
 
     public function isAuthoritative(): bool
     {
-        return $this->l1 === null;
+        return $this->l1 === null || !$this->l1Readable;
     }
 
     /**
@@ -159,9 +183,12 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         [$results, $misses] = $this->readL1($keys);
         $promote = $this->readL2($misses, $results);
 
-        if ($promote !== [] && $this->l1 !== null) {
-            $this->saveInto($this->l1, $promote, 'l1_failure');
-            $this->metric('l2_batch_promote', count($promote));
+        if ($promote !== [] && $this->l1 !== null && $this->l1Readable) {
+            if ($this->saveInto($this->l1, $promote, 'l1_failure')) {
+                $this->metric('l2_batch_promote', count($promote));
+            } else {
+                $this->disableL1();
+            }
         }
 
         $ordered = [];
@@ -184,7 +211,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
     public function rotateTagGenerations(array $tags): bool
     {
         $l2 = $this->attempt(fn(): bool => $this->l2->rotateTagGenerations($tags), false, 'l2_failure');
-        if (!$l2 || !$this->l1 instanceof TagGenerationCacheInterface) {
+        if (!$l2 || !$this->l1Readable || !($this->l1 instanceof TagGenerationCacheInterface)) {
             return $l2;
         }
 
@@ -193,7 +220,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         $stored = $generations !== []
             && $this->attempt(fn(): bool => $this->l1->storeTagGenerations($generations), false, 'l1_failure');
         if (!$fenced || !$stored) {
-            $this->attempt(fn(): bool => $this->l1->clear(), false, 'l1_failure');
+            $this->disableL1();
         }
 
         return $fenced && $stored;
@@ -204,17 +231,21 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         if (!$this->supportsItem($item)) {
             return false;
         }
+
         $stored = $this->saveOneInto($this->l2, $item, 'l2_failure');
         if (!$stored) {
             return false;
         }
-        if ($this->l1 === null) {
-            return $stored;
+        if ($this->l1 === null || !$this->l1Readable) {
+            return true;
         }
 
-        $this->saveOneInto($this->l1, $item, 'l1_failure');
+        $l1Stored = $this->saveOneInto($this->l1, $item, 'l1_failure');
+        if (!$l1Stored) {
+            $this->disableL1();
+        }
 
-        return true;
+        return $l1Stored;
     }
 
     /** @param array<string, CacheItemInterface> $items */
@@ -230,20 +261,39 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         if (!$stored) {
             return false;
         }
-        if ($this->l1 !== null) {
-            $this->saveInto($this->l1, $items, 'l1_failure');
+        if ($this->l1 === null || !$this->l1Readable) {
+            return true;
         }
 
-        return true;
+        $l1Stored = $this->saveInto($this->l1, $items, 'l1_failure');
+        if (!$l1Stored) {
+            $this->disableL1();
+        }
+
+        return $l1Stored;
     }
 
     /** @param array<string, string> $generations */
     #[\Override]
     public function storeTagGenerations(array $generations): bool
     {
-        return $this->l2->storeTagGenerations($generations)
-            && (!$this->l1 instanceof TagGenerationCacheInterface
-                || $this->l1->storeTagGenerations($generations));
+        if (!$this->l2->storeTagGenerations($generations)) {
+            return false;
+        }
+        if (!$this->l1Readable || !($this->l1 instanceof TagGenerationCacheInterface)) {
+            return true;
+        }
+
+        $stored = $this->attempt(
+            fn(): bool => $this->l1->storeTagGenerations($generations),
+            false,
+            'l1_failure',
+        );
+        if (!$stored) {
+            $this->disableL1();
+        }
+
+        return $stored;
     }
 
     /**
@@ -263,6 +313,18 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
             }
 
             return $fallback;
+        }
+    }
+
+    private function disableL1(): void
+    {
+        if (!$this->l1Readable) {
+            return;
+        }
+
+        $this->l1Readable = false;
+        if ($this->l1 !== null) {
+            $this->attempt(fn(): bool => $this->l1->clear(), false, 'l1_clear_failure');
         }
     }
 
@@ -303,7 +365,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
      */
     private function readL1(array $keys): array
     {
-        if ($this->l1 === null || $keys === []) {
+        if ($this->l1 === null || !$this->l1Readable || $keys === []) {
             return [[], $keys];
         }
 
@@ -334,6 +396,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         if ($keys === []) {
             return [];
         }
+
         $items = $this->attempt(fn(): array => $this->l2->multiFetch($keys), [], 'l2_failure');
         $hits = [];
         foreach ($keys as $key) {
