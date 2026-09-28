@@ -38,6 +38,17 @@ final class RunwireIntegration
         self::$runtime = $runtime;
     }
 
+    public static function checkpoint(): void
+    {
+        $context = self::current();
+        if (
+            $context?->scope !== null
+            && $context->supports(RuntimeCapability::RUNWIRE_COROUTINES)
+        ) {
+            $context->scope->cancellation()->throwIfCancelled();
+        }
+    }
+
     public static function current(): ?RunwireExecutionContext
     {
         $fiber = Fiber::getCurrent();
