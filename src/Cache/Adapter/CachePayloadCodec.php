@@ -27,7 +27,7 @@ final readonly class CachePayloadCodec
 
     private const string SIGNATURE_PURPOSE = 'cache-record:v3';
 
-    public function __construct(private CacheOptions $options = new CacheOptions()) {}
+    public function __construct(private CacheOptions $options = new CacheOptions) {}
 
     /** @return array{ttl:int|null,expiresAt:int|null} */
     public static function expirationFromItem(CacheItemInterface $item): array
@@ -47,7 +47,7 @@ final readonly class CachePayloadCodec
 
     public static function toDateTime(?int $expiresAt): ?DateTimeInterface
     {
-        return $expiresAt === null ? null : (new DateTimeImmutable())->setTimestamp($expiresAt);
+        return $expiresAt === null ? null : (new DateTimeImmutable)->setTimestamp($expiresAt);
     }
 
     public function decode(
@@ -80,7 +80,7 @@ final readonly class CachePayloadCodec
     }
 
     /**
-     * @param array<string, string> $tags
+     * @param  array<string, string>  $tags
      */
     public function encode(
         mixed $value,
@@ -103,12 +103,12 @@ final readonly class CachePayloadCodec
             throw new RuntimeException('The encoded cache record exceeds the configured payload limit.');
         }
 
-        $payload = self::PLAIN_PREFIX . $serialized;
+        $payload = self::PLAIN_PREFIX.$serialized;
         $threshold = $this->options->compressionThreshold;
         if ($threshold !== null && strlen($serialized) >= $threshold && function_exists('gzencode')) {
             $compressed = gzencode($serialized, $this->options->compressionLevel);
             if (is_string($compressed) && strlen($compressed) < strlen($serialized)) {
-                $payload = self::COMPRESSED_PREFIX . base64_encode($compressed);
+                $payload = self::COMPRESSED_PREFIX.base64_encode($compressed);
             }
         }
 
@@ -128,10 +128,10 @@ final readonly class CachePayloadCodec
         if (is_resource($value)) {
             throw new InvalidArgumentException('Resource cache values are not supported.');
         }
-        if (is_object($value) && !$this->options->allowObjects) {
+        if (is_object($value) && ! $this->options->allowObjects) {
             throw new InvalidArgumentException('Object cache values are disabled by security policy.');
         }
-        if (!is_array($value)) {
+        if (! is_array($value)) {
             return;
         }
         foreach ($value as $item) {
@@ -159,7 +159,7 @@ final readonly class CachePayloadCodec
             $this->options->integrityKey,
         );
 
-        return self::BOUND_SIGNED_PREFIX . $signature . ':' . $payload;
+        return self::BOUND_SIGNED_PREFIX.$signature.':'.$payload;
     }
 
     private function containsUnsupportedDecodedValue(mixed $value): bool
@@ -168,9 +168,9 @@ final readonly class CachePayloadCodec
             return true;
         }
         if (is_object($value)) {
-            return !$this->options->allowObjects;
+            return ! $this->options->allowObjects;
         }
-        if (!is_array($value)) {
+        if (! is_array($value)) {
             return false;
         }
         foreach ($value as $item) {
@@ -183,7 +183,7 @@ final readonly class CachePayloadCodec
     }
 
     /**
-     * @param array<mixed> $record
+     * @param  array<mixed>  $record
      * @return array{valid:bool, value:mixed}
      */
     private function decodeValue(array $record): array
@@ -191,7 +191,7 @@ final readonly class CachePayloadCodec
         $encoding = $record['encoding'] ?? null;
         $value = $record['value'] ?? null;
         if ($encoding === 'closure') {
-            if (!$this->options->allowClosures || !is_string($value)) {
+            if (! $this->options->allowClosures || ! is_string($value)) {
                 return ['valid' => false, 'value' => null];
             }
 
@@ -212,7 +212,7 @@ final readonly class CachePayloadCodec
     private function encodeValue(mixed $value): array
     {
         if ($value instanceof Closure) {
-            if (!$this->options->allowClosures) {
+            if (! $this->options->allowClosures) {
                 throw new InvalidArgumentException('Closure cache values are disabled by security policy.');
             }
 
@@ -230,19 +230,19 @@ final readonly class CachePayloadCodec
         if (str_starts_with($payload, self::PLAIN_PREFIX)) {
             return substr($payload, strlen(self::PLAIN_PREFIX));
         }
-        if (!str_starts_with($payload, self::COMPRESSED_PREFIX)) {
+        if (! str_starts_with($payload, self::COMPRESSED_PREFIX)) {
             return null;
         }
 
         $compressed = base64_decode(substr($payload, strlen(self::COMPRESSED_PREFIX)), true);
-        if (!is_string($compressed) || !function_exists('gzdecode')) {
+        if (! is_string($compressed) || ! function_exists('gzdecode')) {
             return null;
         }
 
         $maximumLength = $this->options->maxPayloadBytes === null
             ? 0
             : min($this->options->maxPayloadBytes, PHP_INT_MAX - 1) + 1;
-        set_error_handler(static fn(): bool => true);
+        set_error_handler(static fn (): bool => true);
 
         try {
             $expanded = gzdecode($compressed, $maximumLength);
@@ -261,37 +261,37 @@ final readonly class CachePayloadCodec
 
     private function normalizeRecord(mixed $decoded): ?CacheRecord
     {
-        if (!is_array($decoded) || ($decoded['format'] ?? null) !== 2 || !array_key_exists('value', $decoded)) {
+        if (! is_array($decoded) || ($decoded['format'] ?? null) !== 2 || ! array_key_exists('value', $decoded)) {
             return null;
         }
 
         $expiresAt = $decoded['expires'] ?? null;
-        if ($expiresAt !== null && !is_int($expiresAt)) {
+        if ($expiresAt !== null && ! is_int($expiresAt)) {
             return null;
         }
 
         $tags = $decoded['tags'] ?? null;
-        if (!is_array($tags)) {
+        if (! is_array($tags)) {
             return null;
         }
         $namespaceGeneration = $decoded['namespace'] ?? null;
         if ($namespaceGeneration !== null
-            && (!is_string($namespaceGeneration)
+            && (! is_string($namespaceGeneration)
                 || strlen($namespaceGeneration) !== 32
-                || !ctype_xdigit($namespaceGeneration))) {
+                || ! ctype_xdigit($namespaceGeneration))) {
             return null;
         }
 
         $value = $this->decodeValue($decoded);
-        if (!$value['valid']) {
+        if (! $value['valid']) {
             return null;
         }
 
         foreach ($tags as $tag => $generation) {
-            if (!is_string($tag)
-                || !is_string($generation)
+            if (! is_string($tag)
+                || ! is_string($generation)
                 || strlen($generation) !== 32
-                || !ctype_xdigit($generation)) {
+                || ! ctype_xdigit($generation)) {
                 return null;
             }
         }
@@ -302,14 +302,14 @@ final readonly class CachePayloadCodec
     private function signatureInput(string $payload, string $storageIdentity, string $key): string
     {
         return self::SIGNATURE_PURPOSE
-            . "\0" . strlen($storageIdentity) . ':' . $storageIdentity
-            . "\0" . strlen($key) . ':' . $key
-            . "\0" . $payload;
+            ."\0" . strlen($storageIdentity) . ':' . $storageIdentity
+            ."\0" . strlen($key) . ':' . $key
+            ."\0" . $payload;
     }
 
     private function unserializeNative(string $payload): mixed
     {
-        set_error_handler(static fn(): bool => true);
+        set_error_handler(static fn (): bool => true);
 
         try {
             return unserialize($payload, [
@@ -330,14 +330,13 @@ final readonly class CachePayloadCodec
         string $blob,
         ?string $storageIdentity,
         ?string $key,
-    ): ?string
-    {
+    ): ?string {
         $integrityKey = $this->options->integrityKey;
         if ($integrityKey === null) {
             return $this->unsignedPayload($blob);
         }
         if ($storageIdentity === null || $key === null
-            || !str_starts_with($blob, self::BOUND_SIGNED_PREFIX)) {
+            || ! str_starts_with($blob, self::BOUND_SIGNED_PREFIX)) {
             return null;
         }
 
@@ -352,7 +351,7 @@ final readonly class CachePayloadCodec
             $separator - strlen(self::BOUND_SIGNED_PREFIX),
         );
         $payload = substr($blob, $separator + 1);
-        if (strlen($signature) !== 64 || !ctype_xdigit($signature)) {
+        if (strlen($signature) !== 64 || ! ctype_xdigit($signature)) {
             return null;
         }
 
