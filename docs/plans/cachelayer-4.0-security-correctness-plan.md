@@ -1,7 +1,7 @@
 # CacheLayer security, correctness, and release plan
 
 Date: 2026-09-28  
-Status: Implementation in progress; Batch 1 complete, Batch 2 not started\
+Status: Implementation in progress; Batch 1 complete, Batch 2 in progress\
 Audited revision: `b064b8196ddc4672ce37be252bc7a4cadb78527e` (local tag `3.4`)  
 Release target: **4.0.0 — next major release**
 
@@ -14,7 +14,7 @@ Draft PR: [#29 — CacheLayer 4.0 security and correctness hardening](https://gi
 | Batch | Findings | Status | Current gate |
 | --- | --- | --- | --- |
 | 1 — Security and transaction containment | R01, R03, R04, R05, R09, R10 | **Complete** | Implemented and verified on exact commit `5a9f4bd553b4d97cca72d05affa32b6e7ce3c37e`; Security & Standards run #173 passed. |
-| 2 — Authenticated payload/storage identity | R02, R15, R18 | Not started | Starts only after Batch 1 QA is clean. |
+| 2 — Authenticated payload/storage identity | R02, R15, R18 | **In progress** | Contract tests added; R15 storage/topology identity implemented; R02 logical identity propagation and signed-payload binding are in progress; R18 SQL collation migration pending. |
 | 3 — Durable invalidation protocol | R06, R07 | Not started | Blocked on Batch 2 identity decisions. |
 | 4 — Cache contracts and memoization | R08, R11, R12, R13, R16, R17 | Not started | Pending prior batches. |
 | 5 — Counters and backend races | R14 plus race review | Not started | Pending prior batches. |
@@ -32,6 +32,17 @@ Draft PR: [#29 — CacheLayer 4.0 security and correctness hardening](https://gi
 | R10 — secret redaction | Complete for Redis/Valkey DSNs, PDO credentials/DSNs, MongoDB URI creation, integrity/signing keys, and tier descriptors | Error/trace and `#[SensitiveParameter]` regression coverage added | Passed final Batch 1 QA. |
 
 **Batch 1 closure evidence:** exact commit `5a9f4bd553b4d97cca72d05affa32b6e7ce3c37e` passed Security & Standards run #173: clean install, PHP 8.4/8.5 analysis, PHP 8.4/8.5 benchmarks, and all four stable/lowest QA jobs. During Batch 1 QA the inherited skip-directive and reference-integrity failures were resolved without weakening PHPForge gates.
+
+
+### Batch 2 tracker
+
+| Finding | Implementation | Regression evidence | QA state |
+| --- | --- | --- | --- |
+| R02 — authenticated payload identity | **In progress** | Contract tests cover cross-key, cross-namespace, legacy signed payload rejection, tier promotion, and secure serialization defaults. Logical storage identity now propagates through facades/tiered/Node; bound HMAC envelope implemented; adapter read/atomic paths are being wired to verify logical keys. | Full Batch 2 QA pending. |
+| R15 — Node storage/topology identity | **Implemented; QA pending** | Node APCu identity and lock identity include the SQLite store; authority now reflects whether an L1 can serve stale state. | Contract tests added; full Batch 2 QA pending. |
+| R18 — SQL binary identity | **Pending implementation** | MySQL/MariaDB regression test requires byte-sensitive cache and invalidation identity columns and verifies case-distinct namespaces/keys. | Waiting for schema migration implementation, then full Batch 2 QA. |
+
+**Batch 2 implementation commits so far:** `df108d47309b84c9334b5747e08172b03460933b` (contracts), `a0da9349ecffe94d3e4491c8ca149fe37b31d710` (Node identity/topology), `0f9cce33e2763910b637709e534373f634af9d75` (logical storage identity propagation), `47e0f05cf0245f7d69bbc12a892f3ddbcc81ea99` (bound signed envelope and secure serialization defaults), `3ee8e84ca21ce2eac63a0b1552750ef83beb7556`, `edef15420895cee62b179c7fa9d6513479b3b336`, `045d5ff89949370744f6d95646165a9b11efd721`, and `f2c3e55db67ecc3237dc87494c2828c66f33d5ee` (adapter identity verification wiring).
 
 ## Decision
 
