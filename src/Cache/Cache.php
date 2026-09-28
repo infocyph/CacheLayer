@@ -409,7 +409,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         return $this->validateTagSnapshot($item);
     }
 
-    /** @return array<string, CacheItemInterface> */
+    /** @return iterable<string, CacheItemInterface> */
     public function getItems(array $keys = []): iterable
     {
         $keys = CacheInput::keys($keys);
@@ -436,33 +436,13 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         $this->metric('get_batch_hits', $hits);
         $this->metric('get_batch_misses', count($keys) - $hits);
 
-        if ($this->requiresKeyPreservingIterable($keys)) {
-            return $this->yieldItems($keys, $items);
-        }
-
-        return $items;
+        return CacheBatchResults::items($keys, $items);
     }
 
     public function getMultiple(iterable $keys, mixed $default = null): iterable
     {
         $keys = CacheInput::materializeKeys($keys);
-        $items = $this->getItems($keys);
-        $byIdentity = [];
-        foreach ($items as $item) {
-            $byIdentity["key:\0" . $item->getKey()] = $item;
-        }
-
-        if ($this->requiresKeyPreservingIterable($keys)) {
-            return $this->yieldValues($keys, $byIdentity, $default);
-        }
-
-        $values = [];
-        foreach ($keys as $key) {
-            $item = $byIdentity["key:\0" . $key];
-            $values[$key] = $item->isHit() ? $item->get() : $default;
-        }
-
-        return $values;
+        return CacheBatchResults::values($keys, $this->getItems($keys), $default);
     }
 
     public function has(string $key): bool
@@ -843,45 +823,6 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
     private function readableMetricsSnapshot(array $snapshot): array
     {
         return CacheMetricsSnapshot::readable($snapshot);
-    }
-
-    /** @param list<string> $keys */
-    private function requiresKeyPreservingIterable(array $keys): bool
-    {
-        return array_any(
-            $keys,
-            static function (string $key): bool {
-                $probe = [$key => true];
-
-                return array_key_first($probe) !== $key;
-            },
-        );
-    }
-
-    /**
-     * @param list<string> $keys
-     * @param array<int|string, CacheItemInterface> $items
-     * @return \Generator<string, CacheItemInterface>
-     */
-    private function yieldItems(array $keys, array $items): \Generator
-    {
-        foreach ($keys as $key) {
-            yield $key => $items[$key];
-        }
-    }
-
-    /**
-     * @param list<string> $keys
-     * @param array<string, CacheItemInterface> $items
-     * @return \Generator<string, mixed>
-     */
-    private function yieldValues(array $keys, array $items, mixed $default): \Generator
-    {
-        foreach ($keys as $key) {
-            $item = $items["key:\0" . $key];
-
-            yield $key => $item->isHit() ? $item->get() : $default;
-        }
     }
 
     private function requireStringOffset(mixed $offset): string
