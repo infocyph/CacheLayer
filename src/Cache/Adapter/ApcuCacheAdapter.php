@@ -118,7 +118,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
 
     public function hasItem(string $key): bool
     {
-        return apcu_exists($this->map($key));
+        return $this->getItem($key)->isHit();
     }
 
     /**

@@ -201,15 +201,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
 
     public function hasItem(string $key): bool
     {
-        $count = $this->collection->countDocuments([
-            '_id' => $this->mapData($key),
-            '$or' => [
-                ['expires' => null],
-                ['expires' => ['$gt' => time()]],
-            ],
-        ]);
-
-        return is_numeric($count) && (int) $count > 0;
+        return $this->getItem($key)->isHit();
     }
 
     /**

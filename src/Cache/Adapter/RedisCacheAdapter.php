@@ -262,7 +262,7 @@ LUA;
 
     public function hasItem(string $key): bool
     {
-        return $this->redis->exists($this->map($key)) === 1;
+        return $this->getItem($key)->isHit();
     }
 
     /**
