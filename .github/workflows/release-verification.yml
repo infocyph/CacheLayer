@@ -25,7 +25,7 @@ jobs:
         with:
           php-version: ${{ matrix.php }}
           tools: composer:v2
-          extensions: mbstring, pdo, pdo_sqlite, opcache
+          extensions: mbstring, mongodb, pdo, pdo_sqlite, opcache
           coverage: none
       - run: composer install --no-dev --no-interaction --prefer-dist --no-progress --classmap-authoritative
       - run: composer check-platform-reqs --no-dev
@@ -72,6 +72,37 @@ jobs:
       - name: Install independent consumer
         working-directory: tools/release/psr-consumer
         run: composer update --no-interaction --prefer-dist --no-progress --prefer-stable
+      - name: Materialize independent integration fixture
+        working-directory: tools/release/psr-consumer
+        shell: bash
+        run: |
+          mkdir -p tests
+          cat > tests/PsrIntegrationTest.php <<'PHP'
+          <?php
+          declare(strict_types=1);
+
+          use Cache\\IntegrationTests\\CachePoolTest;
+          use Cache\\IntegrationTests\\SimpleCacheTest;
+          use Infocyph\\CacheLayer\\Cache\\Cache;
+          use Psr\\Cache\\CacheItemPoolInterface;
+          use Psr\\SimpleCache\\CacheInterface;
+
+          final class Psr6MemoryIntegrationTest extends CachePoolTest
+          {
+              public function createCachePool(): CacheItemPoolInterface
+              {
+                  return Cache::memory('psr6-' . bin2hex(random_bytes(6)));
+              }
+          }
+
+          final class Psr16MemoryIntegrationTest extends SimpleCacheTest
+          {
+              public function createSimpleCache(): CacheInterface
+              {
+                  return Cache::memory('psr16-' . bin2hex(random_bytes(6)));
+              }
+          }
+          PHP
       - name: Run upstream integration suites
         working-directory: tools/release/psr-consumer
         run: vendor/bin/phpunit tests/PsrIntegrationTest.php
@@ -140,7 +171,7 @@ jobs:
             if docker exec cachelayer-scylla cqlsh -e "SELECT release_version FROM system.local;" >/dev/null 2>&1; then break; fi
             sleep 2
           done
-          docker exec cachelayer-scylla cqlsh -e "CREATE KEYSPACE IF NOT EXISTS cachelayer WITH replication = {'class':'SimpleStrategy','replication_factor':1};"
+          docker exec cachelayer-scylla cqlsh -e "CREATE KEYSPACE IF NOT EXISTS cachelayer WITH replication = {'class':'NetworkTopologyStrategy','datacenter1':1};"
       - name: Install pinned Scylla PHP CQL driver
         shell: bash
         run: |
