@@ -294,7 +294,7 @@ LUA;
                     continue;
                 }
 
-                $record = $this->decodeRecordFromBlob($v);
+                $record = $this->decodeRecordFromBlob($v, $k);
                 if ($record !== null) {
                     $items[$k] = $this->genericItemFromRecord($k, $record);
 
