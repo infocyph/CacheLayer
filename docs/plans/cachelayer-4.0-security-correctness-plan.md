@@ -359,6 +359,14 @@ Batches 1-6 are complete. Batch 7, Runwire 2.1 integration, is now required and 
    - [ ] Use Runwire where it materially improves isolated crash/concurrency verification without making it a core dependency.
    - [ ] Complete the compatibility, lifecycle, coherence, and performance gates below for every shipped integration capability.
 
+### Batch 7 tracker
+
+| Sub-batch | Scope | Status | Gate |
+| --- | --- | --- | --- |
+| 7A — Runtime/request lifecycle | Runtime binding, concurrent memoizer isolation, sequential persistent request reset | **In progress** | Focused Runwire lifecycle tests, then full PHPForge QA. |
+| 7B — Worker-owned background integration | Bounded cluster invalidation polling and optional Node maintenance through Runwire worker lifecycle | **Pending** | Worker stop/drain/error/coherence tests, then full QA. |
+| 7C — Consumer/docs/release integration | Executable example, optional consumer dependency, topology docs, PHP 8.4/8.5 integration matrix | **Pending** | Exact-head Security & Standards + Release Verification. |
+
 ## Optional Runwire 2.1 integration workstream
 
 ### Scope and dependency decision
