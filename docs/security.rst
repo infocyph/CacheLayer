@@ -66,10 +66,14 @@ not read process environment state.
 ``phpFiles`` keeps executable ``.php`` cache files for performance, so strict
 directory controls are required. Runtime checks now reject:
 
-* symlinked cache directories
+* symlinked cache directories, namespace roots, ancestors, and lock paths
 * world-writable cache directories
 
-Use ``phpFiles`` only on trusted hosts and private directories.
+The adapter executes the cache PHP file to obtain its encoded payload before
+payload HMAC verification can occur. HMAC protects the encoded cache record; it
+does not make an attacker-controlled executable cache directory safe. Use
+``phpFiles`` only on trusted hosts and private directories whose path
+components cannot be replaced by an untrusted user.
 
 3) Temp-Directory Hardening
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -86,10 +90,37 @@ world-writable cache directories. Network/database adapters rely on the
 deployment's service permissions rather than local directory checks.
 
 The shared-memory adapter also stores its ``ftok`` token in a private
-``cachelayer/shared-memory`` directory, creates the segment for the current
-user only, and serializes read-modify-write operations with a filesystem lock.
+``cachelayer/shared-memory`` directory, rejects symlinked token paths,
+creates the segment for the current user only, and serializes read-modify-write
+operations with a filesystem lock. File locks and SQLite cache paths likewise
+reject symlinked path components before opening storage.
 
-4) Network Timeouts
+4) Containment Failure Semantics
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+CacheLayer 4.0 treats the following conditions as explicit backend or
+configuration failures rather than continuing with ambiguous state:
+
+* Recursive or over-budget array graphs are rejected before recursive
+  serialization-policy or memoization normalization can exhaust the worker.
+* Rebinding one adapter to conflicting ``CacheOptions`` is rejected before
+  storage use. Composite Node and tiered adapters preflight every child before
+  applying a new policy.
+* File and PHP-files atomic get-and-delete returns a value only after the
+  backing file was successfully deleted. Strict mode reports the backend
+  failure; fail-open mode returns the configured miss/default and never the
+  unconsumed value.
+* Node SQLite mutations reject caller-owned transactions. CacheLayer does not
+  commit or roll back application work that it did not start.
+* Redis/Valkey, PDO, MongoDB, payload-integrity, and closure-signing secrets are
+  treated as sensitive parameters; connection/configuration errors avoid
+  echoing secret-bearing DSNs or URIs.
+
+These checks reduce accidental trust-boundary violations but do not eliminate
+filesystem races on every platform. Deploy writable cache roots as private,
+application-owned directories.
+
+5) Network Timeouts
 ~~~~~~~~~~~~~~~~~~~
 
 Redis/Valkey connections created from a DSN use bounded one-second connect and
