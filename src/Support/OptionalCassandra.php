@@ -13,17 +13,6 @@ final class OptionalCassandra
         return class_exists(self::rootClass());
     }
 
-    /** @param array<int, mixed> $arguments */
-    public static function executionOptions(array $arguments): mixed
-    {
-        $class = self::nestedClass('ExecutionOptions');
-        if (!class_exists($class)) {
-            return ['arguments' => $arguments];
-        }
-
-        return new $class(['arguments' => $arguments]);
-    }
-
     public static function connect(string $keyspace): object
     {
         $class = self::rootClass();
@@ -47,6 +36,17 @@ final class OptionalCassandra
         }
 
         return $session;
+    }
+
+    /** @param array<int, mixed> $arguments */
+    public static function executionOptions(array $arguments): mixed
+    {
+        $class = self::nestedClass('ExecutionOptions');
+        if (!class_exists($class)) {
+            return ['arguments' => $arguments];
+        }
+
+        return new $class(['arguments' => $arguments]);
     }
 
     public static function simpleStatement(string $cql): mixed

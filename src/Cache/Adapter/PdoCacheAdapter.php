@@ -90,7 +90,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         return $directory . DIRECTORY_SEPARATOR . 'cache_' . CacheInput::namespace($namespace) . '.sqlite';
     }
 
-        public function clear(): bool
+    public function clear(): bool
     {
         $statement = $this->pdo->prepare("DELETE FROM {$this->table} WHERE namespace = ?");
         $cleared = $statement->execute([$this->namespace]);
