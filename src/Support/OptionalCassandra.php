@@ -13,6 +13,24 @@ final class OptionalCassandra
         return class_exists(self::rootClass());
     }
 
+    public static function bigint(?int $value): mixed
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $class = self::nestedClass('Bigint');
+
+        return class_exists($class) ? new $class($value) : $value;
+    }
+
+    public static function blob(string $value): mixed
+    {
+        $class = self::nestedClass('Blob');
+
+        return class_exists($class) ? new $class($value) : $value;
+    }
+
     public static function connect(string $keyspace): object
     {
         $class = self::rootClass();
