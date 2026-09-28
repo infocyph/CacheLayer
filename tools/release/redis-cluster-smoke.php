@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Infocyph\CacheLayer\Cache\AtomicCacheInterface;
 use Infocyph\CacheLayer\Cache\Cache;
 
 require dirname(__DIR__, 2) . '/vendor/autoload.php';
@@ -33,7 +34,9 @@ $read = $cache->getMultiple(array_keys($values));
 $assert($read === $values, 'Redis Cluster bulk read did not preserve values across slots.');
 
 $atomic = $cache->atomic();
-$assert($atomic !== null, 'Redis Cluster atomic capability is unavailable.');
+if (!$atomic instanceof AtomicCacheInterface) {
+    throw new RuntimeException('Redis Cluster atomic capability is unavailable.');
+}
 $assert($atomic->setIfAbsent('claim', 'first', 60), 'Redis Cluster first atomic claim failed.');
 $assert(!$atomic->setIfAbsent('claim', 'second', 60), 'Redis Cluster duplicate atomic claim succeeded.');
 $assert($atomic->compareAndSet('claim', 'first', 'replaced', 60), 'Redis Cluster compare-and-set failed.');
