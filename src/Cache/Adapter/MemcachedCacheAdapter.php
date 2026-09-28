@@ -342,11 +342,12 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         if (!$this->deleteItems($expired)) {
             return false;
         }
+
         return array_all(
             $groups,
             fn(array $records, int|string $memcachedExpiration): bool => $this->client->setMulti(
                 $records,
-                (int) $memcachedExpiration,
+                $memcachedExpiration,
             ),
         );
     }
