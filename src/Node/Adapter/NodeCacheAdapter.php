@@ -428,7 +428,8 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         string $failureMetric,
     ): bool {
         $targets = [];
-        foreach ($items as $key => $item) {
+        foreach ($items as $item) {
+            $key = $item->getKey();
             $target = $pool->createItem($key)->set($item->get());
             if ($item instanceof CacheItem) {
                 $target->expiresAfter($item->ttlSeconds());
