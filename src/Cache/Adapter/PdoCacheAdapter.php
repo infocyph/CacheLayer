@@ -251,7 +251,6 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         return $this->deleteByKind(self::KIND_DATA, $expired) && $this->upsertRows($rows);
     }
 
-
     private static function assertSqliteTarget(string $dsn): void
     {
         if (!str_starts_with($dsn, 'sqlite:')) {
@@ -270,6 +269,21 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         }
     }
 
+    /** @param list<string> $keys */
+    private function deleteByKind(string $kind, array $keys): bool
+    {
+        foreach (array_chunk($keys, self::BATCH_SIZE) as $chunk) {
+            $marks = implode(',', array_fill(0, count($chunk), '?'));
+            $parameters = [$this->namespace, $kind, ...$chunk];
+            if (!$this->pdo->prepare(
+                "DELETE FROM {$this->table} WHERE namespace = ? AND kind = ? AND cache_key IN ({$marks})",
+            )->execute($parameters)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     /** @param list<string> $keys */
     private function deleteExpiredKeys(array $keys, int $cutoff): int
@@ -288,22 +302,6 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         }
 
         return $deleted;
-    }
-
-    /** @param list<string> $keys */
-    private function deleteByKind(string $kind, array $keys): bool
-    {
-        foreach (array_chunk($keys, self::BATCH_SIZE) as $chunk) {
-            $marks = implode(',', array_fill(0, count($chunk), '?'));
-            $parameters = [$this->namespace, $kind, ...$chunk];
-            if (!$this->pdo->prepare(
-                "DELETE FROM {$this->table} WHERE namespace = ? AND kind = ? AND cache_key IN ({$marks})",
-            )->execute($parameters)) {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     /**
