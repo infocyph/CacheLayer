@@ -13,6 +13,9 @@ beforeEach(function () {
         /** @var array<string, array{ckey:string,payload:string,expires:int|null}> */
         private array $rows = [];
 
+        /** @var array<string, array{tag:string,generation:string}> */
+        private array $metadata = [];
+
         public int $bucketReads = 0;
 
         public int $writeBatches = 0;
@@ -32,6 +35,46 @@ beforeEach(function () {
 
             if (str_starts_with($cql, 'CREATE TABLE')) {
                 return [];
+            }
+
+            if (str_contains($cql, 'cachelayer_entries_metadata')) {
+                if (str_starts_with($cql, 'SELECT tag, generation')) {
+                    $ns = (string) ($args[0] ?? '');
+                    $bucket = (int) ($args[1] ?? 0);
+                    $tags = array_map('strval', array_slice($args, 2));
+
+                    return array_values(array_filter(
+                        $this->metadata,
+                        static fn(array $row, string $key): bool => str_starts_with(
+                            $key,
+                            $ns . ':' . $bucket . ':',
+                        ) && in_array($row['tag'], $tags, true),
+                        ARRAY_FILTER_USE_BOTH,
+                    ));
+                }
+
+                if (str_starts_with($cql, 'INSERT INTO')) {
+                    $key = $this->rowKey($args);
+                    if (!str_contains($cql, 'IF NOT EXISTS') || !isset($this->metadata[$key])) {
+                        $this->metadata[$key] = [
+                            'tag' => (string) ($args[2] ?? ''),
+                            'generation' => (string) ($args[3] ?? ''),
+                        ];
+                    }
+
+                    return [];
+                }
+
+                if (str_starts_with($cql, 'DELETE FROM')) {
+                    $prefix = (string) ($args[0] ?? '') . ':' . (int) ($args[1] ?? 0) . ':';
+                    foreach (array_keys($this->metadata) as $key) {
+                        if (str_starts_with($key, $prefix)) {
+                            unset($this->metadata[$key]);
+                        }
+                    }
+
+                    return [];
+                }
             }
 
             if (str_starts_with($cql, 'DELETE FROM') && str_contains($cql, 'AND ckey = ?')) {
@@ -274,4 +317,15 @@ test('scylladb alternator localnodes endpoint returns json list', function () {
     $decoded = is_string($response) ? json_decode($response, true) : null;
 
     expect(is_array($decoded))->toBeTrue();
+});
+
+
+test('scylladb tag initialization preserves the first generation', function () {
+    $first = Cache::scylla('tag-race', $this->session, 'cachelayer', 'cachelayer_entries', 1);
+    $second = Cache::scylla('tag-race', $this->session, 'cachelayer', 'cachelayer_entries', 1);
+
+    expect($first->setTagged('one', 'A', ['shared']))->toBeTrue()
+        ->and($second->setTagged('two', 'B', ['shared']))->toBeTrue()
+        ->and($first->get('one'))->toBe('A')
+        ->and($second->get('two'))->toBe('B');
 });
