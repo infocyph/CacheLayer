@@ -32,7 +32,15 @@ final class OptionalCassandra
         }
 
         $cluster = $class::cluster();
+        if (!is_object($cluster) || !is_callable([$cluster, 'build'])) {
+            throw new RuntimeException('Unable to create a Cassandra cluster builder.');
+        }
+
         $builder = $cluster->build();
+        if (!is_object($builder) || !is_callable([$builder, 'connect'])) {
+            throw new RuntimeException('Unable to create a Cassandra session builder.');
+        }
+
         $session = $builder->connect($keyspace);
         if (!is_object($session)) {
             throw new RuntimeException('Unable to create a Cassandra session.');
