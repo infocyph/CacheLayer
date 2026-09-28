@@ -16,8 +16,8 @@ Draft PR: [#29 — CacheLayer 4.0 security and correctness hardening](https://gi
 | 1 — Security and transaction containment | R01, R03, R04, R05, R09, R10 | **Complete** | Implemented and verified on exact commit `5a9f4bd553b4d97cca72d05affa32b6e7ce3c37e`; Security & Standards run #173 passed. |
 | 2 — Authenticated payload/storage identity | R02, R15, R18 | **Complete** | Implemented and verified on exact commit `1924a74da3b9d6474696631405e839bd52ec158b`; Security & Standards run #210 passed. |
 | 3 — Durable invalidation protocol | R06, R07 | **Complete** | Implemented and verified on exact commit `3046e91fdc64bd2f1c9e8bd56a6d3dfc96057b7e`; Security & Standards run #240 passed. |
-| 4 — Cache contracts and memoization | R08, R11, R12, R13, R16, R17 | **In progress** | R08/R11/R12/R13/R16/R17 implementation is active; current QA run #266 exposed deferred/bulk, Memcached TTL, static-analysis, formatting, and Rector regressions that are being resolved before closure. |
-| 5 — Counters and backend races | R14 plus race review | Not started | Pending prior batches. |
+| 4 — Cache contracts and memoization | R08, R11, R12, R13, R16, R17 | **Complete** | Implemented and verified on exact commit `02078be9e29876fd74d8cbd2fa6947e247cb8bc1`; Security & Standards run #312 passed. |
+| 5 — Counters and backend races | R14 plus race review | **In progress** | Counter keyspace/precision work and deterministic backend race review are active after verified Batch 4 closure. |
 | 6 — Release gates and integration | R19 plus release acceptance / optional Runwire 2.1 | Not started | Final full-matrix and packaging gate. |
 
 ### Batch 1 tracker
@@ -70,6 +70,17 @@ Draft PR: [#29 — CacheLayer 4.0 security and correctness hardening](https://gi
 | R17 — direct PSR contracts | **Implemented broadly; QA fixes in progress** | Direct key validation, deferred visibility, missing-delete and expiration contracts are being aligned across adapters. | Full common-contract gate pending. |
 
 **Batch 4 current QA evidence:** Security & Standards run #266 reached 296 passing Pest tests but failed seven regressions plus PHPStan/Pint/Rector. These failures are treated as open Batch 4 work; the batch is not closed until an exact-head full gate passes.
+
+
+**Batch 4 closure evidence:** exact commit `02078be9e29876fd74d8cbd2fa6947e247cb8bc1` passed Security & Standards run #312: clean install, PHP 8.4/8.5 analysis, PHP 8.4/8.5 benchmarks, and all four stable/lowest QA jobs. Pest, Pint, PHPCS, Deptrac, Rector, skip-directive, reference-integrity, duplicate-code, and comment-policy gates all passed. Deferred PSR-6 state is visible before commit, immediate writes/deletes/clear reconcile queued state, numeric-string key/tag handling no longer relies on PHP array identity, Tiered/Node bulk copies use logical item keys, skipped-L1 writes fence stale upper-tier data, Memcached long TTLs are normalized, and direct-pool contract regressions are covered.
+
+### Batch 5 tracker
+
+| Finding | Implementation | Regression evidence | QA state |
+| --- | --- | --- | --- |
+| R14 — Redis/Valkey counter isolation and exact integers | **In progress** | Separate counter keyspace, exact Lua-return parsing, overflow/malformed handling, TTL/decrement/concurrency coverage to be completed. | Pending Batch 5 gate. |
+| Backend race review | **In progress** | Stale-read cleanup, tag initialization, clear/write-consume, lease loss, partial bulk failure, and backend false/error handling are being reviewed with deterministic tests where the race is actionable. | Pending Batch 5 gate. |
+
 
 ## Decision
 
