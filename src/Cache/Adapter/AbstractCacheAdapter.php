@@ -175,13 +175,22 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
     protected function discardDeferredKey(string $key): void
     {
         CacheInput::key($key);
+        if ($this->committing) {
+            return;
+        }
+
         unset($this->deferred[$this->deferredKey($key)]);
     }
 
     /** @param list<string> $keys */
     protected function discardDeferredKeys(array $keys): void
     {
-        foreach (CacheInput::keys($keys) as $key) {
+        $keys = CacheInput::keys($keys);
+        if ($this->committing) {
+            return;
+        }
+
+        foreach ($keys as $key) {
             unset($this->deferred[$this->deferredKey($key)]);
         }
     }
