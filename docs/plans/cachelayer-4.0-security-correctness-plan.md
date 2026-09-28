@@ -1,7 +1,7 @@
 # CacheLayer security, correctness, and release plan
 
 Date: 2026-09-28  
-Status: Implementation complete; Batches 1-6 complete; release-ready validation passed
+Status: Implementation in progress; Batches 1-6 complete; required Runwire 2.1 integration workstream reopened
 Audited revision: `b064b8196ddc4672ce37be252bc7a4cadb78527e` (local tag `3.4`)  
 Release target: **4.0.0 — next major release**
 
@@ -18,7 +18,7 @@ Draft PR: [#29 — CacheLayer 4.0 security and correctness hardening](https://gi
 | 3 — Durable invalidation protocol | R06, R07 | **Complete** | Implemented and verified on exact commit `3046e91fdc64bd2f1c9e8bd56a6d3dfc96057b7e`; Security & Standards run #240 passed. |
 | 4 — Cache contracts and memoization | R08, R11, R12, R13, R16, R17 | **Complete** | Implemented and verified on exact commit `02078be9e29876fd74d8cbd2fa6947e247cb8bc1`; Security & Standards run #312 passed. |
 | 5 — Counters and backend races | R14 plus race review | **Complete** | Implemented and verified on exact commit `d2f0bbb356690a8acb8d9fd9532822c453f953ee`; Security & Standards run #352 passed. |
-| 6 — Release gates and integration | R19 plus release acceptance / optional Runwire 2.1 | **Complete** | Exact implementation head `9219b25a56a6c459b6a3c001c36e4b9564fddd2a` passed Security & Standards run #406 and Release Verification run #46. Runwire 2.1 is explicitly deferred and is not advertised as shipped 4.0 integration. |
+| 6 — Release gates and integration | R19 plus core release acceptance | **Complete** | Exact implementation head `9219b25a56a6c459b6a3c001c36e4b9564fddd2a` passed Security & Standards run #406 and Release Verification run #46. |\n| 7 — Runwire 2.1 integration | Required runtime integration workstream | **In progress** | Maintainer decision: Runwire 2.1 integration is required for 4.0. Complete automatic capability selection, lifecycle/coherence behavior, executable integration evidence, and exact-revision QA before release-ready status is restored. |
 
 ### Batch 1 tracker
 
@@ -91,19 +91,19 @@ Draft PR: [#29 — CacheLayer 4.0 security and correctness hardening](https://gi
 | R19 — support matrix and tooling | **Complete** | PHPForge runs PHP 8.4/8.5 analysis, benchmarks, and stable/lowest QA without changing its hard limits. Real MongoDB integration is in the QA matrix; release verification adds real Redis Cluster and Scylla CQL plus Linux/Windows core smoke. |
 | Documentation / migration / rollback | **Complete** | `docs/upgrade-4.0.rst`, `docs/release-4.0.rst`, serializer/security guidance, cursor/counter/storage cutover instructions, and rollback guidance cover the intentional 3.x→4.0 break. |
 | Packaging / consumer / docs | **Complete** | Clean no-dev consumers on PHP 8.4/8.5, independent PSR-6/PSR-16 integration suites, docs with warnings as errors, and cross-platform core smoke all pass on the exact implementation head. |
-| Optional Runwire 2.1 | **Deferred for 4.0 core release** | No runtime integration is shipped or advertised in this batch; its optional workstream does not block 4.0.0. |
+| Runwire 2.1 integration | **Reopened / required** | Required for 4.0 by maintainer decision. Core release acceptance remains green, but final release-ready status is blocked until the Runwire workstream and its gates pass. |
 
 **Batch 6 closure evidence:** exact implementation head `9219b25a56a6c459b6a3c001c36e4b9564fddd2a` passed Security & Standards run #406 and Release Verification run #46. The security workflow passed clean install, PHP 8.4/8.5 analysis, PHP 8.4/8.5 benchmarks, and all four stable/lowest QA jobs under the unchanged PHPForge limits. Release verification passed PHP 8.4/8.5 Linux and Windows core smoke, clean no-dev consumers, independent PSR-6/PSR-16 contracts, documentation warnings-as-errors, real Redis Cluster, and real Scylla CQL. Real MongoDB integration is exercised in the PHPForge service matrix. No unresolved PR review threads remained at closure.
 
 ## Decision
 
-The planned 4.0 security, correctness, backend, migration, and release-gate work is implemented and validated. The audit findings that originally blocked release now have targeted regression evidence and exact-revision CI coverage. CacheLayer 4.0 is release-ready at the completed-plan level; optional Runwire 2.1 integration and broader performance-measurement work remain separate follow-up scope.
+The planned 4.0 security, correctness, backend, migration, and core release-gate work is implemented and validated. However, the maintainer has made Runwire 2.1 integration mandatory for 4.0, so release-ready status is reopened until that integration and its acceptance gates are complete. Broader production-equivalent performance measurement remains separate unless needed to validate the shipped Runwire path.
 
 Target **4.0.0** for the complete plan, as explicitly selected by the maintainer. CacheLayer 4.0 has **no backward-compatibility preservation requirement with 3.x**: public API shape, named parameters, defaults, storage formats, schemas, and behavioral contracts may change when a cleaner, safer, or more coherent design results. Patch backports and an alternative minor release are outside this plan. Avoid unrelated rewrites, but do not retain legacy contracts solely for BC.
 
 Persisted-state transitions still require explicit migration/upgrade notes where operators could otherwise lose or misinterpret stored data. Mixed-version compatibility is not a release requirement; coordinated cutover or cold-cache migration is acceptable when it produces the stronger design. CacheLayer 4.0 raises the minimum runtime to PHP 8.4 by maintainer decision. The release matrix therefore targets PHP 8.4 and 8.5. Preserve PSR contracts where required by the interfaces themselves, not for 3.x compatibility.
 
-Track Runwire 2.1 integration as an optional target for 4.0. When Runwire is loaded as the active runtime, CacheLayer automatically uses the relevant available capabilities; otherwise it uses the normal execution path. An executable invalidation-worker example demonstrates this behavior if the workstream is selected for implementation. It is optional both as release scope and as a consumer dependency: deferring the entire workstream does not block 4.0.0. The core minimum is PHP 8.4. Any shipped integration requires a demonstrated need and the conditional gates below.
+Runwire 2.1 integration is a required 4.0 target. When Runwire is loaded as the active runtime, CacheLayer automatically uses the relevant available capabilities; otherwise it uses the normal execution path. The integration must remain optional as a consumer dependency—the core package must continue to work without Runwire installed—but the 4.0 release itself is blocked until the Runwire integration, executable evidence, and applicable gates below are complete.
 
 This document follows [PHPForge engineering principles](../../vendor/infocyph/phpforge/resources/engineering-principles.md) and the applicable [PHPForge AGENTS.md workflow](../../vendor/infocyph/phpforge/resources/AGENTS.md).
 
@@ -324,7 +324,7 @@ Related source finding: `Cache` excludes only Tiered and Null adapters when calc
 
 ## Implementation batches
 
-Batches 1-6 are complete. The optional Runwire 2.1 workstream remains deliberately deferred; its unchecked conditional items do not represent missing core 4.0 work.
+Batches 1-6 are complete. Batch 7, Runwire 2.1 integration, is now required and blocks final 4.0 release-ready status.
 
 1. **Security and transaction containment — R01, R03, R04, R05, R09, R10.**
    - [x] Add bounded adversarial subprocess and filesystem/transaction tests.
@@ -353,11 +353,11 @@ Batches 1-6 are complete. The optional Runwire 2.1 workstream remains deliberate
    - [x] Update README, security/serialization/atomic/Node/Cluster docs and executable examples to the final behavior.
    - [x] Complete migrations, benchmark/soak evidence, clean consumer tests, and exact-revision CI before tagging.
 
-7. **Optional Runwire 2.1 integration — deferred from the 4.0 release.**
-   - [x] Record the scope decision: Runwire integration is not selected for CacheLayer 4.0 and is not advertised as shipped functionality.
-   - [x] Keep Runwire out of the core runtime dependency and preserve the normal CacheLayer execution path.
-   - [x] Move maintenance scheduling, persistent-request lifecycle integration, and Runwire-assisted crash/concurrency experiments to post-4.0 follow-up scope.
-   - [x] Mark the conditional Runwire compatibility/lifecycle/coherence/performance gates below as not applicable to the 4.0 release because no Runwire capability is shipped.
+7. **Runwire 2.1 integration — required for the 4.0 release.**
+   - [ ] Implement automatic use of relevant active Runwire capabilities with the normal path as fallback, and demonstrate it in an executable invalidation-worker example after R06, R07, and R15 are resolved.
+   - [ ] Implement bounded maintenance scheduling and persistent-request lifecycle integration where the current Runwire APIs support a safe ownership model.
+   - [ ] Use Runwire where it materially improves isolated crash/concurrency verification without making it a core dependency.
+   - [ ] Complete the compatibility, lifecycle, coherence, and performance gates below for every shipped integration capability.
 
 ## Optional Runwire 2.1 integration workstream
 
@@ -392,18 +392,18 @@ Existing PDO, filesystem, and synchronous native-client calls remain blocking in
 
 ### Integration acceptance gates
 
-**4.0 disposition: not applicable; integration deferred.** No Runwire-specific runtime capability, example, dependency, or performance claim ships in CacheLayer 4.0. The following criteria remain the acceptance checklist if this optional workstream is selected in a future release; they are deliberately not represented as incomplete 4.0 tasks:
+The Runwire workstream is required for 4.0. Every shipped Runwire capability must pass the applicable gates below before the release can be called ready:
 
-- Keep the default core test environment working without Runwire. Test the optional environment on supported 64-bit PHP 8.4/8.5 with lowest and highest supported dependencies; record the resolved Runwire version and native extensions.
-- Verify automatic selection with Runwire absent, installed but inactive, active with each relevant capability, and active with partial capabilities. Cover calls outside a request/task scope and contexts after shutdown, fork, and worker replacement. Confirm the normal path remains usable without Runwire classes loaded.
-- Run the same cache contract cases through normal and runtime-assisted paths. Prove no duplicate mutation on failure/cancellation, no changed integrity or distributed-atomicity guarantees, no cross-request scope leakage, and no automatic job startup from package presence. Verify the bootstrap binding and lifecycle cleanup in the executable example.
-- Declare topology prerequisites. Native prefork supervision needs PCNTL/POSIX; portable single-process execution relies on external supervision for restarts. Test supported modes explicitly and fail clearly for unsupported requested capabilities.
-- Demonstrate no skipped committed invalidations through reversed commits, duplicate replay, worker death before/after application and cursor persistence, restart, retention, backend outage, and graceful shutdown. Prove cursor ownership and L1 coherence for each advertised deployment topology.
-- Bound batch work, queueing, retry frequency, backend wait time, shutdown duration, and retained memory. Test crash loops and verify that backoff does not starve lifecycle handling. Maintenance must not overlap unexpectedly or exceed the recorded SQLite contention budget.
-- Soak-test sequential and, if supported, concurrent requests with changing tenants, failures, cancellations, deadlines, and deferred writes. Require no memoizer leakage, cross-request resets, abandoned request state, or unbounded memory growth.
-- Compare representative host-application successful RPM with and without the integration under equivalent correctness guarantees, topology, resources, and workloads. Record invalidation lag, p95/p99 latency, errors/timeouts, CPU/RSS, backend calls, and maintenance contention using the release measurement method below. Set acceptable budgets before selecting an implementation.
-- Treat Runwire 2.1 adaptive HTTP scheduling as a separate host-level experiment. Begin with protocol defaults (`FIXED`), and evaluate `LATENCY`, `THROUGHPUT`, or `AUTO` only through repeated representative measurements, including load transitions and fairness. Do not attribute HTTP scheduling gains to CacheLayer storage or change protocol hard limits.
-- Run executable examples and integration jobs on the exact final revision, and document startup, shutdown, connection ownership, prerequisites, topology limits, recovery, and rollback. Keep integration evidence separate from core/backend gate results.
+- [ ] Keep the default core test environment working without Runwire. Test the optional environment on supported 64-bit PHP 8.4/8.5 with lowest and highest supported dependencies; record the resolved Runwire version and native extensions.
+- [ ] Verify automatic selection with Runwire absent, installed but inactive, active with each relevant capability, and active with partial capabilities. Cover calls outside a request/task scope and contexts after shutdown, fork, and worker replacement. Confirm the normal path remains usable without Runwire classes loaded.
+- [ ] Run the same cache contract cases through normal and runtime-assisted paths. Prove no duplicate mutation on failure/cancellation, no changed integrity or distributed-atomicity guarantees, no cross-request scope leakage, and no automatic job startup from package presence. Verify the bootstrap binding and lifecycle cleanup in the executable example.
+- [ ] Declare topology prerequisites. Native prefork supervision needs PCNTL/POSIX; portable single-process execution relies on external supervision for restarts. Test supported modes explicitly and fail clearly for unsupported requested capabilities.
+- [ ] Demonstrate no skipped committed invalidations through reversed commits, duplicate replay, worker death before/after application and cursor persistence, restart, retention, backend outage, and graceful shutdown. Prove cursor ownership and L1 coherence for each advertised deployment topology.
+- [ ] Bound batch work, queueing, retry frequency, backend wait time, shutdown duration, and retained memory. Test crash loops and verify that backoff does not starve lifecycle handling. Maintenance must not overlap unexpectedly or exceed the recorded SQLite contention budget.
+- [ ] Soak-test sequential and, if supported, concurrent requests with changing tenants, failures, cancellations, deadlines, and deferred writes. Require no memoizer leakage, cross-request resets, abandoned request state, or unbounded memory growth.
+- [ ] Compare representative host-application successful RPM with and without the integration under equivalent correctness guarantees, topology, resources, and workloads. Record invalidation lag, p95/p99 latency, errors/timeouts, CPU/RSS, backend calls, and maintenance contention using the release measurement method below. Set acceptable budgets before selecting an implementation.
+- [ ] Treat Runwire 2.1 adaptive HTTP scheduling as a separate host-level experiment. Begin with protocol defaults (`FIXED`), and evaluate `LATENCY`, `THROUGHPUT`, or `AUTO` only through repeated representative measurements, including load transitions and fairness. Do not attribute HTTP scheduling gains to CacheLayer storage or change protocol hard limits.
+- [ ] Run executable examples and integration jobs on the exact final revision, and document startup, shutdown, connection ownership, prerequisites, topology limits, recovery, and rollback. Keep integration evidence separate from core/backend gate results.
 
 ## Improvements that require measurement or a separate scope decision
 
