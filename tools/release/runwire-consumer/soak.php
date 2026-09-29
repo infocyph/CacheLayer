@@ -56,7 +56,7 @@ for ($index = 0; $index < SEQUENTIAL_REQUESTS; ++$index) {
     try {
         if ($deadlineCase) {
             try {
-                (new CoroutineRuntime())->runRequest(
+                new CoroutineRuntime()->runRequest(
                     $request,
                     static function (CoroutineScope $scope) use ($request): void {
                         RunwireIntegration::share(
@@ -77,7 +77,7 @@ for ($index = 0; $index < SEQUENTIAL_REQUESTS; ++$index) {
 
         if ($cancellationCase) {
             try {
-                (new CoroutineRuntime())->runRequest(
+                new CoroutineRuntime()->runRequest(
                     $request,
                     static function (CoroutineScope $scope) use ($request): void {
                         RunwireIntegration::share(
@@ -118,6 +118,7 @@ for ($index = 0; $index < SEQUENTIAL_REQUESTS; ++$index) {
                 if (!$cache->saveDeferred($item) || !$cache->commit() || $cache->get($key) !== $index) {
                     throw new RuntimeException('deferred cache write failed during soak');
                 }
+
                 ++$validated;
             },
         );
@@ -173,6 +174,7 @@ $coroutines->run(
                                 if (!$cache->saveDeferred($item) || !$cache->commit() || $cache->get($key) !== $memo) {
                                     throw new RuntimeException('concurrent deferred cache write failed');
                                 }
+
                                 ++$validated;
                             },
                         );
