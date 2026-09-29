@@ -208,3 +208,28 @@ it('replaces runtime bindings without retaining a previous worker request scope'
         static fn(): string => 'stale',
     ))->toThrow(LogicException::class, 'different runtime');
 });
+
+
+it('releases request-owned memoizers across repeated persistent request lifecycles', function (): void {
+    $runtime = cacheLayerRunwireContext(concurrent: true);
+    RunwireIntegration::bind($runtime);
+    $references = [];
+
+    for ($index = 0; $index < 128; ++$index) {
+        $request = RequestContext::create($runtime);
+        $memoizer = RunwireIntegration::share(
+            $request,
+            null,
+            static fn(): mixed => memoize(),
+        );
+        $references[] = WeakReference::create($memoizer);
+        $request->complete();
+        unset($memoizer, $request);
+    }
+
+    gc_collect_cycles();
+
+    foreach ($references as $reference) {
+        expect($reference->get())->toBeNull();
+    }
+});
