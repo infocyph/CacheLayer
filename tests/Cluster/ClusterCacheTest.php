@@ -534,3 +534,34 @@ test('recovery clears and replays when a recreated transport restarts behind the
         ->and($replacementRuntime->consume())->toBe(1)
         ->and($replacementRuntime->status()->cursor)->toBe('1');
 });
+
+
+test('PDO recovery clears stale local state after complete retained-history loss', function () {
+    $connection = new PDO('sqlite:' . $this->clusterDirectory . '/history-loss.sqlite');
+    $transport = new PdoInvalidationTransport($connection, allowSqliteForTesting: true);
+    $node = new NodeCacheConfig(
+        $this->clusterDirectory . '/history-loss-node.sqlite',
+        'application',
+        apcuEnabled: false,
+    );
+    $cluster = new ClusterCacheConfig('pdo-history-loss', 'consumer', 'pdo-history-loss');
+    $runtime = ClusterCache::create($node, $cluster, $transport);
+
+    $transport->publish(
+        InvalidationEvent::key('pdo-history-loss', 'application', 'first', 'writer'),
+    );
+    expect($runtime->consume())->toBe(1);
+
+    $runtime->cache()->set('stale', 'value', 300);
+    $transport->publish(
+        InvalidationEvent::key('pdo-history-loss', 'application', 'stale', 'writer'),
+    );
+    $connection->exec(
+        "DELETE FROM " . PdoInvalidationSchema::EVENT_TABLE . " WHERE cluster_name = 'pdo-history-loss'",
+    );
+
+    expect($runtime->recoverIfRequired())->toBeTrue()
+        ->and($runtime->cache()->get('stale'))->toBeNull()
+        ->and($runtime->status()->cursor)->toBeNull()
+        ->and($runtime->recoverIfRequired())->toBeFalse();
+});
