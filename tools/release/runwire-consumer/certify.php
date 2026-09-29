@@ -41,7 +41,10 @@ function usageValue(array $usage, string $key): int
     return is_int($value) ? $value : (int) $value;
 }
 
-/** @param array<string, mixed> $start @param array<string, mixed> $end */
+/**
+ * @param array<string, mixed> $start
+ * @param array<string, mixed> $end
+ */
 function cpuMicros(array $start, array $end): int
 {
     return (usageValue($end, 'ru_utime.tv_sec') - usageValue($start, 'ru_utime.tv_sec')) * 1_000_000
