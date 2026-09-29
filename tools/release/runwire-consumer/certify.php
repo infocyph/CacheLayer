@@ -38,7 +38,7 @@ function usageValue(array $usage, string $key): int
 {
     $value = $usage[$key] ?? 0;
 
-    return is_int($value) ? $value : (int) $value;
+    return is_int($value) ? $value : 0;
 }
 
 /**
@@ -97,6 +97,9 @@ function workload(RuntimeContext $runtime, bool $integrated): array
     $errors = 0;
     $startMemory = memory_get_usage(true);
     $startCpu = getrusage();
+    if ($startCpu === false) {
+        $startCpu = [];
+    }
     $start = hrtime(true);
 
     if ($integrated) {
@@ -131,6 +134,9 @@ function workload(RuntimeContext $runtime, bool $integrated): array
 
     $elapsed = (hrtime(true) - $start) / 1_000_000_000;
     $endCpu = getrusage();
+    if ($endCpu === false) {
+        $endCpu = [];
+    }
     $metrics = $cache->exportMetrics();
     $cpuMicros = cpuMicros($startCpu, $endCpu);
 
