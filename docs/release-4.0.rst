@@ -11,8 +11,9 @@ Platform
 
 * Minimum PHP version is 8.4.
 * Release verification targets PHP 8.4 and 8.5.
-* Runwire 2.1 integration remains optional and is not part of the 4.0 core
-  runtime contract.
+* Runwire 2.1 remains an optional dependency, but CacheLayer 4.0 ships and
+  release-verifies runtime/request scope integration plus host-owned cluster
+  invalidation and Node maintenance runners.
 
 Security and storage
 ====================
@@ -37,6 +38,22 @@ Correctness
 * Numeric-string key/tag identity is preserved through batching and tiering.
 * Memcached long TTLs use the correct absolute-expiration conversion.
 * Tiered caches invalidate/fence skipped L1 state rather than serving stale data.
+
+Runwire 2.1
+===========
+
+* The application shares the active Runwire runtime and request/task scope;
+  CacheLayer does not discover or create a runtime globally.
+* Capability-driven behavior falls back to the normal CacheLayer path before an
+  operation starts when Runwire or the needed capability is unavailable.
+* Concurrent persistent requests use isolated request-owned memoizers; an
+  unscoped concurrent runtime never falls back to process-global memoization.
+* Task/service workers can own bounded invalidation consumption and Node SQLite
+  maintenance while Runwire retains worker, supervisor, and event-loop ownership.
+* Worker cancellation/drain propagates through Runwire. Backend operations stay
+  synchronous and no HTTP scheduling or throughput improvement is claimed.
+* A dedicated PHP 8.4/8.5 release consumer installs Runwire 2.1 separately and
+  executes the shipped invalidation-worker example.
 
 Atomicity and counters
 ======================
