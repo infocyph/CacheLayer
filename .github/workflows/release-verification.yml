@@ -59,6 +59,37 @@ jobs:
         working-directory: tools/release/consumer
         run: php -d error_reporting=E_ALL smoke.php
 
+  runwire-consumer:
+    name: Runwire 2.1 consumer - PHP ${{ matrix.php }} - ${{ matrix.dependencies }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        php: [ "8.4", "8.5" ]
+        dependencies: [ lowest, stable ]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          tools: composer:v2
+          extensions: pdo, pdo_sqlite
+          coverage: none
+      - name: Resolve CacheLayer with Runwire 2.1
+        working-directory: tools/release/runwire-consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.dependencies }}" = "lowest" ]; then
+            composer update --prefer-lowest --prefer-stable --no-interaction --prefer-dist --no-progress
+          else
+            composer update --prefer-stable --no-interaction --prefer-dist --no-progress
+          fi
+          composer check-platform-reqs
+      - name: Run Runwire integration smoke
+        working-directory: tools/release/runwire-consumer
+        run: php -d error_reporting=E_ALL smoke.php
+
   psr-contracts:
     name: Independent PSR-6 / PSR-16 contracts
     runs-on: ubuntu-24.04
