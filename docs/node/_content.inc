@@ -354,6 +354,11 @@ rows, but pruning prevents the local SQLite file from accumulating them.
    Runs SQLite ``PRAGMA optimize``. Schedule it less frequently than pruning,
    for example as part of a daily maintenance job.
 
+``cycle($pruneLimit, $checkpoint, $optimize)``
+   Runs one serial bounded maintenance unit. This is convenient for framework
+   schedulers and the optional :doc:`/runwire` worker integration because one
+   call cannot overlap its own prune/checkpoint/optimize steps.
+
 A simple scheduled task can perform a small bounded prune every few minutes
 and checkpoint periodically. Do not run ``VACUUM`` on the request path; plan it
 separately if disk-space reclamation is required.
@@ -388,6 +393,11 @@ Use your framework scheduler, Kubernetes ``CronJob``, systemd timer, or another
 platform scheduler instead when that is how application jobs are operated.
 Only one maintenance task is needed per local SQLite file; it is safe to use a
 bounded prune limit if overlap cannot be ruled out.
+
+Applications already running Runwire 2.1 may instead use
+``RunwireWorkerIntegration::startNodeMaintenance()`` in a host-owned
+task/service worker. CacheLayer does not create a worker or event loop; see
+:doc:`/runwire` for lifecycle and topology requirements.
 
 Deployment and process guidance
 -------------------------------
