@@ -130,6 +130,25 @@ Cursor state is scoped by cluster, node, namespace, and transport identity.
 Retention gaps trigger a local namespace clear before progress is advanced.
 Permanent poison events are not skipped silently.
 
+Runwire 2.1 integration
+=======================
+
+Runwire is still optional at installation time. Applications that use the
+integration should install ``infocyph/runwire:^2.1`` and bind the concrete
+Runwire ``RuntimeContext`` after each worker/generation is created. Share the
+current request/task scope only while that work is active and release the
+runtime binding on shutdown or replacement.
+
+Do not create database, Redis, or other backend connections in a prefork master
+and reuse them in child workers. Build CacheLayer's Node/Cluster objects in the
+worker after the fork. Runwire owns worker restart/backoff, cancellation,
+drain, and event-loop lifecycle; CacheLayer does not take over those resources.
+
+Removing the integration does not require a cache data migration. Stop the
+Runwire-owned CacheLayer tasks, remove the bootstrap/scope binding, and return
+to explicit ``ClusterRuntime::consume()`` and ``NodeCacheMaintenance::cycle()``
+execution.
+
 Rollback
 ========
 
