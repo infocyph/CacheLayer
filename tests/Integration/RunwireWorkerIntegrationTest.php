@@ -269,21 +269,29 @@ it('turns an unhandled CacheLayer consumer failure into a Runwire worker stop', 
     {
         public function consumeAfter(string $cluster, ?string $cursor, int $limit): InvalidationBatch
         {
+            unset($cluster, $cursor, $limit);
+
             throw new RuntimeException('intentional invalidation backend failure');
         }
 
         public function isCursorBefore(string $cursor, string $oldestAvailableId): bool
         {
+            unset($cursor, $oldestAvailableId);
+
             return false;
         }
 
         public function oldestAvailableId(string $cluster): ?string
         {
+            unset($cluster);
+
             return null;
         }
 
         public function publish(InvalidationEvent $event): string
         {
+            unset($event);
+
             return '1';
         }
     };
