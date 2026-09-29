@@ -15,40 +15,33 @@ final class BoundedValueTraversal
 
     public static function assertSafe(mixed $value): void
     {
-        /** @var list<array{value:mixed,depth:int,references:array<string,true>}> $stack */
-        $stack = [['value' => $value, 'depth' => 0, 'references' => []]];
         $nodes = 0;
-
-        while (($frame = array_pop($stack)) !== null) {
-            self::assertNodeBudget(++$nodes);
-            $current = $frame['value'];
-            if (!is_array($current)) {
-                continue;
-            }
-
-            self::assertDepth($frame['depth'], $current);
-            self::appendChildren($stack, $current, $frame['depth'], $frame['references']);
-        }
+        self::visit($value, 0, [], $nodes);
     }
 
     /**
-     * @param list<array{value:mixed,depth:int,references:array<string,true>}> $stack
-     * @param array<mixed> $current
      * @param array<string,true> $references
      */
-    private static function appendChildren(
-        array &$stack,
-        array $current,
+    private static function visit(
+        mixed $value,
         int $depth,
         array $references,
+        int &$nodes,
     ): void {
-        foreach ($current as $key => $item) {
-            $childReferences = self::childReferences($current, $key, $references);
-            $stack[] = [
-                'value' => $item,
-                'depth' => $depth + 1,
-                'references' => $childReferences,
-            ];
+        self::assertNodeBudget(++$nodes);
+        if (!is_array($value)) {
+            return;
+        }
+
+        self::assertDepth($depth, $value);
+        foreach ($value as $key => $item) {
+            self::assertNodeBudget($nodes + 1);
+            self::visit(
+                $item,
+                $depth + 1,
+                self::childReferences($value, $key, $references),
+                $nodes,
+            );
         }
     }
 
