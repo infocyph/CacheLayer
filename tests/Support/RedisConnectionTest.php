@@ -14,3 +14,14 @@ test('redis connection rejects malformed DSNs before creating a client', functio
     'invalid database' => 'redis://127.0.0.1/database',
     'invalid port' => 'redis://127.0.0.1:0',
 ]);
+
+
+test('redis authentication helper marks every credential-bearing parameter sensitive', function () {
+    $authenticate = new ReflectionMethod(RedisConnection::class, 'authenticate');
+    $credentials = $authenticate->getParameters()[1];
+    $parseCredentials = new ReflectionMethod(RedisConnection::class, 'parseCredentials');
+    $parts = $parseCredentials->getParameters()[0];
+
+    expect($credentials->getAttributes(SensitiveParameter::class))->toHaveCount(1)
+        ->and($parts->getAttributes(SensitiveParameter::class))->toHaveCount(1);
+});
