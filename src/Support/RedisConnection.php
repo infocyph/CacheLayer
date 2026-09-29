@@ -41,7 +41,7 @@ final class RedisConnection
      * @param string|array|null $credentials The optional Redis credentials.
      * @phpstan-param string|array{string, string}|null $credentials
      */
-    private static function authenticate(\Redis $connection, string|array|null $credentials): void
+    private static function authenticate(\Redis $connection, #[\SensitiveParameter] string|array|null $credentials): void
     {
         if ($credentials !== null && !$connection->auth($credentials)) {
             throw new RuntimeException('Redis-compatible server authentication failed.');
@@ -53,7 +53,7 @@ final class RedisConnection
      * @phpstan-param array<string, int|string> $parts
      * @phpstan-return string|array{string, string}|null
      */
-    private static function parseCredentials(array $parts): string|array|null
+    private static function parseCredentials(#[\SensitiveParameter] array $parts): string|array|null
     {
         $pass = $parts['pass'] ?? null;
         if (!is_string($pass) || $pass === '') {
