@@ -364,8 +364,8 @@ Batches 1-6 are complete. Batch 7, Runwire 2.1 integration, is now required and 
 | Sub-batch | Scope | Status | Gate |
 | --- | --- | --- | --- |
 | 7A — Runtime/request lifecycle | Shared active RuntimeContext + request/task scope, capability-driven memoizer isolation/fallback | **Complete** | Exact head `a998ffaf0b952c7c751183a8a0652e25770472bc` passed Security & Standards #421 and Release Verification #61. Clean no-dev consumers confirm Runwire remains optional. |
-| 7B — Worker-owned background integration | Bounded cluster invalidation polling and Node maintenance inside the host-provided task scope; no worker/loop ownership | **In progress** | Add bounded runners using shared scope/cooperative waits with normal blocking fallback, then worker stop/error/coherence tests and full QA. |
-| 7C — Consumer/docs/release integration | Executable example, optional consumer dependency, topology docs, PHP 8.4/8.5 integration matrix | **Pending** | Exact-head Security & Standards + Release Verification. |
+| 7B — Worker-owned background integration | Bounded cluster invalidation polling and Node maintenance inside the host-provided task scope; no worker/loop ownership | **Complete** | Exact head `abae64c585998bc56327ab5792fef39f881ed875` passed Security & Standards #433 and Release Verification #73. Worker-owned cancellation/drain, bounded polling, maintenance cycles, capability fallback, and normal-path behavior are covered. |
+| 7C — Consumer/docs/release integration | Executable example, optional consumer dependency, topology docs, PHP 8.4/8.5 integration matrix | **In progress** | Add executable consumer evidence and operational documentation, then run exact-head Security & Standards + Release Verification. |
 
 ## Optional Runwire 2.1 integration workstream
 
