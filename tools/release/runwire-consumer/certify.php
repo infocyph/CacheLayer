@@ -55,7 +55,7 @@ function workload(RuntimeContext $runtime, bool $integrated): array
         try {
             $operation = static function () use ($cache, $index): void {
                 $tenant = $index % 32;
-                $key = 'tenant-' . $tenant . ':item-' . ($index % 256);
+                $key = 'tenant-' . $tenant . '-item-' . ($index % 256);
 
                 if (($index % 8) === 0) {
                     if (!$cache->set($key, $index, 60)) {
