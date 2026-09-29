@@ -102,3 +102,39 @@ test('Memcached supports CAS-backed atomic cache operations', function () use ($
         ->and($atomic->setIfAbsent('claim', 'reclaimed', 30))->toBeTrue()
         ->and($cache->get('claim'))->toBe('reclaimed');
 });
+
+
+test('file PHP-file SQLite WeakMap and Memcached atomic consume discard deferred overlays', function () use ($cleanupTree, $host, $port) {
+    $directory = sys_get_temp_dir() . '/cachelayer-atomic-deferred-' . uniqid('', true);
+    $sqlite = $directory . '/atomic.sqlite';
+    mkdir($directory, 0700, true);
+
+    $memcached = new Memcached();
+    $memcached->addServer($host, $port);
+    $memcached->flush();
+
+    $caches = [
+        Cache::weakMap('atomic-deferred-weak'),
+        Cache::file('atomic-deferred-file', $directory . '/file'),
+        Cache::phpFiles('atomic-deferred-php', $directory . '/php'),
+        Cache::sqlite('atomic-deferred-sqlite', $sqlite),
+        Cache::memcached('atomic-deferred-memcached', [[$host, $port, 0]], $memcached),
+    ];
+
+    try {
+        foreach ($caches as $index => $cache) {
+            $key = 'consume-' . $index;
+            $atomic = $cache->atomic();
+            expect($atomic)->not->toBeNull()
+                ->and($cache->set($key, 'stored'))->toBeTrue()
+                ->and($cache->saveDeferred($cache->getItem($key)->set('pending')))->toBeTrue()
+                ->and($atomic->getAndDelete($key, 'missing'))->toBe('stored')
+                ->and($atomic->getAndDelete($key, 'missing'))->toBe('missing')
+                ->and($cache->commit())->toBeTrue()
+                ->and($cache->get($key))->toBeNull();
+        }
+    } finally {
+        unset($caches);
+        $cleanupTree($directory);
+    }
+});
