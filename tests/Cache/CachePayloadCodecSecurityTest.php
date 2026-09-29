@@ -126,3 +126,44 @@ test('payload codec does not decode legacy payload markers', function () {
     expect($codec->decode('imx-gz:payload'))->toBeNull()
         ->and($codec->decode('imx-sig-v1:payload'))->toBeNull();
 });
+
+
+test('payload traversal rejects wide graphs before exceeding the node budget', function () {
+    $codec = new CachePayloadCodec(new CacheOptions(maxPayloadBytes: 8 * 1024 * 1024));
+    $supported = array_fill(0, 65_534, 'x');
+    $tooWide = array_fill(0, 65_536, 'x');
+
+    $blob = $codec->encode($supported, null);
+    expect($codec->decode($blob)?->value)->toBe($supported)
+        ->and(fn() => $codec->encode($tooWide, null))
+        ->toThrow(InvalidArgumentException::class, 'traversal budget');
+
+    $serialized = serialize([
+        'format' => 2,
+        'encoding' => 'native',
+        'value' => $tooWide,
+        'expires' => null,
+        'tags' => [],
+        'namespace' => null,
+    ]);
+
+    expect(strlen($serialized))->toBeLessThan(8 * 1024 * 1024)
+        ->and($codec->decode('cl2:' . $serialized))->toBeNull();
+});
+
+test('payload traversal rejects recursive and over-deep graphs safely', function () {
+    $codec = new CachePayloadCodec();
+    $recursive = [];
+    $recursive['self'] = &$recursive;
+
+    expect(fn() => $codec->encode($recursive, null))
+        ->toThrow(InvalidArgumentException::class, 'Recursive array references');
+
+    $deep = 'leaf';
+    for ($depth = 0; $depth < 130; ++$depth) {
+        $deep = [$deep];
+    }
+
+    expect(fn() => $codec->encode($deep, null))
+        ->toThrow(InvalidArgumentException::class, 'nesting depth');
+});
