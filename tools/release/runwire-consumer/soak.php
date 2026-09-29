@@ -121,6 +121,7 @@ $coroutines->run(
                             $scope,
                             static function () use (
                                 $request,
+                                $scope,
                                 $cache,
                                 $index,
                                 $deadlineCase,
