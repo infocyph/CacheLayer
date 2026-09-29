@@ -85,6 +85,8 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
 
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
+        $this->discardDeferredKey($key);
+
         $mapped = $this->map($key);
 
         return $this->withExclusiveLock(function () use ($key, $mapped): CacheItemInterface {
