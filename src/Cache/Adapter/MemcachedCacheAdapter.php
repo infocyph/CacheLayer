@@ -87,6 +87,8 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
 
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
+        $this->discardDeferredKey($key);
+
         $mapped = $this->mapData($key);
         $extended = $this->extendedGet($mapped);
         if ($extended === null || $extended['value'] === self::ATOMIC_TOMBSTONE) {
