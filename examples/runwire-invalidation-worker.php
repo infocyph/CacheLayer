@@ -28,6 +28,10 @@ $worker = null;
 $runtime = null;
 
 try {
+    if (!mkdir($base, 0700, true) && !is_dir($base)) {
+        throw new RuntimeException('Unable to create CacheLayer Runwire example directory.');
+    }
+
     $transportConnection = new PDO('sqlite:' . $base . '/invalidation.sqlite');
     $transport = new PdoInvalidationTransport(
         $transportConnection,
