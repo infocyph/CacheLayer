@@ -1,6 +1,5 @@
-=====================================
 Cluster Cache: Operations and Consumer
-=====================================
+======================================
 
 This page separates ordinary local cache operations from distributed
 invalidation, then describes the consumer and scheduling lifecycle.

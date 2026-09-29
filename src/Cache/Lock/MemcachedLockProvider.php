@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Infocyph\CacheLayer\Cache\Lock;
 
+use Infocyph\CacheLayer\Cache\Adapter\MemcachedExpiration;
 use RuntimeException;
 
 final readonly class MemcachedLockProvider implements LockProviderInterface
@@ -26,7 +27,7 @@ final readonly class MemcachedLockProvider implements LockProviderInterface
 
     public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): ?LockHandle
     {
-        $ttlSeconds = self::leaseSeconds($leaseSeconds);
+        $ttlSeconds = MemcachedExpiration::fromRelative(self::leaseSeconds($leaseSeconds));
 
         return $this->acquireWithRetry(
             $this->prefix,
@@ -43,7 +44,7 @@ final readonly class MemcachedLockProvider implements LockProviderInterface
             return false;
         }
 
-        $ttlSeconds = self::leaseSeconds($leaseSeconds);
+        $ttlSeconds = MemcachedExpiration::fromRelative(self::leaseSeconds($leaseSeconds));
         $values = $this->memcached->getMulti([$handle->key], \Memcached::GET_EXTENDED);
         if (!is_array($values)) {
             return false;

@@ -176,9 +176,9 @@ test('bulk validation completes before any storage mutation', function () {
     expect(fn() => $cache->setMultiple(['valid' => 1, 'bad key' => 2]))
         ->toThrow(CacheInvalidArgumentException::class)
         ->and($adapter->saveBatches)->toBe(0);
-    expect(fn() => $cache->setMultiple([1 => 'numeric key']))
-        ->toThrow(CacheInvalidArgumentException::class)
-        ->and($adapter->saveBatches)->toBe(0);
+    expect($cache->setMultiple(['1' => 'numeric key']))->toBeTrue()
+        ->and($cache->get('1'))->toBe('numeric key')
+        ->and($adapter->saveBatches)->toBe(1);
     expect(fn() => $cache->deleteMultiple(['valid', 'bad:key']))
         ->toThrow(CacheInvalidArgumentException::class)
         ->and($adapter->deleteBatches)->toBe(0);
@@ -198,7 +198,7 @@ test('bulk tagged reads fetch tag generations once and reject whole stale record
     $adapter->resetOperationCounts();
     expect($cache->getMultiple(['one', 'two']))->toBe(['one' => null, 'two' => null])
         ->and($adapter->tagFetchBatches)->toBe(1)
-        ->and($adapter->deleteBatches)->toBe(1);
+        ->and($adapter->deleteBatches)->toBe(0);
 });
 
 test('cache items can only be persisted by their exact owning pool', function () {

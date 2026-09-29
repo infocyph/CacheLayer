@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Infocyph\CacheLayer\Cache\Lock;
 
+use Infocyph\CacheLayer\Support\FilesystemTrust;
+
 final readonly class FileLockProvider implements LockProviderInterface
 {
     use GeneratesLockTokens;
@@ -35,7 +37,7 @@ final readonly class FileLockProvider implements LockProviderInterface
         }
 
         $path = $this->directory . DIRECTORY_SEPARATOR . self::digestLockKey($key) . '.lock';
-        if (isset($activeLocks[$path])) {
+        if (FilesystemTrust::containsSymlink($path) || isset($activeLocks[$path])) {
             return null;
         }
         $handle = $this->openLockFile($path);
@@ -119,7 +121,7 @@ final readonly class FileLockProvider implements LockProviderInterface
 
     private function prepareDirectory(): bool
     {
-        if (is_link($this->directory)) {
+        if (FilesystemTrust::containsSymlink($this->directory)) {
             return false;
         }
         if (!is_dir($this->directory)

@@ -7,6 +7,7 @@ namespace Infocyph\CacheLayer\Cache\Adapter;
 use Infocyph\CacheLayer\Cache\CacheInput;
 use Infocyph\CacheLayer\Cache\CacheRecord;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
+use Infocyph\CacheLayer\Support\MemcachedValueGuard;
 use Psr\Cache\CacheItemInterface;
 use RuntimeException;
 
@@ -62,7 +63,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
             return false;
         }
 
-        $record = $this->decodeRecordFromBlob($blob);
+        $record = $this->decodeRecordFromBlob($blob, $key);
         if (!$record instanceof CacheRecord
             || $record->namespaceGeneration !== $this->namespaceGeneration()
             || $record->tags !== []
@@ -80,19 +81,21 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
             $extended['cas'],
             $mapped,
             $replacementBlob,
-            $ttl ?? 0,
+            MemcachedExpiration::fromRelative($ttl),
         );
     }
 
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
+        $this->discardDeferredKey($key);
+
         $mapped = $this->mapData($key);
         $extended = $this->extendedGet($mapped);
         if ($extended === null || $extended['value'] === self::ATOMIC_TOMBSTONE) {
             return $this->genericMiss($key);
         }
 
-        $record = $this->decodeRecordFromBlob($extended['value']);
+        $record = $this->decodeRecordFromBlob($extended['value'], $key);
         if (!$record instanceof CacheRecord
             || $record->namespaceGeneration !== $this->namespaceGeneration()
             || !$this->recordTagsAreCurrent($record)) {
@@ -125,26 +128,26 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
             $this->namespaceGeneration(),
         );
 
-        if ($this->client->add($mapped, $blob, $ttl ?? 0)) {
+        if ($this->client->add($mapped, $blob, MemcachedExpiration::fromRelative($ttl))) {
             return true;
         }
 
         $extended = $this->extendedGet($mapped);
         if ($extended === null) {
-            return $this->client->add($mapped, $blob, $ttl ?? 0);
+            return $this->client->add($mapped, $blob, MemcachedExpiration::fromRelative($ttl));
         }
 
         $current = $extended['value'];
         $record = $current === self::ATOMIC_TOMBSTONE
             ? null
-            : $this->decodeRecordFromBlob($current);
+            : $this->decodeRecordFromBlob($current, $item->getKey());
         if ($record instanceof CacheRecord
             && $record->namespaceGeneration === $this->namespaceGeneration()
             && $this->recordTagsAreCurrent($record)) {
             return false;
         }
 
-        return $this->client->cas($extended['cas'], $mapped, $blob, $ttl ?? 0);
+        return $this->client->cas($extended['cas'], $mapped, $blob, MemcachedExpiration::fromRelative($ttl));
     }
 
     public function clear(): bool
@@ -157,29 +160,23 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
 
     public function deleteItem(string $key): bool
     {
+        $this->discardDeferredKey($key);
         $this->client->delete($this->mapData($key));
 
-        return !in_array(
-            $this->client->getResultCode(),
-            [\Memcached::RES_FAILURE, \Memcached::RES_WRITE_FAILURE],
-            true,
-        );
+        return $this->deleteResultSucceeded();
     }
 
     /** @param list<string> $keys */
     public function deleteItems(array $keys): bool
     {
+        $this->discardDeferredKeys($keys);
         if ($keys === []) {
             return true;
         }
 
         $this->client->deleteMulti(array_map($this->mapData(...), $keys));
 
-        return !in_array(
-            $this->client->getResultCode(),
-            [\Memcached::RES_FAILURE, \Memcached::RES_WRITE_FAILURE],
-            true,
-        );
+        return $this->deleteResultSucceeded();
     }
 
     public function getClient(): \Memcached
@@ -197,12 +194,18 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         if ($blob === self::ATOMIC_TOMBSTONE) {
             return $this->genericMiss($key);
         }
-        $record = is_string($blob) ? $this->decodeRecordFromBlob($blob) : null;
+        $record = is_string($blob) ? $this->decodeRecordFromBlob($blob, $key) : null;
         if ($record !== null && $record->namespaceGeneration === $generation) {
             return $this->genericItemFromRecord($key, $record);
         }
         if (is_string($blob)) {
-            $this->client->delete($mapped);
+            MemcachedValueGuard::replaceIfUnchanged(
+                $this->client,
+                $mapped,
+                $blob,
+                self::ATOMIC_TOMBSTONE,
+                1,
+            );
         }
 
         return $this->genericMiss($key);
@@ -261,19 +264,25 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
 
                 continue;
             }
-            $record = is_string($blob) ? $this->decodeRecordFromBlob($blob) : null;
+            $record = is_string($blob) ? $this->decodeRecordFromBlob($blob, $key) : null;
             if ($record === null || $record->namespaceGeneration !== $generation) {
                 $items[$key] = $this->genericMiss($key);
                 if (is_string($blob)) {
-                    $stale[] = $mapped;
+                    $stale[] = [$mapped, $blob];
                 }
 
                 continue;
             }
             $items[$key] = $this->genericItemFromRecord($key, $record);
         }
-        if ($stale !== []) {
-            $this->client->deleteMulti($stale);
+        foreach ($stale as [$mapped, $observed]) {
+            MemcachedValueGuard::replaceIfUnchanged(
+                $this->client,
+                $mapped,
+                $observed,
+                self::ATOMIC_TOMBSTONE,
+                1,
+            );
         }
 
         return $items;
@@ -304,7 +313,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         return $this->client->set(
             $this->mapData($item->getKey()),
             $this->encodeItem($item, $expiration['expiresAt'], $this->namespaceGeneration()),
-            $expiration['ttl'] ?? 0,
+            MemcachedExpiration::fromRelative($expiration['ttl']),
         );
     }
 
@@ -324,8 +333,8 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
 
                 continue;
             }
-            $ttl = $expiration['ttl'] ?? 0;
-            $groups[$ttl][$this->mapData($item->getKey())] = $this->encodeItem(
+            $memcachedExpiration = MemcachedExpiration::fromRelative($expiration['ttl']);
+            $groups[$memcachedExpiration][$this->mapData($item->getKey())] = $this->encodeItem(
                 $item,
                 $expiration['expiresAt'],
                 $generation,
@@ -335,16 +344,26 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         if (!$this->deleteItems($expired)) {
             return false;
         }
-        foreach ($groups as $ttl => $records) {
-            if (!$this->client->setMulti($records, (int) $ttl)) {
-                return false;
-            }
-        }
 
-        return true;
+        return array_all(
+            $groups,
+            fn(array $records, int|string $memcachedExpiration): bool => $this->client->setMulti(
+                $records,
+                $memcachedExpiration,
+            ),
+        );
     }
 
-    /** @return array{value:string, cas:int|float}|null */
+    private function deleteResultSucceeded(): bool
+    {
+        return in_array(
+            $this->client->getResultCode(),
+            [\Memcached::RES_SUCCESS, \Memcached::RES_NOTFOUND],
+            true,
+        );
+    }
+
+    /** @return array{value:string, cas:float}|null */
     private function extendedGet(string $key): ?array
     {
         $value = $this->client->get($key, null, \Memcached::GET_EXTENDED);
@@ -356,12 +375,31 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
             return null;
         }
 
-        return ['value' => $value['value'], 'cas' => $cas];
+        return ['value' => $value['value'], 'cas' => (float) $cas];
     }
 
     private function generationKey(): string
     {
         return $this->namespace . ':m:generation';
+    }
+
+    private function initializeGeneration(string $key, mixed $observed, string $failureMessage): string
+    {
+        $generation = self::normalizeGeneration($observed);
+        if ($generation !== null) {
+            return $generation;
+        }
+
+        $candidate = self::newGeneration();
+        $current = is_string($observed)
+            ? MemcachedValueGuard::replaceIfUnchanged($this->client, $key, $observed, $candidate)
+            : ($this->client->add($key, $candidate) ? $candidate : $this->client->get($key));
+        $generation = self::normalizeGeneration($current);
+        if ($generation === null) {
+            throw new RuntimeException($failureMessage);
+        }
+
+        return $generation;
     }
 
     private function mapData(string $key): string
@@ -377,24 +415,12 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
     private function namespaceGeneration(mixed $value = null): string
     {
         $value ??= $this->client->get($this->generationKey());
-        $generation = self::normalizeGeneration($value);
-        if ($generation !== null) {
-            return $generation;
-        }
 
-        $candidate = self::newGeneration();
-        $value = $this->client->add($this->generationKey(), $candidate)
-            ? $candidate
-            : $this->client->get($this->generationKey());
-        $generation = self::normalizeGeneration($value);
-        if ($generation === null) {
-            $generation = self::newGeneration();
-            if (!$this->client->set($this->generationKey(), $generation)) {
-                throw new RuntimeException('Unable to initialize Memcached namespace generation.');
-            }
-        }
-
-        return $generation;
+        return $this->initializeGeneration(
+            $this->generationKey(),
+            $value,
+            'Unable to initialize Memcached namespace generation.',
+        );
     }
 
     private function recordTagsAreCurrent(CacheRecord $record): bool
@@ -403,8 +429,9 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
             return true;
         }
 
-        $current = $this->getTagGenerations(array_keys($record->tags));
+        $current = $this->getTagGenerations(array_map(static fn(int|string $tag): string => (string) $tag, array_keys($record->tags)));
         foreach ($record->tags as $tag => $generation) {
+            $tag = (string) $tag;
             if (($current[$tag] ?? null) !== $generation) {
                 return false;
             }
@@ -415,23 +442,10 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
 
     private function tagGeneration(string $key, mixed $value): string
     {
-        $generation = self::normalizeGeneration($value);
-        if ($generation !== null) {
-            return $generation;
-        }
-
-        $candidate = self::newGeneration();
-        $generation = self::normalizeGeneration(
-            $this->client->add($key, $candidate) ? $candidate : $this->client->get($key),
+        return $this->initializeGeneration(
+            $key,
+            $value,
+            'Unable to initialize Memcached tag generation.',
         );
-        if ($generation !== null) {
-            return $generation;
-        }
-        $generation = self::newGeneration();
-        if (!$this->client->set($key, $generation)) {
-            throw new RuntimeException('Unable to initialize Memcached tag generation.');
-        }
-
-        return $generation;
     }
 }

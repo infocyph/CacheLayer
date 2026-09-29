@@ -80,7 +80,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
             return false;
         }
 
-        $record = $this->recordFromRow($row);
+        $record = $this->recordFromRow($key, $row);
         if (!$record instanceof CacheRecord || $record->tags !== [] || $record->value !== $expected) {
             return false;
         }
@@ -95,9 +95,11 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
 
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
+        $this->discardDeferredKey($key);
+
         $document = $this->collection->findOneAndDelete(['_id' => $this->mapData($key)]);
         $row = AdapterValueNormalizer::fromJsonOrArrayLike($document);
-        $record = is_array($row) ? $this->recordFromRow($row) : null;
+        $record = is_array($row) ? $this->recordFromRow($key, $row) : null;
 
         return $record instanceof CacheRecord
             ? $this->genericItemFromRecord($key, $record)
@@ -121,7 +123,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
                 return true;
             }
 
-            $replaced = $this->tryReplaceInvalidAtomic($id, $replacement);
+            $replaced = $this->tryReplaceInvalidAtomic($item->getKey(), $id, $replacement);
             if ($replaced !== null) {
                 return $replaced;
             }
@@ -140,6 +142,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
 
     public function deleteItem(string $key): bool
     {
+        $this->discardDeferredKey($key);
         $this->collection->deleteOne(['_id' => $this->mapData($key)]);
 
         return true;
@@ -151,6 +154,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
      */
     public function deleteItems(array $keys): bool
     {
+        $this->discardDeferredKeys($keys);
         if ($keys !== []) {
             $this->collection->deleteMany([
                 '_id' => ['$in' => array_map($this->mapData(...), $keys)],
@@ -174,7 +178,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return $this->genericFromBlobWithInvalidator(
             $key,
             $payload,
-            fn(): bool => $this->deleteItem($key),
+            static fn(): bool => true,
         );
     }
 
@@ -186,30 +190,46 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
     public function getTagGenerations(array $tags): array
     {
         $generations = $this->readTagGenerations($tags);
-        $missing = [];
         foreach ($tags as $tag) {
-            if (!isset($generations[$tag])) {
-                $missing[$tag] = self::newGeneration();
+            if (isset($generations[$tag])) {
+                continue;
+            }
+
+            $candidate = self::newGeneration();
+
+            try {
+                $this->collection->updateOne(
+                    ['_id' => $this->mapTag($tag)],
+                    [
+                        '$setOnInsert' => [
+                            'ns' => $this->ns,
+                            'kind' => 'metadata',
+                            'tag' => $tag,
+                            'generation' => $candidate,
+                        ],
+                    ],
+                    ['upsert' => true],
+                );
+            } catch (Throwable $failure) {
+                if (!$this->isDuplicateKeyFailure($failure)) {
+                    throw $failure;
+                }
             }
         }
-        if ($missing !== [] && !$this->storeTagGenerations($missing)) {
-            throw new RuntimeException('Unable to initialize MongoDB tag generations.');
+
+        $actual = $this->readTagGenerations($tags);
+        foreach ($tags as $tag) {
+            if (!isset($actual[$tag])) {
+                throw new RuntimeException('Unable to initialize MongoDB tag generations.');
+            }
         }
 
-        return $generations + $missing;
+        return $actual;
     }
 
     public function hasItem(string $key): bool
     {
-        $count = $this->collection->countDocuments([
-            '_id' => $this->mapData($key),
-            '$or' => [
-                ['expires' => null],
-                ['expires' => ['$gt' => time()]],
-            ],
-        ]);
-
-        return is_numeric($count) && (int) $count > 0;
+        return $this->getItem($key)->isHit();
     }
 
     /**
@@ -233,17 +253,15 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         }
 
         $items = [];
-        $stale = [];
         foreach ($keys as $key) {
             $row = $byId[$this->mapData($key)] ?? null;
             $payload = is_array($row) ? $this->binaryString($row['payload'] ?? null) : null;
-            $item = $this->genericFromBlobWithInvalidator($key, $payload, static fn(): bool => true);
-            $items[$key] = $item;
-            if (is_array($row) && !$item->isHit()) {
-                $stale[] = $key;
-            }
+            $items[$key] = $this->genericFromBlobWithInvalidator(
+                $key,
+                $payload,
+                static fn(): bool => true,
+            );
         }
-        $this->deleteItems($stale);
 
         return $items;
     }
@@ -346,6 +364,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
     {
         $operations = [];
         foreach ($generations as $tag => $generation) {
+            $tag = (string) $tag;
             if (!self::isGeneration($generation)) {
                 return false;
             }
@@ -431,13 +450,13 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
     }
 
     /** @param array<string, mixed> $row */
-    private function recordFromRow(array $row): ?CacheRecord
+    private function recordFromRow(string $key, array $row): ?CacheRecord
     {
         $payload = $this->binaryString($row['payload'] ?? null);
         if (!is_string($payload)) {
             return null;
         }
-        $record = $this->decodeRecordFromBlob($payload);
+        $record = $this->decodeRecordFromBlob($payload, $key);
         if (!$record instanceof CacheRecord || !$this->recordTagsAreCurrent($record)) {
             return null;
         }
@@ -451,8 +470,9 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
             return true;
         }
 
-        $current = $this->getTagGenerations(array_keys($record->tags));
+        $current = $this->getTagGenerations(array_map(static fn(int|string $tag): string => (string) $tag, array_keys($record->tags)));
         foreach ($record->tags as $tag => $generation) {
+            $tag = (string) $tag;
             if (($current[$tag] ?? null) !== $generation) {
                 return false;
             }
@@ -481,7 +501,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
      * @param array{ns:string, kind:string, payload:mixed, expires:int|null} $replacement
      * @return bool|null True when replaced, false when a live/non-replaceable value exists, null on a race retry.
      */
-    private function tryReplaceInvalidAtomic(string $id, array $replacement): ?bool
+    private function tryReplaceInvalidAtomic(string $key, string $id, array $replacement): ?bool
     {
         $row = AdapterValueNormalizer::fromJsonOrArrayLike(
             $this->collection->findOne(['_id' => $id]),
@@ -489,7 +509,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         if (!is_array($row)) {
             return null;
         }
-        if ($this->recordFromRow($row) instanceof CacheRecord || !array_key_exists('payload', $row)) {
+        if ($this->recordFromRow($key, $row) instanceof CacheRecord || !array_key_exists('payload', $row)) {
             return false;
         }
 

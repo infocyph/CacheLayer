@@ -161,3 +161,84 @@ it('keeps global and per-object memoization buckets bounded', function () {
         ->and(array_key_exists('seed-0', $staticCache->getValue($memoizer)))->toBeFalse()
         ->and(array_key_exists('seed-0', $weakMap[$object]))->toBeFalse();
 });
+
+
+it('same-line closures remain distinct', function () {
+    [$first, $second] = [static fn(): string => 'first', static fn(): string => 'second'];
+
+    expect(memoize($first))->toBe('first')
+        ->and(memoize($second))->toBe('second')
+        ->and(memoize($first))->toBe('first')
+        ->and(memoize()->stats()['hits'])->toBe(1);
+});
+
+it('memoizer type-tags object string and resource parameters', function () {
+    $object = new stdClass();
+    $objectToken = 'stdClass#1';
+    $resource = fopen('php://memory', 'rb');
+    expect($resource)->toBeResource();
+
+    $identity = static fn(mixed $value): string => get_debug_type($value);
+
+    expect(memoize($identity, [$object]))->toBe('stdClass')
+        ->and(memoize($identity, [$objectToken]))->toBe('string')
+        ->and(memoize($identity, [$resource]))->toBe('resource (stream)')
+        ->and(memoize($identity, ['res:stream#' . (int) $resource]))->toBe('string');
+
+    fclose($resource);
+});
+
+it('per-object memoization does not retain collected owners', function () {
+    $owner = new stdClass();
+    $reference = WeakReference::create($owner);
+
+    expect(remember($owner, static fn(): string => 'value'))->toBe('value');
+    unset($owner);
+    gc_collect_cycles();
+
+    expect($reference->get())->toBeNull();
+});
+
+
+it('memoizer fingerprints recursive closure captures without traversing their graphs', function () {
+    $recursive = [];
+    $recursive['self'] = &$recursive;
+    $arrayClosure = static fn(): int => count($recursive);
+
+    $selfClosure = null;
+    $selfClosure = static function () use (&$selfClosure): int {
+        return 7;
+    };
+
+    $left = null;
+    $right = null;
+    $left = static function () use (&$right): int {
+        return 11;
+    };
+    $right = static function () use (&$left): int {
+        return 13;
+    };
+
+    expect(memoize($arrayClosure))->toBe(1)
+        ->and(memoize($arrayClosure))->toBe(1)
+        ->and(memoize($selfClosure))->toBe(7)
+        ->and(memoize($selfClosure))->toBe(7)
+        ->and(memoize($left))->toBe(11)
+        ->and(memoize($right))->toBe(13);
+});
+
+it('flushing an isolated memoizer does not invalidate another memoizer identity map', function () {
+    $first = Memoizer::isolated();
+    $second = Memoizer::isolated();
+    $runs = 0;
+    $callback = static function () use (&$runs): int {
+        return ++$runs;
+    };
+
+    expect($first->get($callback))->toBe(1);
+    $second->get(static fn(): string => 'other');
+    $second->flush();
+
+    expect($first->get($callback))->toBe(1)
+        ->and($runs)->toBe(1);
+});

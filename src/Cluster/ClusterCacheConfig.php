@@ -8,14 +8,19 @@ use Infocyph\CacheLayer\Cluster\Exception\ClusterConfigurationException;
 
 final readonly class ClusterCacheConfig
 {
+    /**
+     * @param string $transportIdentity Durable history generation; rotate to a never-used value after history reset.
+     */
     public function __construct(
         public string $cluster,
         public string $nodeId,
+        public string $transportIdentity,
         public int $consumerBatchSize = 1_000,
         public bool $invalidateLocallyFirst = true,
     ) {
         ClusterInput::cluster($cluster);
         ClusterInput::nodeId($nodeId);
+        ClusterInput::transportIdentity($transportIdentity);
 
         if ($consumerBatchSize < 1) {
             throw new ClusterConfigurationException('The consumer batch size must be greater than zero.');

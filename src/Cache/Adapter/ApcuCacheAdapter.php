@@ -51,6 +51,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
 
     public function deleteItem(string $key): bool
     {
+        $this->discardDeferredKey($key);
         $mapped = $this->map($key);
         if (!apcu_exists($mapped)) {
             return true;
@@ -65,6 +66,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
      */
     public function deleteItems(array $keys): bool
     {
+        $this->discardDeferredKeys($keys);
         if ($keys === []) {
             return true;
         }
@@ -84,10 +86,9 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
                 return $item;
             }
 
-            apcu_delete($apcuKey);
         }
 
-        return new CacheItem($this, $key);
+        return $this->genericMiss($key);
     }
 
     /** @param list<string> $tags */
@@ -106,8 +107,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
                 $candidate = self::newGeneration();
                 $generation = self::normalizeGeneration(apcu_add($key, $candidate) ? $candidate : apcu_fetch($key));
                 if ($generation === null) {
-                    $generation = self::newGeneration();
-                    apcu_store($key, $generation);
+                    throw new RuntimeException('Unable to initialize APCu tag generation.');
                 }
             }
             $generations[$tag] = $generation;
@@ -118,7 +118,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
 
     public function hasItem(string $key): bool
     {
-        return apcu_exists($this->map($key));
+        return $this->getItem($key)->isHit();
     }
 
     /**
@@ -139,17 +139,12 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
         }
 
         $items = [];
-        $stale = [];
         foreach ($keys as $k) {
-            if ($this->appendFetchedHit($items, $stale, $k, $raw)) {
+            if ($this->appendFetchedHit($items, $k, $raw)) {
                 continue;
             }
 
-            $items[$k] = new CacheItem($this, $k);
-        }
-
-        if ($stale !== []) {
-            apcu_delete($stale);
+            $items[$k] = $this->genericMiss($k);
         }
 
         return $items;
@@ -227,13 +222,10 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
             apcu_delete($expired);
         }
 
-        foreach ($groups as $ttl => $records) {
-            if (apcu_store($records, null, (int) $ttl) !== []) {
-                return false;
-            }
-        }
-
-        return true;
+        return array_all(
+            $groups,
+            static fn(array $records, int|string $ttl): bool => apcu_store($records, null, (int) $ttl) === [],
+        );
     }
 
     /** @param array<string, string> $generations */
@@ -242,6 +234,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
     {
         $mapped = [];
         foreach ($generations as $tag => $generation) {
+            $tag = (string) $tag;
             if (!self::isGeneration($generation)) {
                 return false;
             }
@@ -253,14 +246,12 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
 
     /**
      * @param array $items The items argument.
-     * @param array $stale The stale argument.
      * @param string $key The key argument.
      * @param array $raw The raw argument.
      * @phpstan-param array<string, CacheItem> $items
-     * @phpstan-param list<string> $stale
      * @phpstan-param array<mixed> $raw
      */
-    private function appendFetchedHit(array &$items, array &$stale, string $key, array $raw): bool
+    private function appendFetchedHit(array &$items, string $key, array $raw): bool
     {
         $mapped = $this->map($key);
         if (!isset($raw[$mapped]) || !is_string($raw[$mapped])) {
@@ -274,14 +265,12 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
             return true;
         }
 
-        $stale[] = $mapped;
-
         return false;
     }
 
     private function hitItemFromBlob(string $key, string $blob): ?CacheItem
     {
-        $record = $this->decodeRecordFromBlob($blob);
+        $record = $this->decodeRecordFromBlob($blob, $key);
         if ($record === null) {
             return null;
         }

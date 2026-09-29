@@ -2,7 +2,7 @@
 CacheLayer Manual
 =================
 
-CacheLayer is a standalone caching toolkit for PHP 8.3+ with:
+CacheLayer is a standalone caching toolkit for PHP 8.4+ with:
 
 * PSR-6 and PSR-16 support behind one facade (``Cache``)
 * local, distributed, and cloud cache adapters
@@ -50,12 +50,15 @@ Quick Start
    :caption: Guide
 
    cache
+   release-4.0
+   upgrade-4.0
    counters
    adapters/index
    cookbook
    metrics-and-locking
    node/index
    cluster/index
+   runwire
    security
    serializer
    memoize

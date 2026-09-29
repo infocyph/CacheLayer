@@ -11,26 +11,23 @@ declare(strict_types=1);
  */
 
 use Infocyph\CacheLayer\Cache\Cache;
+use Infocyph\CacheLayer\Cache\CacheOptions;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 
 /* ── skip entirely if APCu unavailable ─────────────────────────────── */
 if (! extension_loaded('apcu')) {
-    test('APCu not loaded – skipping adapter tests')->skip();
-
-    return;
+    throw new RuntimeException('APCu is required for the configured cache test matrix.');
 }
 ini_set('apcu.enable_cli', 1);
 if (! apcu_enabled()) {
-    test('APCu not enabled – skipping adapter tests')->skip();
-
-    return;
+    throw new RuntimeException('APCu must be enabled for CLI tests.');
 }
 
 /* ── boilerplate ──────────────────────────────────────────────────── */
 beforeEach(function () {
     apcu_clear_cache();                           // fresh memory
-    $this->cache = Cache::apcu('tests');          // APCu-backed pool
+    $this->cache = Cache::apcu('tests', new CacheOptions(allowClosures: true));          // APCu-backed pool
 });
 
 afterEach(function () {
@@ -72,7 +69,7 @@ test('PSR-6 getItem()/save() (apcu)', function () {
 /* ─── deferred queue ──────────────────────────────────────────────── */
 test('saveDeferred() and commit() (apcu)', function () {
     $this->cache->getItem('x')->set('X')->saveDeferred();
-    expect($this->cache->get('x'))->toBeNull();
+    expect($this->cache->get('x'))->toBe('X');
 
     $this->cache->commit();
     expect($this->cache->get('x'))->toBe('X');

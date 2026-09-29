@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace Infocyph\CacheLayer\Cache\Adapter;
 
-use Cassandra\ExecutionOptions;
-use Cassandra\SimpleStatement;
 use Infocyph\CacheLayer\Cache\CacheInput;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
+use Infocyph\CacheLayer\Support\OptionalCassandra;
 use Psr\Cache\CacheItemInterface;
 use RuntimeException;
 use Traversable;
@@ -67,6 +66,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
 
     public function deleteItem(string $key): bool
     {
+        $this->discardDeferredKey($key);
         $this->executeCql(
             "DELETE FROM {$this->qualifiedTable} WHERE ns = ? AND bucket = ? AND ckey = ?",
             [$this->ns, $this->bucket($key), $this->mapData($key)],
@@ -81,6 +81,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
      */
     public function deleteItems(array $keys): bool
     {
+        $this->discardDeferredKeys($keys);
         foreach ($this->groupByBucket($keys) as $bucket => $group) {
             $marks = implode(',', array_fill(0, count($group), '?'));
             $this->executeCql(
@@ -103,17 +104,17 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
             return $this->genericMiss($key);
         }
 
-        $expiresAt = $this->normalizeExpiry($row['expires'] ?? null);
+        $expiresAt = ScyllaValueNormalizer::expiry($row['expires'] ?? null);
         if ($expiresAt !== null && $expiresAt <= time()) {
-            return $this->genericDeleteAndMiss($key);
+            return $this->genericMiss($key);
         }
 
-        $payload = $this->normalizeString($row['payload'] ?? null);
+        $payload = ScyllaValueNormalizer::string($row['payload'] ?? null);
 
         return $this->genericFromBlobWithInvalidator(
             $key,
             $payload,
-            fn(): bool => $this->deleteItem($key),
+            static fn(): bool => true,
         );
     }
 
@@ -125,17 +126,26 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
     public function getTagGenerations(array $tags): array
     {
         $generations = $this->readTagGenerations($tags);
-        $missing = [];
         foreach ($tags as $tag) {
-            if (!isset($generations[$tag])) {
-                $missing[$tag] = self::newGeneration();
+            if (isset($generations[$tag])) {
+                continue;
             }
-        }
-        if ($missing !== [] && !$this->storeTagGenerations($missing)) {
-            throw new RuntimeException('Unable to initialize ScyllaDB tag generations.');
+
+            $this->executeCql(
+                "INSERT INTO {$this->metadataTable} (ns, bucket, tag, generation) "
+                . 'VALUES (?, ?, ?, ?) IF NOT EXISTS',
+                [$this->ns, $this->bucket($tag), $tag, self::newGeneration()],
+            );
         }
 
-        return $generations + $missing;
+        $actual = $this->readTagGenerations($tags);
+        foreach ($tags as $tag) {
+            if (!isset($actual[$tag])) {
+                throw new RuntimeException('Unable to initialize ScyllaDB tag generation.');
+            }
+        }
+
+        return $actual;
     }
 
     public function hasItem(string $key): bool
@@ -151,14 +161,8 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
     public function multiFetch(array $keys): array
     {
         $items = [];
-        $invalid = [];
         foreach ($this->groupByBucket($keys) as $bucket => $group) {
-            $result = $this->fetchBucketItems($bucket, $group);
-            $items += $result['items'];
-            array_push($invalid, ...$result['invalid']);
-        }
-        if ($invalid !== []) {
-            $this->deleteItems($invalid);
+            $items += $this->fetchBucketItems($bucket, $group);
         }
 
         return $items;
@@ -177,8 +181,8 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
                 [$this->ns, $bucket, ...$group],
             );
             foreach ($rows as $row) {
-                $tag = $this->normalizeString($row['tag'] ?? null);
-                $generation = $this->normalizeString($row['generation'] ?? null);
+                $tag = ScyllaValueNormalizer::string($row['tag'] ?? null);
+                $generation = ScyllaValueNormalizer::string($row['generation'] ?? null);
                 $generation = self::normalizeGeneration($generation);
                 if ($tag !== null && $generation !== null) {
                     $generations[$tag] = $generation;
@@ -210,8 +214,8 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
                 $this->ns,
                 $this->bucket($saveItem->getKey()),
                 $this->mapData($saveItem->getKey()),
-                $this->encodeItem($saveItem, $expires['expiresAt']),
-                $expires['expiresAt'],
+                OptionalCassandra::blob($this->encodeItem($saveItem, $expires['expiresAt'])),
+                OptionalCassandra::bigint($expires['expiresAt']),
             ];
             if ($expires['ttl'] !== null) {
                 $cql .= ' USING TTL ?';
@@ -261,6 +265,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
     public function storeTagGenerations(array $generations): bool
     {
         foreach ($generations as $tag => $generation) {
+            $tag = (string) $tag;
             if (!self::isGeneration($generation)) {
                 return false;
             }
@@ -346,17 +351,12 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
      */
     private function executionOptions(array $arguments): mixed
     {
-        $options = ['arguments' => $arguments];
-        if (class_exists(ExecutionOptions::class)) {
-            return new ExecutionOptions($options);
-        }
-
-        return $options;
+        return OptionalCassandra::executionOptions($arguments);
     }
 
     /**
      * @param list<string> $keys
-     * @return array{items:array<string, CacheItem>, invalid:list<string>}
+     * @return array<string, CacheItem>
      */
     private function fetchBucketItems(int $bucket, array $keys): array
     {
@@ -368,27 +368,23 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
         );
         $byKey = [];
         foreach ($rows as $row) {
-            $physical = $this->normalizeString($row['ckey'] ?? null);
+            $physical = ScyllaValueNormalizer::string($row['ckey'] ?? null);
             if ($physical !== null) {
                 $byKey[$physical] = $row;
             }
         }
 
         $items = [];
-        $invalid = [];
         foreach ($keys as $key) {
             $row = $byKey[$this->mapData($key)] ?? null;
-            $payload = is_array($row) ? $this->normalizeString($row['payload'] ?? null) : null;
-            $record = $payload === null ? null : $this->decodeRecordFromBlob($payload);
+            $payload = is_array($row) ? ScyllaValueNormalizer::string($row['payload'] ?? null) : null;
+            $record = $payload === null ? null : $this->decodeRecordFromBlob($payload, $key);
             $items[$key] = $record === null
                 ? $this->genericMiss($key)
                 : $this->genericItemFromRecord($key, $record);
-            if (is_array($row) && $record === null) {
-                $invalid[] = $key;
-            }
         }
 
-        return ['items' => $items, 'invalid' => $invalid];
+        return $items;
     }
 
     /**
@@ -425,26 +421,6 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
         return 'd:' . $key;
     }
 
-    private function normalizeExpiry(mixed $value): ?int
-    {
-        if (is_int($value)) {
-            return $value;
-        }
-
-        if (is_float($value) || (is_string($value) && is_numeric($value))) {
-            return (int) $value;
-        }
-
-        if (is_object($value) && is_callable([$value, '__toString'])) {
-            $stringValue = (string) $value;
-            if (is_numeric($stringValue)) {
-                return (int) $stringValue;
-            }
-        }
-
-        return null;
-    }
-
     /**
      * @param array $rows The rows argument.
      * @phpstan-param array<mixed, mixed> $rows
@@ -461,19 +437,6 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
         }
 
         return $normalized;
-    }
-
-    private function normalizeString(mixed $value): ?string
-    {
-        if (is_string($value)) {
-            return $value;
-        }
-
-        if (is_object($value) && is_callable([$value, '__toString'])) {
-            return (string) $value;
-        }
-
-        return null;
     }
 
     /**
@@ -517,8 +480,8 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
                 $this->ns,
                 $bucket,
                 $this->mapData($item->getKey()),
-                $this->encodeItem($item, $expiresAt),
-                $expiresAt,
+                OptionalCassandra::blob($this->encodeItem($item, $expiresAt)),
+                OptionalCassandra::bigint($expiresAt),
             );
             if ($ttl !== null) {
                 $arguments[] = $ttl;
@@ -537,11 +500,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
             return $this->preparedStatements[$cql];
         }
 
-        if (class_exists(SimpleStatement::class)) {
-            return new SimpleStatement($cql);
-        }
-
-        return $cql;
+        return OptionalCassandra::simpleStatement($cql);
     }
 
     private function supportsSessionMethod(string $method): bool

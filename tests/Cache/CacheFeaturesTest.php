@@ -144,9 +144,8 @@ test('valid user keys cannot collide with internal tag metadata', function () {
 });
 
 test('file tag rotations remain valid during concurrent updates', function () {
-    if (!function_exists('pcntl_fork') || !function_exists('pcntl_exec')) {
-        $this->markTestSkipped('pcntl is required for the concurrency test.');
-    }
+    expect(function_exists('pcntl_fork'))->toBeTrue()
+        ->and(function_exists('pcntl_exec'))->toBeTrue();
 
     $adapter = new FileCacheAdapter('features', $this->cacheDir);
     $before = $adapter->getTagGenerations(['concurrent'])['concurrent'];

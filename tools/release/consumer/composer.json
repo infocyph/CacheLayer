@@ -1,0 +1,25 @@
+{
+    "name": "infocyph/cachelayer-release-consumer",
+    "type": "project",
+    "require": {
+        "php": ">=8.4",
+        "infocyph/cachelayer": "4.0.x-dev"
+    },
+    "repositories": [
+        {
+            "type": "path",
+            "url": "../../..",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "infocyph/cachelayer": "4.0.x-dev"
+                }
+            }
+        }
+    ],
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "config": {
+        "sort-packages": true
+    }
+}

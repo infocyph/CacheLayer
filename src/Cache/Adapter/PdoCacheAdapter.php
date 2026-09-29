@@ -6,6 +6,7 @@ namespace Infocyph\CacheLayer\Cache\Adapter;
 
 use Infocyph\CacheLayer\Cache\CacheInput;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
+use Infocyph\CacheLayer\Support\FilesystemTrust;
 use PDO;
 use PDOException;
 use Psr\Cache\CacheItemInterface;
@@ -33,8 +34,10 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
 
     public function __construct(
         string $namespace = 'default',
+        #[\SensitiveParameter]
         ?string $dsn = null,
         ?string $username = null,
+        #[\SensitiveParameter]
         ?string $password = null,
         ?PDO $pdo = null,
         string $table = 'cachelayer_entries',
@@ -47,7 +50,16 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         $this->namespace = CacheInput::namespace($namespace);
         $this->table = $table;
         $resolvedDsn = $dsn ?? 'sqlite:' . self::defaultSqliteFileForNamespace($this->namespace);
-        $this->pdo = $pdo ?? new PDO($resolvedDsn, $username, $password);
+        self::assertSqliteTarget($resolvedDsn);
+        if ($pdo instanceof PDO) {
+            $this->pdo = $pdo;
+        } else {
+            try {
+                $this->pdo = new PDO($resolvedDsn, $username, $password);
+            } catch (PDOException) {
+                throw new RuntimeException('Unable to connect to the PDO cache backend.');
+            }
+        }
         $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $driver = $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
         $this->driver = is_string($driver) ? $driver : '';
@@ -64,7 +76,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         $directory = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR)
             . DIRECTORY_SEPARATOR
             . str_replace('/', DIRECTORY_SEPARATOR, self::DEFAULT_SQLITE_DIR);
-        if (is_link($directory)) {
+        if (FilesystemTrust::containsSymlink($directory)) {
             throw new RuntimeException("Refusing symlinked SQLite cache directory: {$directory}");
         }
         if (!is_dir($directory) && !mkdir($directory, 0700, true) && !is_dir($directory)) {
@@ -89,6 +101,8 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
 
     public function deleteItem(string $key): bool
     {
+        $this->discardDeferredKey($key);
+
         $statement = $this->pdo->prepare(
             "DELETE FROM {$this->table} WHERE namespace = ? AND kind = ? AND cache_key = ?",
         );
@@ -99,6 +113,8 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
     /** @param list<string> $keys */
     public function deleteItems(array $keys): bool
     {
+        $this->discardDeferredKeys($keys);
+
         return $this->deleteByKind(self::KIND_DATA, $keys);
     }
 
@@ -116,12 +132,8 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         }
 
         $item = $this->hydrate($key, $row);
-        if ($item instanceof CacheItem) {
-            return $item;
-        }
-        $this->deleteItem($key);
 
-        return $this->genericMiss($key);
+        return $item ?? $this->genericMiss($key);
     }
 
     /**
@@ -131,27 +143,13 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
     #[\Override]
     public function getTagGenerations(array $tags): array
     {
-        if ($tags === []) {
-            return [];
-        }
-
-        $rows = $this->fetchRows(self::KIND_TAG, $tags);
-        $generations = [];
-        $initialize = [];
-        foreach ($tags as $tag) {
-            $row = $rows[$tag] ?? null;
-            $generation = is_array($row) ? $row['payload'] : null;
-            if (!self::isGeneration($generation)) {
-                $generation = self::newGeneration();
-                $initialize[] = [self::KIND_TAG, $tag, $generation, null];
-            }
-            $generations[$tag] = strtolower((string) $generation);
-        }
-        if (!$this->upsertRows($initialize)) {
-            throw new RuntimeException('Unable to initialize PDO tag generations.');
-        }
-
-        return $generations;
+        return PdoTagGenerationStore::getOrInitialize(
+            $this->pdo,
+            $this->driver,
+            $this->table,
+            $this->namespace,
+            $tags,
+        );
     }
 
     public function hasItem(string $key): bool
@@ -167,16 +165,11 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
     {
         $rows = $this->fetchRows(self::KIND_DATA, $keys);
         $items = [];
-        $stale = [];
         foreach ($keys as $key) {
             $row = $rows[$key] ?? null;
             $item = is_array($row) ? $this->hydrate($key, $row) : null;
             $items[$key] = $item ?? $this->genericMiss($key);
-            if (is_array($row) && $item === null) {
-                $stale[] = $key;
-            }
         }
-        $this->deleteByKind(self::KIND_DATA, $stale);
 
         return $items;
     }
@@ -192,13 +185,14 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         );
         $statement->bindValue(1, $this->namespace, PDO::PARAM_STR);
         $statement->bindValue(2, self::KIND_DATA, PDO::PARAM_STR);
-        $statement->bindValue(3, time(), PDO::PARAM_INT);
+        $cutoff = time();
+        $statement->bindValue(3, $cutoff, PDO::PARAM_INT);
         $statement->bindValue(4, $limit, PDO::PARAM_INT);
         $statement->execute();
         $keys = $statement->fetchAll(PDO::FETCH_COLUMN);
         $keys = array_values(array_filter($keys, is_string(...)));
 
-        return $this->deleteByKind(self::KIND_DATA, $keys) ? count($keys) : 0;
+        return $this->deleteExpiredKeys($keys, $cutoff);
     }
 
     /** @param list<string> $tags */
@@ -257,6 +251,24 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         return $this->deleteByKind(self::KIND_DATA, $expired) && $this->upsertRows($rows);
     }
 
+    private static function assertSqliteTarget(string $dsn): void
+    {
+        if (!str_starts_with($dsn, 'sqlite:')) {
+            return;
+        }
+
+        $file = substr($dsn, strlen('sqlite:'));
+        if ($file === '' || $file === ':memory:') {
+            return;
+        }
+        if (FilesystemTrust::containsSymlink($file)) {
+            throw new RuntimeException("Refusing symlinked SQLite cache path: {$file}");
+        }
+        if (file_exists($file) && !is_file($file)) {
+            throw new RuntimeException("SQLite cache path is not a regular file: {$file}");
+        }
+    }
+
     /** @param list<string> $keys */
     private function deleteByKind(string $kind, array $keys): bool
     {
@@ -271,6 +283,25 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         }
 
         return true;
+    }
+
+    /** @param list<string> $keys */
+    private function deleteExpiredKeys(array $keys, int $cutoff): int
+    {
+        $deleted = 0;
+        foreach (array_chunk($keys, self::BATCH_SIZE) as $chunk) {
+            $marks = implode(',', array_fill(0, count($chunk), '?'));
+            $statement = $this->pdo->prepare(
+                "DELETE FROM {$this->table} WHERE namespace = ? AND kind = ? "
+                . "AND expires IS NOT NULL AND expires <= ? AND cache_key IN ({$marks})",
+            );
+            if (!$statement->execute([$this->namespace, self::KIND_DATA, $cutoff, ...$chunk])) {
+                return $deleted;
+            }
+            $deleted += $statement->rowCount();
+        }
+
+        return $deleted;
     }
 
     /**
@@ -315,7 +346,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
             return null;
         }
 
-        $record = $this->decodeRecordFromBlob($row['payload']);
+        $record = $this->decodeRecordFromBlob($row['payload'], $key);
 
         return $record === null ? null : $this->genericItemFromRecord($key, $record);
     }
@@ -383,12 +414,9 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
     /** @param list<array{0:string, 1:string, 2:string, 3:int|null}> $rows */
     private function upsertRows(array $rows): bool
     {
-        foreach (array_chunk($rows, self::BATCH_SIZE) as $chunk) {
-            if (!$this->upsertChunk($chunk)) {
-                return false;
-            }
-        }
-
-        return true;
+        return array_all(
+            array_chunk($rows, self::BATCH_SIZE),
+            fn(array $chunk): bool => $this->upsertChunk($chunk),
+        );
     }
 }

@@ -8,12 +8,13 @@ use DateInterval;
 use DateTimeImmutable;
 use DateTimeInterface;
 use Infocyph\CacheLayer\Cache\Adapter\InternalCachePoolInterface;
+use Infocyph\CacheLayer\Cache\CacheInput;
 use Psr\Cache\CacheItemInterface;
 
 final class CacheItem implements CacheItemInterface
 {
     /**
-     * @param array<string, string> $tags
+     * @param array<int|string, string> $tags
      */
     public function __construct(
         private readonly InternalCachePoolInterface $pool,
@@ -22,7 +23,9 @@ final class CacheItem implements CacheItemInterface
         private readonly bool $hit = false,
         private ?DateTimeInterface $expiration = null,
         private array $tags = [],
-    ) {}
+    ) {
+        CacheInput::key($key);
+    }
 
     public function belongsTo(InternalCachePoolInterface $pool): bool
     {
@@ -58,7 +61,7 @@ final class CacheItem implements CacheItemInterface
         return $this->key;
     }
 
-    /** @return array<string, string> */
+    /** @return array<int|string, string> */
     public function getTagGenerations(): array
     {
         return $this->tags;
@@ -92,7 +95,7 @@ final class CacheItem implements CacheItemInterface
     }
 
     /**
-     * @param array<string, string> $tags
+     * @param array<int|string, string> $tags
      */
     public function setTagGenerations(array $tags): static
     {

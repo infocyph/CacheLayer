@@ -60,19 +60,20 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
 
     public function deleteItem(string $key): bool
     {
+        $this->discardDeferredKey($key);
+
         return $this->call('del', $this->mapData($key)) !== false;
     }
 
     /** @param list<string> $keys */
     public function deleteItems(array $keys): bool
     {
-        foreach ($this->groupByBucket($keys) as $group) {
-            if ($this->call('del', array_map($this->mapData(...), $group)) === false) {
-                return false;
-            }
-        }
+        $this->discardDeferredKeys($keys);
 
-        return true;
+        return array_all(
+            $this->groupByBucket($keys),
+            fn(array $group): bool => $this->call('del', array_map($this->mapData(...), $group)) !== false,
+        );
     }
 
     public function getClient(): object
@@ -87,12 +88,9 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
         $values = is_array($values) ? array_values($values) : [];
         $generation = $this->namespaceGeneration($bucket, $values[0] ?? null);
         $blob = $values[1] ?? null;
-        $record = is_string($blob) ? $this->decodeRecordFromBlob($blob) : null;
+        $record = is_string($blob) ? $this->decodeRecordFromBlob($blob, $key) : null;
         if ($record !== null && $record->namespaceGeneration === $generation) {
             return $this->genericItemFromRecord($key, $record);
-        }
-        if (is_string($blob)) {
-            $this->call('del', $this->mapData($key));
         }
 
         return $this->genericMiss($key);
@@ -109,17 +107,12 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
         foreach ($this->groupByBucket($tags) as $group) {
             $values = $this->call('mget', array_map($this->mapTag(...), $group));
             $values = is_array($values) ? array_values($values) : [];
-            $initialize = [];
             foreach ($group as $index => $tag) {
-                $generation = self::normalizeGeneration($values[$index] ?? null);
-                if ($generation === null) {
-                    $generation = self::newGeneration();
-                    $initialize[$this->mapTag($tag)] = $generation;
-                }
-                $generations[$tag] = $generation;
-            }
-            if ($initialize !== [] && !$this->call('mset', $initialize)) {
-                throw new RuntimeException('Unable to initialize Redis Cluster tag generations.');
+                $generations[$tag] = $this->initializeGeneration(
+                    $this->mapTag($tag),
+                    $values[$index] ?? null,
+                    'Unable to initialize Redis Cluster tag generation.',
+                );
             }
         }
 
@@ -138,13 +131,9 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
     public function multiFetch(array $keys): array
     {
         $items = [];
-        $stale = [];
         foreach ($this->groupByBucket($keys) as $bucket => $group) {
-            $bucketResult = $this->fetchBucket($bucket, $group);
-            $items += $bucketResult['items'];
-            $stale = [...$stale, ...$bucketResult['stale']];
+            $items += $this->fetchBucket($bucket, $group);
         }
-        $this->deleteItems($stale);
 
         $ordered = [];
         foreach ($keys as $key) {
@@ -197,13 +186,11 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
                 return false;
             }
         }
-        foreach ($this->groupItemsByBucket($items) as $bucket => $group) {
-            if (!$this->saveBucket($bucket, $group)) {
-                return false;
-            }
-        }
 
-        return true;
+        return array_all(
+            $this->groupItemsByBucket($items),
+            fn(array $group, int $bucket): bool => $this->saveBucket($bucket, $group),
+        );
     }
 
     private function bucket(string $key): int
@@ -228,7 +215,7 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
 
     /**
      * @param list<string> $keys
-     * @return array{items: array<string, CacheItem>, stale: list<string>}
+     * @return array<string, CacheItem>
      */
     private function fetchBucket(int $bucket, array $keys): array
     {
@@ -237,22 +224,18 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
         $values = is_array($values) ? array_values($values) : [];
         $generation = $this->namespaceGeneration($bucket, $values[0] ?? null);
         $items = [];
-        $stale = [];
         foreach ($keys as $index => $key) {
             $blob = $values[$index + 1] ?? null;
-            $record = is_string($blob) ? $this->decodeRecordFromBlob($blob) : null;
+            $record = is_string($blob) ? $this->decodeRecordFromBlob($blob, $key) : null;
             if ($record !== null && $record->namespaceGeneration === $generation) {
                 $items[$key] = $this->genericItemFromRecord($key, $record);
 
                 continue;
             }
             $items[$key] = $this->genericMiss($key);
-            if (is_string($blob)) {
-                $stale[] = $key;
-            }
         }
 
-        return ['items' => $items, 'stale' => $stale];
+        return $items;
     }
 
     private function generationKey(int $bucket): string
@@ -288,6 +271,24 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
         return $groups;
     }
 
+    private function initializeGeneration(string $key, mixed $observed, string $failureMessage): string
+    {
+        $generation = self::normalizeGeneration($observed);
+        if ($generation !== null) {
+            return $generation;
+        }
+
+        $candidate = self::newGeneration();
+        $stored = $this->call('set', $key, $candidate, ['nx']);
+        $current = $stored ? $candidate : $this->call('get', $key);
+        $generation = self::normalizeGeneration($current);
+        if ($generation === null) {
+            throw new RuntimeException($failureMessage);
+        }
+
+        return $generation;
+    }
+
     private function mapData(string $key): string
     {
         return $this->prefix($this->bucket($key)) . ':d:' . $key;
@@ -300,24 +301,14 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
 
     private function namespaceGeneration(int $bucket, mixed $value = null): string
     {
-        $value ??= $this->call('get', $this->generationKey($bucket));
-        $generation = self::normalizeGeneration($value);
-        if ($generation !== null) {
-            return $generation;
-        }
+        $key = $this->generationKey($bucket);
+        $value ??= $this->call('get', $key);
 
-        $candidate = self::newGeneration();
-        $stored = $this->call('set', $this->generationKey($bucket), $candidate, ['nx']);
-        $current = $stored ? $candidate : $this->call('get', $this->generationKey($bucket));
-        $generation = self::normalizeGeneration($current);
-        if ($generation === null) {
-            $generation = self::newGeneration();
-            if (!$this->call('set', $this->generationKey($bucket), $generation)) {
-                throw new RuntimeException('Unable to initialize Redis Cluster namespace generation.');
-            }
-        }
-
-        return $generation;
+        return $this->initializeGeneration(
+            $key,
+            $value,
+            'Unable to initialize Redis Cluster namespace generation.',
+        );
     }
 
     private function prefix(int $bucket): string
@@ -331,8 +322,9 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
             return true;
         }
 
-        $current = $this->getTagGenerations(array_keys($record->tags));
+        $current = $this->getTagGenerations(array_map(static fn(int|string $tag): string => (string) $tag, array_keys($record->tags)));
         foreach ($record->tags as $tag => $generation) {
+            $tag = (string) $tag;
             if (($current[$tag] ?? null) !== $generation) {
                 return false;
             }

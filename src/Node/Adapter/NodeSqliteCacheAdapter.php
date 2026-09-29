@@ -26,6 +26,8 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
 
     private readonly \PDOStatement $upsertStatement;
 
+    private bool $ownsTransaction = false;
+
     public function __construct(
         private readonly PDO $connection,
         string $namespace,
@@ -49,6 +51,8 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
 
     public function clear(): bool
     {
+        $this->assertWritableTransaction();
+
         try {
             $statement = $this->connection->prepare('DELETE FROM ' . self::TABLE . ' WHERE namespace = :namespace');
             $ok = $statement->execute([':namespace' => $this->namespace]);
@@ -80,6 +84,9 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
 
     public function deleteItem(string $key): bool
     {
+        $this->discardDeferredKey($key);
+        $this->assertWritableTransaction();
+
         try {
             return $this->deleteStatement->execute([
                 ':namespace' => $this->namespace,
@@ -96,9 +103,12 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
      */
     public function deleteItems(array $keys): bool
     {
+        $this->discardDeferredKeys($keys);
         if ($keys === []) {
             return true;
         }
+
+        $this->assertWritableTransaction();
 
         try {
             $mapped = array_map($this->mapData(...), $keys);
@@ -109,8 +119,6 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
 
             return $statement->execute([$this->namespace, ...$mapped]);
         } catch (PDOException $exception) {
-            $this->rollBack();
-
             throw $this->storageException('Unable to delete node SQLite cache keys.', $exception);
         }
     }
@@ -129,12 +137,12 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
         }
 
         if (!is_array($row) || !is_string($row['payload'] ?? null)) {
-            return new CacheItem($this, $key);
+            return $this->genericMiss($key);
         }
 
-        $record = $this->decodeRecordFromBlob($row['payload']);
+        $record = $this->decodeRecordFromBlob($row['payload'], $key);
         if ($record === null) {
-            return new CacheItem($this, $key);
+            return $this->genericMiss($key);
         }
 
         return $this->genericItemFromRecord($key, $record);
@@ -154,11 +162,18 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
                 $missing[$tag] = self::newGeneration();
             }
         }
-        if ($missing !== [] && !$this->storeTagGenerations($missing)) {
+        if ($missing !== [] && !$this->insertTagGenerationsIfMissing($missing)) {
             throw new NodeCacheStorageException('Unable to initialize node SQLite tag generations.');
         }
 
-        return $generations + $missing;
+        $actual = $this->readTagGenerations($tags);
+        foreach ($tags as $tag) {
+            if (!isset($actual[$tag])) {
+                throw new NodeCacheStorageException('Unable to initialize node SQLite tag generation.');
+            }
+        }
+
+        return $actual;
     }
 
     public function hasItem(string $key): bool
@@ -191,7 +206,6 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
             }
         }
         $items = [];
-        $invalid = [];
         foreach ($keys as $key) {
             $payload = $rows[$this->mapData($key)] ?? null;
             if (!is_string($payload)) {
@@ -199,17 +213,13 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
 
                 continue;
             }
-            $record = $this->decodeRecordFromBlob($payload);
+            $record = $this->decodeRecordFromBlob($payload, $key);
             if ($record === null) {
-                $invalid[] = $key;
                 $items[$key] = $this->genericMiss($key);
 
                 continue;
             }
             $items[$key] = $this->genericItemFromRecord($key, $record);
-        }
-        if ($invalid !== []) {
-            $this->deleteItems($invalid);
         }
 
         return $items;
@@ -261,6 +271,7 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
 
     public function save(CacheItemInterface $item): bool
     {
+        $this->assertWritableTransaction();
         if (!$this->supportsItem($item)) {
             return false;
         }
@@ -301,6 +312,7 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
      */
     public function saveMany(array $items): bool
     {
+        $this->assertWritableTransaction();
         $rows = [];
         $expired = [];
         foreach ($items as $item) {
@@ -327,6 +339,7 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
 
         try {
             $this->connection->beginTransaction();
+            $this->ownsTransaction = true;
             if ($expired !== [] && !$this->deleteItems($expired)) {
                 $this->rollBack();
 
@@ -338,11 +351,16 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
                 return false;
             }
 
-            return $this->connection->commit();
+            $committed = $this->connection->commit();
+            $this->ownsTransaction = false;
+
+            return $committed;
         } catch (PDOException $exception) {
             $this->rollBack();
 
             throw $this->storageException('Unable to store node SQLite cache entries.', $exception);
+        } finally {
+            $this->ownsTransaction = false;
         }
     }
 
@@ -350,8 +368,10 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
     #[\Override]
     public function storeTagGenerations(array $generations): bool
     {
+        $this->assertWritableTransaction();
         $rows = [];
         foreach ($generations as $tag => $generation) {
+            $tag = (string) $tag;
             if (!self::isGeneration($generation)) {
                 return false;
             }
@@ -359,6 +379,15 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
         }
 
         return $this->upsertRows($rows);
+    }
+
+    private function assertWritableTransaction(): void
+    {
+        if ($this->connection->inTransaction() && !$this->ownsTransaction) {
+            throw new NodeCacheStorageException(
+                'Node SQLite cache mutations cannot join a caller-owned transaction.',
+            );
+        }
     }
 
     private function createSchemaIfMissing(): void
@@ -378,6 +407,28 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
         }
     }
 
+    /** @param array<string, string> $generations */
+    private function insertTagGenerationsIfMissing(array $generations): bool
+    {
+        $this->assertWritableTransaction();
+        foreach ($generations as $tag => $generation) {
+            $statement = $this->connection->prepare(
+                'INSERT INTO ' . self::TABLE
+                . ' (namespace, cache_key, payload, expires_at) VALUES (?, ?, ?, NULL) '
+                . 'ON CONFLICT(namespace, cache_key) DO NOTHING',
+            );
+            if (!$statement->execute([
+                $this->namespace,
+                $this->mapTag((string) $tag),
+                strtolower($generation),
+            ])) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private function mapData(string $key): string
     {
         return 'd:' . $key;
@@ -390,9 +441,10 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
 
     private function rollBack(): void
     {
-        if ($this->connection->inTransaction()) {
+        if ($this->ownsTransaction && $this->connection->inTransaction()) {
             $this->connection->rollBack();
         }
+        $this->ownsTransaction = false;
     }
 
     private function storageException(string $message, PDOException $exception): NodeCacheStorageException

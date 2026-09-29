@@ -13,14 +13,17 @@ declare(strict_types=1);
 
 use Infocyph\CacheLayer\Cache\AtomicCacheInterface;
 use Infocyph\CacheLayer\Cache\Cache;
+use Infocyph\CacheLayer\Cache\CacheOptions;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
+use Infocyph\CacheLayer\Counter\AtomicCounters;
+use Infocyph\CacheLayer\Counter\Exception\AtomicCounterException;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
+use Infocyph\CacheLayer\Support\RedisValueGuard;
+use Infocyph\CacheLayer\Tests\Support\AtomicCounterProcessProbe;
 
 /* ── skip whole file when Redis unavailable ───────────────────────── */
 if (! class_exists(Redis::class)) {
-    test('phpredis ext not loaded – skipping')->skip();
-
-    return;
+    throw new RuntimeException('phpredis is required for the configured cache test matrix.');
 }
 
 $redisHost = getenv('IC_REDIS_HOST') ?: getenv('CACHELAYER_REDIS_HOST') ?: '127.0.0.1';
@@ -43,10 +46,8 @@ try {
         $probe->auth($redisPassword);
     }
     $probe->ping();
-} catch (Throwable) {
-    test('Redis server unreachable – skipping')->skip();
-
-    return;
+} catch (Throwable $failure) {
+    throw new RuntimeException('Redis service is required for the configured cache test matrix.', 0, $failure);
 }
 
 $finishForkedTest = static function (bool $success): never {
@@ -64,12 +65,13 @@ beforeEach(function () use ($redisHost, $redisPort, $redisPassword) {
     }
     $client->flushDB();                               // fresh DB 0
 
+    $this->redisClient = $client;
     $this->cache = Cache::redis(
         'tests',
         sprintf('redis://%s:%d', $redisHost, $redisPort),
-        $client
+        $client,
+        new CacheOptions(allowClosures: true),
     );
-
 });
 
 afterEach(function () {
@@ -110,7 +112,7 @@ test('getItem()/save() (redis)', function () {
 /* ── 3. deferred queue ──────────────────────────────────────────── */
 test('saveDeferred() & commit() (redis)', function () {
     $this->cache->getItem('a')->set('A')->saveDeferred();
-    expect($this->cache->get('a'))->toBeNull();
+    expect($this->cache->get('a'))->toBe('A');
 
     $this->cache->commit();
     expect($this->cache->get('a'))->toBe('A');
@@ -349,4 +351,238 @@ test('Redis atomic consumption has one winner under process contention', functio
     }
 
     expect($wins)->toBe(1);
+});
+
+
+test('Redis cache clear does not reset isolated atomic counters and large integers stay exact', function () {
+    $counters = AtomicCounters::redis('tests', client: $this->redisClient);
+    $large = 9_007_199_254_740_993;
+
+    expect($counters->increment('large', $large)->value)->toBe($large)
+        ->and($this->cache->set('ordinary', 'value'))->toBeTrue()
+        ->and($this->cache->clear())->toBeTrue()
+        ->and($counters->get('large'))->toBe($large);
+});
+
+test('Redis atomic counters preserve TTL, decrement, overflow, and invalid-value contracts', function () {
+    $counters = AtomicCounters::redis('tests', client: $this->redisClient);
+    $first = $counters->increment('window', 5, 30);
+    $physical = 'cachelayer:counter:tests:window';
+    $ttlBefore = $this->redisClient->ttl($physical);
+    $later = $counters->decrement('window', 2, 30);
+    $ttlAfter = $this->redisClient->ttl($physical);
+
+    expect($first->initialized)->toBeTrue()
+        ->and($later->initialized)->toBeFalse()
+        ->and($later->value)->toBe(3)
+        ->and($ttlBefore)->toBeGreaterThan(0)
+        ->and($ttlAfter)->toBeGreaterThan(0)
+        ->and($ttlAfter)->toBeLessThanOrEqual($ttlBefore);
+
+    $this->redisClient->set('cachelayer:counter:tests:max', (string) PHP_INT_MAX);
+    expect($counters->get('max'))->toBe(PHP_INT_MAX)
+        ->and(fn () => $counters->increment('max'))->toThrow(AtomicCounterException::class);
+
+    $this->redisClient->set('cachelayer:counter:tests:out-of-range', '9223372036854775808');
+    $this->redisClient->set('cachelayer:counter:tests:malformed', '12x');
+    expect(fn () => $counters->get('out-of-range'))->toThrow(AtomicCounterException::class)
+        ->and(fn () => $counters->get('malformed'))->toThrow(AtomicCounterException::class);
+});
+
+test('Redis atomic counter initialization has exactly one winner under contention', function () use ($redisHost, $redisPort, $redisPassword) {
+    $counters = AtomicCounters::redis('tests', client: $this->redisClient);
+    $wins = AtomicCounterProcessProbe::initializedWinners(
+        'redis',
+        $redisHost,
+        $redisPort,
+        $redisPassword,
+        'tests',
+        'contended-counter',
+    );
+
+    expect($wins)->toBe(1)
+        ->and($counters->get('contended-counter'))->toBe(8);
+});
+
+test('Redis stale cleanup never deletes or overwrites a concurrent replacement', function () {
+    $key = 'cachelayer:guard:race';
+
+    $this->redisClient->set($key, 'fresh');
+    expect(RedisValueGuard::deleteIfUnchanged($this->redisClient, $key, 'stale'))->toBeFalse()
+        ->and($this->redisClient->get($key))->toBe('fresh')
+        ->and(RedisValueGuard::replaceIfUnchanged($this->redisClient, $key, 'stale', 'repair'))->toBe('fresh')
+        ->and($this->redisClient->get($key))->toBe('fresh');
+
+    $this->redisClient->set($key, 'stale');
+    expect(RedisValueGuard::replaceIfUnchanged($this->redisClient, $key, 'stale', 'repair'))->toBe('repair')
+        ->and($this->redisClient->get($key))->toBe('repair')
+        ->and(RedisValueGuard::deleteIfUnchanged($this->redisClient, $key, 'repair'))->toBeTrue()
+        ->and($this->redisClient->get($key))->toBeFalse();
+});
+
+
+test('Redis atomic counters expire fixed windows', function () {
+    $counters = AtomicCounters::redis('tests', client: $this->redisClient);
+
+    expect($counters->increment('short-window', 1, 1)->initialized)->toBeTrue()
+        ->and($counters->get('short-window'))->toBe(1);
+    usleep(2_000_000);
+
+    expect($counters->get('short-window'))->toBeNull();
+});
+
+
+test('Redis atomic consume discards deferred overlays without resurrection', function () {
+    $atomic = $this->cache->atomic();
+    expect($atomic)->not->toBeNull()
+        ->and($this->cache->set('deferred-consume', 'stored'))->toBeTrue()
+        ->and($this->cache->saveDeferred($this->cache->getItem('deferred-consume')->set('pending')))->toBeTrue()
+        ->and($atomic->getAndDelete('deferred-consume', 'missing'))->toBe('stored')
+        ->and($atomic->getAndDelete('deferred-consume', 'missing'))->toBe('missing')
+        ->and($this->cache->commit())->toBeTrue()
+        ->and($this->cache->get('deferred-consume'))->toBeNull();
+});
+
+
+test('Redis clear in boundary namespace preserves counters locks and invalidation streams', function () {
+    $cache = Cache::redis('cachelayer', client: $this->redisClient);
+    $counters = AtomicCounters::redis('audit-counter', client: $this->redisClient);
+    $locks = new \Infocyph\CacheLayer\Cache\Lock\RedisLockProvider($this->redisClient);
+    $transport = new \Infocyph\CacheLayer\Cluster\Transport\RedisStreamInvalidationTransport($this->redisClient);
+
+    expect($cache->set('ordinary', 'value'))->toBeTrue()
+        ->and($counters->increment('window', 5, 30)->value)->toBe(5);
+
+    $held = $locks->acquire('boundary-lock', 0.0, 30.0);
+    expect($held)->not->toBeNull();
+
+    $eventId = $transport->publish(
+        \Infocyph\CacheLayer\Cluster\Event\InvalidationEvent::key(
+            'clear-boundary',
+            'application',
+            'product.42',
+            'writer',
+        ),
+    );
+    expect($eventId)->not->toBe('');
+
+    expect($cache->clear())->toBeTrue()
+        ->and($cache->get('ordinary'))->toBeNull()
+        ->and($counters->get('window'))->toBe(5)
+        ->and($locks->acquire('boundary-lock', 0.0, 30.0))->toBeNull()
+        ->and($this->redisClient->xLen('cachelayer:invalidation:clear-boundary'))->toBe(1);
+
+    $locks->release($held);
+});
+
+test('Redis compare-safe cleanup preserves a concurrent replacement', function () {
+    $key = 'cachelayer:guard:stale-read';
+    $this->redisClient->set($key, 'observed-invalid');
+    $observed = $this->redisClient->get($key);
+    expect($observed)->toBe('observed-invalid');
+
+    $this->redisClient->set($key, 'replacement');
+
+    expect(RedisValueGuard::deleteIfUnchanged($this->redisClient, $key, (string) $observed))->toBeFalse()
+        ->and($this->redisClient->get($key))->toBe('replacement');
+});
+
+test('tag-stale Redis reads return misses without physically deleting an observed record', function () {
+    expect($this->cache->setTagged('tagged-stale', 'old', ['products'], 30))->toBeTrue();
+    $physical = 'tests:d:tagged-stale';
+    expect($this->redisClient->exists($physical))->toBe(1);
+
+    expect($this->cache->invalidateTag('products'))->toBeTrue()
+        ->and($this->cache->get('tagged-stale'))->toBeNull()
+        ->and($this->redisClient->exists($physical))->toBe(1)
+        ->and($this->cache->setTagged('tagged-stale', 'fresh', ['products'], 30))->toBeTrue()
+        ->and($this->cache->get('tagged-stale'))->toBe('fresh');
+});
+
+
+test('Redis Stream recovery clears stale local state after complete history loss', function () {
+    $directory = sys_get_temp_dir() . '/cachelayer-redis-history-' . uniqid('', true);
+    mkdir($directory, 0700, true);
+
+    try {
+        $transport = new \Infocyph\CacheLayer\Cluster\Transport\RedisStreamInvalidationTransport(
+            $this->redisClient,
+            'cachelayer:history:',
+        );
+        $runtime = \Infocyph\CacheLayer\Cluster\ClusterCache::create(
+            new \Infocyph\CacheLayer\Node\NodeCacheConfig(
+                $directory . '/node.sqlite',
+                'application',
+                apcuEnabled: false,
+            ),
+            new \Infocyph\CacheLayer\Cluster\ClusterCacheConfig(
+                'redis-history-loss',
+                'consumer',
+                'redis-history-loss',
+            ),
+            $transport,
+        );
+
+        $transport->publish(
+            \Infocyph\CacheLayer\Cluster\Event\InvalidationEvent::key(
+                'redis-history-loss',
+                'application',
+                'first',
+                'writer',
+            ),
+        );
+        expect($runtime->consume())->toBe(1);
+
+        $runtime->cache()->set('stale', 'value', 300);
+        $transport->publish(
+            \Infocyph\CacheLayer\Cluster\Event\InvalidationEvent::key(
+                'redis-history-loss',
+                'application',
+                'stale',
+                'writer',
+            ),
+        );
+        $this->redisClient->del('cachelayer:history:redis-history-loss');
+
+        expect($runtime->recoverIfRequired())->toBeTrue()
+            ->and($runtime->cache()->get('stale'))->toBeNull()
+            ->and($runtime->status()->cursor)->toBeNull()
+            ->and($runtime->recoverIfRequired())->toBeFalse();
+    } finally {
+        if (is_dir($directory)) {
+            foreach (glob($directory . '/*') ?: [] as $file) {
+                if (is_file($file)) {
+                    unlink($file);
+                }
+            }
+            rmdir($directory);
+        }
+    }
+});
+
+
+test('Redis authentication failures do not expose supplied passwords in exception traces', function () use ($redisHost, $redisPort) {
+    $secret = 'AUDIT_SENTINEL_40';
+    $previousIgnoreArgs = ini_get('zend.exception_ignore_args');
+    $previousMaxLen = ini_get('zend.exception_string_param_max_len');
+    ini_set('zend.exception_ignore_args', '0');
+    ini_set('zend.exception_string_param_max_len', '128');
+
+    try {
+        try {
+            \Infocyph\CacheLayer\Support\RedisConnection::connect(
+                sprintf('redis://:%s@%s:%d', rawurlencode($secret), $redisHost, $redisPort),
+            );
+            test()->fail('Expected Redis authentication with the synthetic secret to fail.');
+        } catch (Throwable $failure) {
+            expect((string) $failure)->not->toContain($secret);
+        }
+    } finally {
+        if (is_string($previousIgnoreArgs)) {
+            ini_set('zend.exception_ignore_args', $previousIgnoreArgs);
+        }
+        if (is_string($previousMaxLen)) {
+            ini_set('zend.exception_string_param_max_len', $previousMaxLen);
+        }
+    }
 });

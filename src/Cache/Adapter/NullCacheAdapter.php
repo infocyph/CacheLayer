@@ -18,6 +18,7 @@ final class NullCacheAdapter extends AbstractCacheAdapter
 
     public function deleteItem(string $key): bool
     {
+        $this->discardDeferredKey($key);
         unset($key);
 
         return true;
@@ -29,6 +30,7 @@ final class NullCacheAdapter extends AbstractCacheAdapter
      */
     public function deleteItems(array $keys): bool
     {
+        $this->discardDeferredKeys($keys);
         unset($keys);
 
         return true;
@@ -36,7 +38,7 @@ final class NullCacheAdapter extends AbstractCacheAdapter
 
     public function getItem(string $key): CacheItem
     {
-        return new CacheItem($this, $key);
+        return $this->genericMiss($key);
     }
 
     /** @param list<string> $tags */
@@ -53,9 +55,7 @@ final class NullCacheAdapter extends AbstractCacheAdapter
 
     public function hasItem(string $key): bool
     {
-        unset($key);
-
-        return false;
+        return $this->getItem($key)->isHit();
     }
 
     /**
@@ -67,7 +67,7 @@ final class NullCacheAdapter extends AbstractCacheAdapter
     {
         $items = [];
         foreach ($keys as $key) {
-            $items[$key] = new CacheItem($this, $key);
+            $items[$key] = $this->genericMiss($key);
         }
 
         return $items;
@@ -90,12 +90,6 @@ final class NullCacheAdapter extends AbstractCacheAdapter
     /** @param array<string, CacheItemInterface> $items */
     public function saveItems(array $items): bool
     {
-        foreach ($items as $item) {
-            if (!$this->supportsItem($item)) {
-                return false;
-            }
-        }
-
-        return true;
+        return $this->supportsItems($items);
     }
 }

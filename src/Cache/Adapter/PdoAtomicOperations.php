@@ -28,7 +28,7 @@ trait PdoAtomicOperations
 
         return $this->atomicTransaction(function () use ($key, $expected, $replacement, $expiration): bool {
             $row = $this->atomicFetchRow($key);
-            $record = $row === null ? null : $this->atomicRecordFromRow($row);
+            $record = $row === null ? null : $this->atomicRecordFromRow($key, $row);
             if (!$record instanceof CacheRecord
                 || !$this->atomicRecordTagsAreCurrent($record)
                 || $record->value !== $expected) {
@@ -45,6 +45,8 @@ trait PdoAtomicOperations
 
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
+        $this->discardDeferredKey($key);
+
         if (!$this->supportsAtomicCache()) {
             return $this->genericMiss($key);
         }
@@ -55,7 +57,7 @@ trait PdoAtomicOperations
                 return $this->genericMiss($key);
             }
 
-            $record = $this->atomicRecordFromRow($row);
+            $record = $this->atomicRecordFromRow($key, $row);
             $this->deleteItem($key);
             if (!$record instanceof CacheRecord || !$this->atomicRecordTagsAreCurrent($record)) {
                 return $this->genericMiss($key);
@@ -78,7 +80,7 @@ trait PdoAtomicOperations
         return $this->atomicTransaction(function () use ($item, $expiration): bool {
             $key = $item->getKey();
             $row = $this->atomicFetchRow($key);
-            $record = $row === null ? null : $this->atomicRecordFromRow($row);
+            $record = $row === null ? null : $this->atomicRecordFromRow($key, $row);
             if ($record instanceof CacheRecord && $this->atomicRecordTagsAreCurrent($record)) {
                 return false;
             }
@@ -141,13 +143,13 @@ trait PdoAtomicOperations
     }
 
     /** @param array{payload:string, expires:int|null} $row */
-    private function atomicRecordFromRow(array $row): ?CacheRecord
+    private function atomicRecordFromRow(string $key, array $row): ?CacheRecord
     {
         if (CachePayloadCodec::isExpired($row['expires'])) {
             return null;
         }
 
-        $record = $this->decodeRecordFromBlob($row['payload']);
+        $record = $this->decodeRecordFromBlob($row['payload'], $key);
 
         return $record instanceof CacheRecord ? $record : null;
     }
@@ -158,8 +160,9 @@ trait PdoAtomicOperations
             return true;
         }
 
-        $rows = $this->fetchRows(self::KIND_TAG, array_keys($record->tags));
+        $rows = $this->fetchRows(self::KIND_TAG, array_map(static fn(int|string $tag): string => (string) $tag, array_keys($record->tags)));
         foreach ($record->tags as $tag => $generation) {
+            $tag = (string) $tag;
             if (($rows[$tag]['payload'] ?? null) !== $generation) {
                 return false;
             }

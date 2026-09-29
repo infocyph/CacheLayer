@@ -4,10 +4,16 @@
 Closure Serialization
 =====================
 
-CacheLayer uses native PHP serialization for ordinary cache records. The
-specialized ``ClosureSerializer`` exists only because PHP cannot serialize a
-``Closure`` directly. It does not expose a mixed-value serializer API and does
-not support resource handlers or recursively wrapped values.
+CacheLayer uses native PHP serialization for ordinary cache records. In 4.0,
+cache-record deserialization rejects objects and Closures by default; opt in
+explicitly with ``CacheOptions`` only for trusted data and trusted storage.
+When ``integrityKey`` is configured, the record signature is bound to its
+logical storage identity and cache key, so moving a signed blob to another key
+or namespace is rejected.
+
+The specialized ``ClosureSerializer`` exists only because PHP cannot serialize
+a ``Closure`` directly. It does not expose a mixed-value serializer API and
+does not support resource handlers or recursively wrapped values.
 
 Public API
 ----------

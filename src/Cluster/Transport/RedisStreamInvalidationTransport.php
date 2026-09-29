@@ -61,6 +61,11 @@ final readonly class RedisStreamInvalidationTransport implements InvalidationTra
         return $this->compareIds($cursor, $oldestAvailableId) < 0;
     }
 
+    public function newestAvailableId(string $cluster): ?string
+    {
+        return $this->boundary($cluster, true);
+    }
+
     public function oldestAvailableId(string $cluster): ?string
     {
         return $this->boundary($cluster, false);

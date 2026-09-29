@@ -168,3 +168,36 @@ test('atomic capability follows cache fail-open and metrics policy', function ()
         ->and($snapshot['array']['atomic_get_and_delete'] ?? 0)->toBe(1)
         ->and($snapshot['array']['atomic_get_and_delete_hit'] ?? 0)->toBe(1);
 });
+
+
+test('atomic operations reconcile deferred state without repeated consume or resurrection', function () {
+    $cache = Cache::memory(
+        'atomic-deferred-policy',
+        new CacheOptions(integrityKey: 'atomic-deferred-test-key'),
+    );
+    $atomic = $cache->atomic();
+    expect($atomic)->not->toBeNull();
+
+    expect($cache->saveDeferred($cache->getItem('pending-only')->set('pending')))->toBeTrue()
+        ->and($atomic->getAndDelete('pending-only', 'missing'))->toBe('missing')
+        ->and($cache->commit())->toBeTrue()
+        ->and($cache->get('pending-only'))->toBeNull();
+
+    expect($cache->set('consume', 'stored'))->toBeTrue()
+        ->and($cache->saveDeferred($cache->getItem('consume')->set('pending')))->toBeTrue()
+        ->and($atomic->getAndDelete('consume', 'missing'))->toBe('stored')
+        ->and($atomic->getAndDelete('consume', 'missing'))->toBe('missing')
+        ->and($cache->commit())->toBeTrue()
+        ->and($cache->get('consume'))->toBeNull();
+
+    expect($cache->saveDeferred($cache->getItem('claim')->set('pending')))->toBeTrue()
+        ->and($atomic->setIfAbsent('claim', 'claimed', 30))->toBeTrue()
+        ->and($cache->commit())->toBeTrue()
+        ->and($cache->get('claim'))->toBe('claimed');
+
+    expect($cache->set('cas', 'stored'))->toBeTrue()
+        ->and($cache->saveDeferred($cache->getItem('cas')->set('pending')))->toBeTrue()
+        ->and($atomic->compareAndSet('cas', 'stored', 'updated', 30))->toBeTrue()
+        ->and($cache->commit())->toBeTrue()
+        ->and($cache->get('cas'))->toBe('updated');
+});

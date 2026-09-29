@@ -9,12 +9,13 @@ use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 final readonly class CacheOptions
 {
     public function __construct(
+        #[\SensitiveParameter]
         public ?string $integrityKey = null,
         public ?int $maxPayloadBytes = 8_388_608,
         public ?int $compressionThreshold = null,
         public int $compressionLevel = 6,
-        public bool $allowClosures = true,
-        public bool $allowObjects = true,
+        public bool $allowClosures = false,
+        public bool $allowObjects = false,
         public bool $failOpen = true,
     ) {
         if ($integrityKey === '') {

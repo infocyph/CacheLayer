@@ -19,6 +19,7 @@ use Infocyph\CacheLayer\Cache\Metrics\InMemoryCacheMetricsCollector;
 use Infocyph\CacheLayer\Cache\Tiering\TieredPoolFactory;
 use Infocyph\CacheLayer\Exceptions\CacheBackendException;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
+use Infocyph\CacheLayer\Support\OptionalCassandra;
 use MongoDB\Client;
 use Psr\Cache\CacheItemInterface;
 use Throwable;
@@ -51,16 +52,18 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         private readonly string $namespace = 'default',
     ) {
         CacheInput::namespace($namespace);
-        $this->authoritative = !in_array(
-            $adapter::class,
-            [Adapter\TieredCacheAdapter::class, Adapter\NullCacheAdapter::class],
-            true,
-        );
+        $this->authoritative = match (true) {
+            $adapter instanceof \Infocyph\CacheLayer\Node\Adapter\NodeCacheAdapter => $adapter->isAuthoritative(),
+            $adapter instanceof Adapter\TieredCacheAdapter,
+            $adapter instanceof Adapter\NullCacheAdapter => false,
+            default => true,
+        };
         $this->lockProvider = $lockProvider ?? new FileLockProvider();
         $this->authenticationStateLockCapable = $lockProvider !== null;
         $this->options = $options ?? new CacheOptions();
         if ($adapter instanceof AbstractCacheAdapter) {
             $adapter->configureOptions($this->options);
+            $adapter->configureStorageIdentity($namespace);
         }
     }
 
@@ -120,6 +123,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         ?object $client = null,
         string $database = 'cachelayer',
         string $collectionName = 'entries',
+        #[\SensitiveParameter]
         string $uri = 'mongodb://127.0.0.1:27017',
         ?CacheOptions $options = null,
     ): self {
@@ -136,7 +140,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
                     'mongodb/mongodb is required unless a collection/client is provided.',
                 );
             }
-            $client = new Client($uri);
+            $client = Adapter\MongoDbClientFactory::create($uri);
         }
 
         return new self(
@@ -153,8 +157,10 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
 
     public static function pdo(
         string $namespace = 'default',
+        #[\SensitiveParameter]
         ?string $dsn = null,
         ?string $username = null,
+        #[\SensitiveParameter]
         ?string $password = null,
         ?\PDO $pdo = null,
         string $table = 'cachelayer_entries',
@@ -185,6 +191,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
 
     public static function redis(
         string $namespace = 'default',
+        #[\SensitiveParameter]
         string $dsn = 'redis://127.0.0.1:6379',
         ?\Redis $client = null,
         ?CacheOptions $options = null,
@@ -232,12 +239,12 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         ?CacheOptions $options = null,
     ): self {
         if ($session === null) {
-            if (!class_exists(\Cassandra::class)) {
+            if (!OptionalCassandra::available()) {
                 throw new CacheInvalidArgumentException(
                     'ext-cassandra is required unless a ScyllaDB/Cassandra session is provided.',
                 );
             }
-            $session = \Cassandra::cluster()->build()->connect($keyspace);
+            $session = OptionalCassandra::connect($keyspace);
         }
 
         return new self(
@@ -272,6 +279,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
 
     /** @param list<InternalCachePoolInterface|array<string, mixed>> $tiers */
     public static function tiered(
+        #[\SensitiveParameter]
         array $tiers,
         bool $writeToL1 = true,
         ?CacheOptions $options = null,
@@ -289,6 +297,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
 
     public static function valkey(
         string $namespace = 'default',
+        #[\SensitiveParameter]
         string $dsn = 'valkey://127.0.0.1:6379',
         ?\Redis $client = null,
         ?CacheOptions $options = null,
@@ -400,8 +409,8 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         return $this->validateTagSnapshot($item);
     }
 
-    /** @return array<string, CacheItemInterface> */
-    public function getItems(array $keys = []): array
+    /** @return iterable<string, CacheItemInterface> */
+    public function getItems(array $keys = []): iterable
     {
         $keys = CacheInput::keys($keys);
         if ($keys === []) {
@@ -409,10 +418,13 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         }
 
         $fetched = $this->backend(fn(): array => $this->fetchItems($keys), []);
+        $byIdentity = [];
+        foreach ($fetched as $item) {
+            $byIdentity["key:\0" . $item->getKey()] = $item;
+        }
         $items = [];
         foreach ($keys as $key) {
-            $item = $fetched[$key] ?? null;
-            $items[$key] = $item instanceof CacheItemInterface ? $item : $this->miss($key);
+            $items[$key] = $byIdentity["key:\0" . $key] ?? $this->miss($key);
         }
         $items = $this->validateTagSnapshots($items);
         $hits = 0;
@@ -424,21 +436,14 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         $this->metric('get_batch_hits', $hits);
         $this->metric('get_batch_misses', count($keys) - $hits);
 
-        return $items;
+        return CacheBatchResults::items($keys, $items);
     }
 
-    /** @return array<string, mixed> */
-    public function getMultiple(iterable $keys, mixed $default = null): array
+    public function getMultiple(iterable $keys, mixed $default = null): iterable
     {
         $keys = CacheInput::materializeKeys($keys);
-        $items = $this->getItems($keys);
-        $values = [];
-        foreach ($keys as $key) {
-            $item = $items[$key];
-            $values[$key] = $item->isHit() ? $item->get() : $default;
-        }
 
-        return $values;
+        return CacheBatchResults::values($keys, $this->getItems($keys), $default);
     }
 
     public function has(string $key): bool
@@ -635,25 +640,26 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         return $this;
     }
 
-    /** @param iterable<array-key, mixed> $values */
+    /** @param iterable<mixed, mixed> $values */
     public function setMultiple(iterable $values, mixed $ttl = null): bool
     {
         $normalized = [];
         foreach ($values as $key => $value) {
-            if (!is_string($key)) {
-                throw new CacheInvalidArgumentException('Cache keys must be strings.');
+            if (!is_string($key) && !is_int($key)) {
+                throw new CacheInvalidArgumentException('Bulk cache keys must be strings or integers.');
             }
+            $key = (string) $key;
             CacheInput::key($key);
-            $normalized[$key] = $value;
+            $normalized[] = [$key, $value];
         }
         $ttlSeconds = CacheInput::ttl($ttl);
         if ($ttlSeconds !== null && $ttlSeconds <= 0) {
-            return $this->deleteItems(array_keys($normalized));
+            return $this->deleteItems(array_column($normalized, 0));
         }
 
         $items = [];
-        foreach ($normalized as $key => $value) {
-            $items[$key] = $this->adapter->createItem($key)->set($value)->expiresAfter($ttlSeconds);
+        foreach ($normalized as [$key, $value]) {
+            $items["key:\0" . $key] = $this->adapter->createItem($key)->set($value)->expiresAfter($ttlSeconds);
         }
         $saved = $this->backendBool(fn(): bool => $this->adapter->saveItems($items));
         $this->metric('set_batch');
@@ -766,6 +772,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
 
         $generations = [];
         foreach ($tags as $tag) {
+            $tag = (string) $tag;
             $generation = $stored[$tag] ?? null;
             if (!is_string($generation) || strlen($generation) !== 32 || !ctype_xdigit($generation)) {
                 return null;
@@ -778,11 +785,15 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
 
     /**
      * @param list<string> $keys
-     * @return array<string, CacheItemInterface>
+     * @return list<CacheItemInterface>
      */
     private function fetchItems(array $keys): array
     {
-        return $this->adapter->multiFetch($keys);
+        $items = $this->adapter->getItems($keys);
+        /** @var list<CacheItemInterface> $normalized */
+        $normalized = array_values(is_array($items) ? $items : iterator_to_array($items));
+
+        return $normalized;
     }
 
     private function jitteredTtl(?int $ttl): ?int
@@ -871,7 +882,10 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
             return true;
         }
 
-        $current = $this->captureTagGenerations(array_keys($expected));
+        $current = $this->captureTagGenerations(array_map(
+            static fn(int|string $tag): string => (string) $tag,
+            array_keys($expected),
+        ));
 
         return $current !== null && $current === $expected;
     }
@@ -881,7 +895,10 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         if (!$item instanceof CacheItem || !$item->isHit() || $item->getTagGenerations() === []) {
             return $item;
         }
-        $tags = array_keys($item->getTagGenerations());
+        $tags = array_map(
+            static fn(int|string $tag): string => (string) $tag,
+            array_keys($item->getTagGenerations()),
+        );
         $generations = $this->backend(
             fn(): array => $this->adapter->getTagGenerations($tags),
             null,
@@ -893,7 +910,6 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         if (CacheTagSnapshots::isCurrent($item, $generations)) {
             return $item;
         }
-        $this->backendBool(fn(): bool => $this->adapter->deleteItem($item->getKey()));
 
         return $this->miss($item->getKey());
     }
@@ -918,10 +934,6 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
             return CacheTagSnapshots::missTagged($items, $this->miss(...));
         }
         $validated = CacheTagSnapshots::rejectStale($items, $generations, $this->miss(...));
-        $stale = $validated['stale'];
-        if ($stale !== []) {
-            $this->backendBool(fn(): bool => $this->adapter->deleteItems($stale));
-        }
 
         return $validated['items'];
     }

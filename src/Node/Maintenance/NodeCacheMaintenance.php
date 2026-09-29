@@ -18,6 +18,22 @@ final readonly class NodeCacheMaintenance
         $this->connection->query('PRAGMA wal_checkpoint(PASSIVE)');
     }
 
+    public function cycle(
+        int $pruneLimit = 5_000,
+        bool $checkpoint = true,
+        bool $optimize = false,
+    ): int {
+        $pruned = $this->pruneExpired($pruneLimit);
+        if ($checkpoint) {
+            $this->checkpoint();
+        }
+        if ($optimize) {
+            $this->optimize();
+        }
+
+        return $pruned;
+    }
+
     public function optimize(): void
     {
         $this->connection->exec('PRAGMA optimize');

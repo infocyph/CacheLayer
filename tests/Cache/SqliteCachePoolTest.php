@@ -9,20 +9,19 @@ declare(strict_types=1);
  */
 
 use Infocyph\CacheLayer\Cache\Cache;
+use Infocyph\CacheLayer\Cache\CacheOptions;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 
 /* ── Skip entire suite if SQLite missing ─────────────────────────── */
 if (! in_array('sqlite', PDO::getAvailableDrivers(), true)) {
-    test('SQLite PDO driver not present – skipping')->skip();
-
-    return;
+    throw new RuntimeException('PDO SQLite is required for the configured cache test matrix.');
 }
 
 /* ── bootstrap / teardown ────────────────────────────────────────── */
 beforeEach(function () {
     $this->dbFile = sys_get_temp_dir().'/pest_sqlite_'.uniqid().'.sqlite';
-    $this->cache = Cache::sqlite('tests', $this->dbFile);
+    $this->cache = Cache::sqlite('tests', $this->dbFile, new CacheOptions(allowClosures: true));
 });
 
 afterEach(function () {
@@ -68,7 +67,7 @@ test('getItem()/save() (sqlite)', function () {
 /* ── 3. deferred queue ──────────────────────────────────────────── */
 test('saveDeferred() & commit() (sqlite)', function () {
     $this->cache->getItem('a')->set('A')->saveDeferred();
-    expect($this->cache->get('a'))->toBeNull();
+    expect($this->cache->get('a'))->toBe('A');
 
     $this->cache->commit();
     expect($this->cache->get('a'))->toBe('A');

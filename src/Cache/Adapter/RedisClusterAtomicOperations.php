@@ -78,7 +78,7 @@ LUA;
         if (!is_string($state['existing'])) {
             return false;
         }
-        $record = $this->decodeRecordFromBlob($state['existing']);
+        $record = $this->decodeRecordFromBlob($state['existing'], $key);
         if (!$record instanceof CacheRecord
             || $record->namespaceGeneration !== $state['generation']
             || $record->tags !== []
@@ -106,6 +106,8 @@ LUA;
 
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
+        $this->discardDeferredKey($key);
+
         $bucket = $this->bucket($key);
         $result = $this->call(
             'eval',
@@ -123,7 +125,7 @@ LUA;
             return $this->genericMiss($key);
         }
 
-        $record = $this->decodeRecordFromBlob($blob);
+        $record = $this->decodeRecordFromBlob($blob, $key);
         if (!$record instanceof CacheRecord
             || $record->namespaceGeneration !== $generation
             || !$this->recordTagsAreCurrent($record)) {
@@ -182,7 +184,7 @@ LUA;
         $replaceStale = false;
         $expectedExisting = '';
         if (is_string($state['existing'])) {
-            $record = $this->decodeRecordFromBlob($state['existing']);
+            $record = $this->decodeRecordFromBlob($state['existing'], $item->getKey());
             if ($record instanceof CacheRecord
                 && $record->namespaceGeneration === $state['generation']
                 && $this->recordTagsAreCurrent($record)) {

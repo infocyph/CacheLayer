@@ -23,7 +23,7 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
     /** @var array<string, WeakReference<object>> */
     private array $weakRefs = [];
 
-    /** @var array<string, array<string, string>> */
+    /** @var array<string, array<int|string, string>> */
     private array $weakTags = [];
 
     public function __construct(string $namespace = 'default')
@@ -55,6 +55,8 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
 
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
+        $this->discardDeferredKey($key);
+
         $current = $this->getItem($key);
         if (!$current->isHit()) {
             return $current;
@@ -97,6 +99,7 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
 
     public function deleteItem(string $key): bool
     {
+        $this->discardDeferredKey($key);
         $mapped = $this->map($key);
         unset($this->scalarStore[$mapped], $this->weakExpires[$mapped], $this->weakTags[$mapped]);
 
@@ -111,6 +114,7 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
      */
     public function deleteItems(array $keys): bool
     {
+        $this->discardDeferredKeys($keys);
         foreach ($keys as $key) {
             $this->deleteItem((string) $key);
         }
@@ -143,7 +147,7 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         }
 
         if (!isset($this->scalarStore[$mapped])) {
-            return new CacheItem($this, $key);
+            return $this->genericMiss($key);
         }
 
         return $this->genericFromBlobWithInvalidator(
@@ -189,7 +193,7 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
                 continue;
             }
             $blob = $this->scalarStore[$mapped] ?? null;
-            $record = is_string($blob) ? $this->decodeRecordFromBlob($blob) : null;
+            $record = is_string($blob) ? $this->decodeRecordFromBlob($blob, $key) : null;
             $items[$key] = $record === null
                 ? $this->genericMiss($key)
                 : $this->genericItemFromRecord($key, $record);

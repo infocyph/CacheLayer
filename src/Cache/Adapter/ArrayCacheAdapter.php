@@ -39,7 +39,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
         }
 
         $mapped = $this->map($key);
-        $record = $this->atomicRecord($mapped);
+        $record = $this->atomicRecord($key, $mapped);
         if (!$record instanceof CacheRecord || $record->value !== $expected) {
             return false;
         }
@@ -51,8 +51,10 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
 
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
+        $this->discardDeferredKey($key);
+
         $mapped = $this->map($key);
-        $record = $this->atomicRecord($mapped);
+        $record = $this->atomicRecord($key, $mapped);
         if (!$record instanceof CacheRecord) {
             return $this->genericMiss($key);
         }
@@ -74,7 +76,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
         }
 
         $mapped = $this->map($item->getKey());
-        if ($this->atomicRecord($mapped) instanceof CacheRecord) {
+        if ($this->atomicRecord($item->getKey(), $mapped) instanceof CacheRecord) {
             return false;
         }
 
@@ -94,6 +96,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
 
     public function deleteItem(string $key): bool
     {
+        $this->discardDeferredKey($key);
         unset($this->store[$this->map($key)]);
 
         return true;
@@ -105,6 +108,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
      */
     public function deleteItems(array $keys): bool
     {
+        $this->discardDeferredKeys($keys);
         foreach ($keys as $key) {
             unset($this->store[$this->map($key)]);
         }
@@ -142,20 +146,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
 
     public function hasItem(string $key): bool
     {
-        $mapped = $this->map($key);
-        $blob = $this->store[$mapped] ?? null;
-        if (!is_string($blob)) {
-            return false;
-        }
-
-        $record = $this->decodeRecordFromBlob($blob);
-        if ($record === null) {
-            unset($this->store[$mapped]);
-
-            return false;
-        }
-
-        return true;
+        return $this->getItem($key)->isHit();
     }
 
     /**
@@ -237,6 +228,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
     public function storeTagGenerations(array $generations): bool
     {
         foreach ($generations as $tag => $generation) {
+            $tag = (string) $tag;
             if (!self::isGeneration($generation)) {
                 return false;
             }
@@ -246,14 +238,14 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
         return true;
     }
 
-    private function atomicRecord(string $mapped): ?CacheRecord
+    private function atomicRecord(string $key, string $mapped): ?CacheRecord
     {
         $blob = $this->store[$mapped] ?? null;
         if (!is_string($blob)) {
             return null;
         }
 
-        $record = $this->decodeRecordFromBlob($blob);
+        $record = $this->decodeRecordFromBlob($blob, $key);
         if (!$record instanceof CacheRecord || !$this->recordTagsAreCurrent($record)) {
             unset($this->store[$mapped]);
 
@@ -271,6 +263,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
     private function recordTagsAreCurrent(CacheRecord $record): bool
     {
         foreach ($record->tags as $tag => $generation) {
+            $tag = (string) $tag;
             if (($this->metadata[$tag] ?? null) !== $generation) {
                 return false;
             }

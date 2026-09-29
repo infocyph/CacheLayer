@@ -3,9 +3,10 @@
 declare(strict_types=1);
 
 use Infocyph\CacheLayer\Cache\Cache;
+use Infocyph\CacheLayer\Cache\CacheOptions;
 
 beforeEach(function () {
-    $this->cache = Cache::weakMap('weak-tests');
+    $this->cache = Cache::weakMap('weak-tests', new CacheOptions(allowObjects: true));
 });
 
 test('weak map adapter stores scalar values', function () {

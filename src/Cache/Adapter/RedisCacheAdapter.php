@@ -9,6 +9,7 @@ use Infocyph\CacheLayer\Cache\CacheRecord;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 use Infocyph\CacheLayer\Support\RedisConnection;
+use Infocyph\CacheLayer\Support\RedisValueGuard;
 use InvalidArgumentException;
 use Psr\Cache\CacheItemInterface;
 use RuntimeException;
@@ -78,6 +79,7 @@ LUA;
      */
     public function __construct(
         string $namespace = 'default',
+        #[\SensitiveParameter]
         string $dsn = 'redis://127.0.0.1:6379',
         ?\Redis $client = null,
     ) {
@@ -109,7 +111,7 @@ LUA;
         if (!is_string($existing)) {
             return false;
         }
-        $record = $this->decodeRecordFromBlob($existing);
+        $record = $this->decodeRecordFromBlob($existing, $key);
         if (!$record instanceof CacheRecord || $record->tags !== [] || $record->value !== $expected) {
             return false;
         }
@@ -126,12 +128,14 @@ LUA;
 
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
+        $this->discardDeferredKey($key);
+
         $raw = $this->redis->eval(self::GET_AND_DELETE_SCRIPT, [$this->map($key)], 1);
         if (!is_string($raw)) {
             return $this->genericMiss($key);
         }
 
-        $record = $this->decodeRecordFromBlob($raw);
+        $record = $this->decodeRecordFromBlob($raw, $key);
         if (!$record instanceof CacheRecord || !$this->recordTagsAreCurrent($record)) {
             return $this->genericMiss($key);
         }
@@ -166,7 +170,7 @@ LUA;
             return (bool) $this->redis->set($key, $blob, $options);
         }
 
-        $record = $this->decodeRecordFromBlob($existing);
+        $record = $this->decodeRecordFromBlob($existing, $item->getKey());
         if ($record instanceof CacheRecord && $this->recordTagsAreCurrent($record)) {
             return false;
         }
@@ -182,13 +186,15 @@ LUA;
 
     public function clear(): bool
     {
-        $cursor = null;
-        do {
-            $keys = $this->redis->scan($cursor, $this->ns . ':*', 1000);
-            if ($keys) {
-                $this->redis->del($keys);
-            }
-        } while ($cursor);
+        foreach ([$this->ns . ':d:*', $this->ns . ':m:*'] as $pattern) {
+            $cursor = null;
+            do {
+                $keys = $this->redis->scan($cursor, $pattern, 1000);
+                if ($keys) {
+                    $this->redis->del($keys);
+                }
+            } while ($cursor);
+        }
         $this->deferred = [];
 
         return true;
@@ -196,6 +202,8 @@ LUA;
 
     public function deleteItem(string $key): bool
     {
+        $this->discardDeferredKey($key);
+
         return $this->redis->del($this->map($key)) !== false;
     }
 
@@ -205,6 +213,8 @@ LUA;
      */
     public function deleteItems(array $keys): bool
     {
+        $this->discardDeferredKeys($keys);
+
         if ($keys === []) {
             return true;
         }
@@ -223,14 +233,14 @@ LUA;
     {
         $raw = $this->redis->get($this->map($key));
         if (is_string($raw)) {
-            $record = $this->decodeRecordFromBlob($raw);
+            $record = $this->decodeRecordFromBlob($raw, $key);
             if ($record !== null) {
                 return $this->genericItemFromRecord($key, $record);
             }
-            $this->redis->del($this->map($key));
+            RedisValueGuard::deleteIfUnchanged($this->redis, $this->map($key), $raw);
         }
 
-        return new CacheItem($this, $key);
+        return $this->genericMiss($key);
     }
 
     /** @param list<string> $tags */
@@ -261,7 +271,7 @@ LUA;
 
     public function hasItem(string $key): bool
     {
-        return $this->redis->exists($this->map($key)) === 1;
+        return $this->getItem($key)->isHit();
     }
 
     /**
@@ -293,19 +303,19 @@ LUA;
                     continue;
                 }
 
-                $record = $this->decodeRecordFromBlob($v);
+                $record = $this->decodeRecordFromBlob($v, $k);
                 if ($record !== null) {
                     $items[$k] = $this->genericItemFromRecord($k, $record);
 
                     continue;
                 }
-                $stale[] = $this->map($k);
+                $stale[] = [$this->map($k), $v];
             }
             $items[$k] = new CacheItem($this, $k);
         }
 
-        if ($stale !== []) {
-            $this->redis->del($stale);
+        foreach ($stale as [$mapped, $observed]) {
+            RedisValueGuard::deleteIfUnchanged($this->redis, $mapped, $observed);
         }
 
         return $items;
@@ -384,13 +394,33 @@ LUA;
         return $ok && $this->saveExpiring($expiring);
     }
 
-    private function connect(string $dsn): \Redis
+    private function connect(#[\SensitiveParameter] string $dsn): \Redis
     {
         try {
             return RedisConnection::connect($dsn);
         } catch (InvalidArgumentException $exception) {
-            throw new RuntimeException("Invalid Redis DSN: $dsn", 0, $exception);
+            throw new RuntimeException('Invalid Redis-compatible DSN.', 0, $exception);
         }
+    }
+
+    private function initializeTagGeneration(string $tag, mixed $observed): string
+    {
+        $candidate = self::newGeneration();
+        $key = $this->mapTag($tag);
+        $current = is_string($observed)
+            ? RedisValueGuard::replaceIfUnchanged($this->redis, $key, $observed, $candidate)
+            : false;
+        if ($current === false) {
+            $stored = $this->redis->set($key, $candidate, ['nx']);
+            $current = $stored ? $candidate : $this->redis->get($key);
+        }
+
+        $generation = self::normalizeGeneration($current);
+        if ($generation === null) {
+            throw new RuntimeException('Unable to initialize Redis tag generation.');
+        }
+
+        return $generation;
     }
 
     /**
@@ -401,20 +431,7 @@ LUA;
     {
         $generations = [];
         foreach ($missing as $tag => $value) {
-            $candidate = self::newGeneration();
-            $key = $this->mapTag($tag);
-            if ($value === false || $value === null) {
-                $stored = $this->redis->set($key, $candidate, ['nx']);
-                $current = $stored ? $candidate : $this->redis->get($key);
-            } else {
-                $this->redis->set($key, $candidate);
-                $current = $candidate;
-            }
-            $generation = self::normalizeGeneration($current);
-            if ($generation === null) {
-                throw new RuntimeException('Unable to initialize Redis tag generation.');
-            }
-            $generations[$tag] = $generation;
+            $generations[$tag] = $this->initializeTagGeneration((string) $tag, $value);
         }
 
         return $generations;
@@ -436,8 +453,9 @@ LUA;
             return true;
         }
 
-        $current = $this->getTagGenerations(array_keys($record->tags));
+        $current = $this->getTagGenerations(array_map(static fn(int|string $tag): string => (string) $tag, array_keys($record->tags)));
         foreach ($record->tags as $tag => $generation) {
+            $tag = (string) $tag;
             if (($current[$tag] ?? null) !== $generation) {
                 return false;
             }

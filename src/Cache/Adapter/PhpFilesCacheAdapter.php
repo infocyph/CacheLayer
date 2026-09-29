@@ -49,12 +49,16 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
 
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
+        $this->discardDeferredKey($key);
+
         return $this->withKeyLock($key, function () use ($key): CacheItemInterface {
             $record = $this->readLiveRecordUnlocked($key);
             if (!$record instanceof CacheRecord) {
                 return $this->genericMiss($key);
             }
-            $this->deleteItemUnlocked($key);
+            if (!$this->deleteItemUnlocked($key)) {
+                throw new RuntimeException('Unable to delete consumed PHP-file cache entry.');
+            }
 
             return $this->genericItemFromRecord($key, $record);
         });
@@ -96,12 +100,16 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
 
     public function deleteItem(string $key): bool
     {
+        $this->discardDeferredKey($key);
+
         return $this->withKeyLock($key, fn(): bool => $this->deleteItemUnlocked($key));
     }
 
     /** @param list<string> $keys */
     public function deleteItems(array $keys): bool
     {
+        $this->discardDeferredKeys($keys);
+
         $ok = true;
         foreach ($keys as $key) {
             $ok = $this->deleteItem($key) && $ok;
@@ -166,13 +174,10 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
     #[\Override]
     public function rotateTagGenerations(array $tags): bool
     {
-        foreach ($tags as $tag) {
-            if (!$this->atomicReplace($this->metadataFileFor($tag), self::newGeneration())) {
-                return false;
-            }
-        }
-
-        return true;
+        return array_all(
+            $tags,
+            fn(string $tag): bool => $this->atomicReplace($this->metadataFileFor($tag), self::newGeneration()),
+        );
     }
 
     public function save(CacheItemInterface $item): bool
@@ -203,12 +208,12 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
     {
         $baseDir = rtrim($baseDir ?? $this->defaultBaseDirectory(), DIRECTORY_SEPARATOR);
         $ns = CacheInput::namespace($ns);
-        $root = $baseDir . DIRECTORY_SEPARATOR . 'cache_' . $ns . DIRECTORY_SEPARATOR;
-        $this->dataDirectory = $root . 'data' . DIRECTORY_SEPARATOR;
-        $this->metadataDirectory = $root . 'meta' . DIRECTORY_SEPARATOR;
-        $this->lockDirectory = $root . 'locks' . DIRECTORY_SEPARATOR;
+        $root = $baseDir . DIRECTORY_SEPARATOR . 'cache_' . $ns;
+        $this->dataDirectory = $root . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR;
+        $this->metadataDirectory = $root . DIRECTORY_SEPARATOR . 'meta' . DIRECTORY_SEPARATOR;
+        $this->lockDirectory = $root . DIRECTORY_SEPARATOR . 'locks' . DIRECTORY_SEPARATOR;
 
-        foreach ([$baseDir, $this->dataDirectory, $this->metadataDirectory, $this->lockDirectory] as $directory) {
+        foreach ([$baseDir, $root, $this->dataDirectory, $this->metadataDirectory, $this->lockDirectory] as $directory) {
             $this->assertPathNotSymlink($directory, 'PHP cache directory');
             if (!is_dir($directory) && !mkdir($directory, 0700, true) && !is_dir($directory)) {
                 throw new RuntimeException("Unable to create PHP cache directory: {$directory}");
@@ -232,7 +237,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         $file = $this->fileFor($key);
         $this->invalidateOpcache($file);
 
-        return !is_file($file) || unlink($file);
+        return $this->deleteFile($file);
     }
 
     private function fileFor(string $key): string
@@ -300,7 +305,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         $row = require $file;
         $payload = is_array($row) && is_string($row['p'] ?? null) ? $row['p'] : null;
         $blob = is_string($payload) ? base64_decode($payload, true) : false;
-        $record = is_string($blob) ? $this->decodeRecordFromBlob($blob) : null;
+        $record = is_string($blob) ? $this->decodeRecordFromBlob($blob, $key) : null;
         if (!$record instanceof CacheRecord || !$this->recordTagsAreCurrent($record)) {
             return null;
         }
@@ -311,6 +316,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
     private function recordTagsAreCurrent(CacheRecord $record): bool
     {
         foreach ($record->tags as $tag => $generation) {
+            $tag = (string) $tag;
             $current = is_file($this->metadataFileFor($tag))
                 ? file_get_contents($this->metadataFileFor($tag))
                 : false;
@@ -330,6 +336,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
     private function withKeyLock(string $key, callable $callback): mixed
     {
         $path = $this->lockDirectory . hash('xxh128', $key) . '.lock';
+        $this->assertPathNotSymlink($path, 'PHP-file cache key lock');
         $handle = fopen($path, 'c');
         if (!is_resource($handle) || !flock($handle, LOCK_EX)) {
             if (is_resource($handle)) {

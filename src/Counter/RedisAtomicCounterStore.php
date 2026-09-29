@@ -10,13 +10,16 @@ use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 
 final readonly class RedisAtomicCounterStore implements AtomicCounterStoreInterface
 {
+    private const string COUNTER_PREFIX = 'cachelayer:counter:';
+
     private const string INCREMENT_SCRIPT = <<<'LUA'
-local exists = redis.call('EXISTS', KEYS[1])
-local value = redis.call('INCRBY', KEYS[1], ARGV[1])
-if exists == 0 and tonumber(ARGV[2]) > 0 then
+local existed = redis.call('EXISTS', KEYS[1])
+redis.call('INCRBY', KEYS[1], ARGV[1])
+if existed == 0 and tonumber(ARGV[2]) > 0 then
     redis.call('EXPIRE', KEYS[1], ARGV[2])
 end
-return { value, exists == 0 and 1 or 0 }
+local value = redis.call('GET', KEYS[1])
+return { value, existed == 0 and '1' or '0' }
 LUA;
 
     private string $namespace;
@@ -57,11 +60,11 @@ LUA;
             return null;
         }
 
-        if (!is_string($value) || !preg_match('/^-?\d+$/D', $value)) {
+        if (!is_string($value)) {
             throw new AtomicCounterException('Atomic counter contains a non-integer value.');
         }
 
-        return (int) $value;
+        return $this->parseInteger($value);
     }
 
     public function increment(string $key, int $by = 1, ?int $ttlSeconds = null): AtomicCounterValue
@@ -76,12 +79,27 @@ LUA;
     private function change(string $key, int $by, ?int $ttlSeconds): AtomicCounterValue
     {
         $ttl = $this->normalizeTtl($ttlSeconds);
-        $result = $this->client->eval(self::INCREMENT_SCRIPT, [$this->map($key), (string) $by, (string) $ttl], 1);
-        if (!is_array($result) || !isset($result[0], $result[1]) || !is_numeric($result[0]) || !is_numeric($result[1])) {
-            throw new AtomicCounterException('Unable to update atomic counter.');
+
+        try {
+            $result = $this->client->eval(
+                self::INCREMENT_SCRIPT,
+                [$this->map($key), (string) $by, (string) $ttl],
+                1,
+            );
+        } catch (\RedisException $failure) {
+            throw new AtomicCounterException('Unable to update atomic counter.', 0, $failure);
         }
 
-        return new AtomicCounterValue((int) $result[0], (int) $result[1] === 1);
+        if (!is_array($result) || !isset($result[0], $result[1]) || !is_string($result[0])) {
+            throw new AtomicCounterException('Unable to update atomic counter.');
+        }
+        $initialized = match ($result[1]) {
+            1, '1' => true,
+            0, '0' => false,
+            default => throw new AtomicCounterException('Unable to update atomic counter.'),
+        };
+
+        return new AtomicCounterValue($this->parseInteger($result[0]), $initialized);
     }
 
     private function map(string $key): string
@@ -92,7 +110,7 @@ LUA;
             throw new AtomicCounterException($failure->getMessage(), 0, $failure);
         }
 
-        return $this->namespace . ':counter:' . $key;
+        return self::COUNTER_PREFIX . $this->namespace . ':' . $key;
     }
 
     private function normalizeTtl(?int $ttlSeconds): int
@@ -106,5 +124,23 @@ LUA;
         }
 
         return $ttlSeconds;
+    }
+
+    private function parseInteger(string $value): int
+    {
+        if (preg_match('/^-?\d+$/D', $value) !== 1) {
+            throw new AtomicCounterException('Atomic counter contains a non-integer value.');
+        }
+
+        $negative = str_starts_with($value, '-');
+        $digits = ltrim($negative ? substr($value, 1) : $value, '0');
+        $digits = $digits === '' ? '0' : $digits;
+        $limit = $negative ? substr((string) PHP_INT_MIN, 1) : (string) PHP_INT_MAX;
+        if (strlen($digits) > strlen($limit)
+            || (strlen($digits) === strlen($limit) && strcmp($digits, $limit) > 0)) {
+            throw new AtomicCounterException('Atomic counter value is outside the PHP integer range.');
+        }
+
+        return (int) (($negative && $digits !== '0' ? '-' : '') . $digits);
     }
 }

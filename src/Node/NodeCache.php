@@ -6,7 +6,6 @@ namespace Infocyph\CacheLayer\Node;
 
 use Infocyph\CacheLayer\Cache\Adapter\ApcuCacheAdapter;
 use Infocyph\CacheLayer\Cache\Cache;
-use Infocyph\CacheLayer\Cache\CacheOptions;
 use Infocyph\CacheLayer\Cache\Lock\FileLockProvider;
 use Infocyph\CacheLayer\Cache\Metrics\InMemoryCacheMetricsCollector;
 use Infocyph\CacheLayer\Node\Adapter\NodeCacheAdapter;
@@ -20,11 +19,12 @@ final class NodeCache
     public static function create(NodeCacheConfig $config): Cache
     {
         $connection = NodeSqliteConnection::create($config);
+        $storageIdentity = self::storageIdentity($config);
         $metrics = new InMemoryCacheMetricsCollector();
         $adapter = new NodeCacheAdapter(
-            self::createApcuAdapter($config),
+            self::createApcuAdapter($config, $storageIdentity),
             new NodeSqliteCacheAdapter($connection, $config->namespace),
-            $config->failOpen,
+            $config->options->failOpen,
             $metrics,
         );
 
@@ -32,7 +32,8 @@ final class NodeCache
             $adapter,
             $config->lockProvider ?? new FileLockProvider($config->lockDirectory),
             $metrics,
-            new CacheOptions(failOpen: $config->failOpen),
+            $config->options,
+            $storageIdentity,
         );
     }
 
@@ -47,12 +48,21 @@ final class NodeCache
         );
     }
 
-    private static function createApcuAdapter(NodeCacheConfig $config): ?ApcuCacheAdapter
-    {
+    private static function createApcuAdapter(
+        NodeCacheConfig $config,
+        string $storageIdentity,
+    ): ?ApcuCacheAdapter {
         if (!$config->apcuEnabled || !extension_loaded('apcu') || !apcu_enabled()) {
             return null;
         }
 
-        return new ApcuCacheAdapter($config->namespace);
+        return new ApcuCacheAdapter($storageIdentity);
+    }
+
+    private static function storageIdentity(NodeCacheConfig $config): string
+    {
+        $path = realpath($config->sqliteFile) ?: $config->sqliteFile;
+
+        return 'node.' . hash('xxh128', $path . "\0" . $config->namespace);
     }
 }

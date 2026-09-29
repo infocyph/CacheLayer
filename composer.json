@@ -34,14 +34,15 @@
         }
     ],
     "require": {
-        "php": ">=8.3",
+        "php": ">=8.4",
         "opis/closure": "^4.5",
         "psr/cache": "^3.0",
         "psr/simple-cache": "^3.0"
     },
     "require-dev": {
         "infocyph/phpforge": "dev-main@dev",
-        "mongodb/mongodb": "^1.20 || ^2.0"
+        "infocyph/runwire": "2.1",
+        "mongodb/mongodb": "*"
     },
     "suggest": {
         "ext-apcu": "For APCu-based caching (in-memory, per-process)",
@@ -55,6 +56,7 @@
         "ext-pdo_sqlite": "For default SQLite usage via Cache::pdo(...) or Cache::sqlite(...)",
         "ext-redis": "For Redis-based caching (persistent, networked)",
         "ext-sysvshm": "For shared-memory caching via SharedMemoryCacheAdapter",
+        "infocyph/runwire": "For optional Runwire 2.1 request/task isolation and worker-owned invalidation/maintenance integration",
         "mongodb/mongodb": "For MongoDB caching via MongoDbCacheAdapter"
     },
     "minimum-stability": "stable",

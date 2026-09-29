@@ -11,6 +11,7 @@ use Infocyph\CacheLayer\Cache\CacheOptions;
 use Infocyph\CacheLayer\Cache\CacheRecord;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Serializer\ClosureSerializer;
+use Infocyph\CacheLayer\Support\BoundedValueTraversal;
 use InvalidArgumentException;
 use Psr\Cache\CacheItemInterface;
 use RuntimeException;
@@ -18,11 +19,13 @@ use Throwable;
 
 final readonly class CachePayloadCodec
 {
+    private const string BOUND_SIGNED_PREFIX = 'cl3-sig:';
+
     private const string COMPRESSED_PREFIX = 'cl2-gz:';
 
     private const string PLAIN_PREFIX = 'cl2:';
 
-    private const string SIGNED_PREFIX = 'cl2-sig:';
+    private const string SIGNATURE_PURPOSE = 'cache-record:v3';
 
     public function __construct(private CacheOptions $options = new CacheOptions()) {}
 
@@ -44,16 +47,19 @@ final readonly class CachePayloadCodec
 
     public static function toDateTime(?int $expiresAt): ?DateTimeInterface
     {
-        return $expiresAt === null ? null : (new DateTimeImmutable())->setTimestamp($expiresAt);
+        return $expiresAt === null ? null : new DateTimeImmutable()->setTimestamp($expiresAt);
     }
 
-    public function decode(string $blob): ?CacheRecord
-    {
+    public function decode(
+        string $blob,
+        ?string $storageIdentity = null,
+        ?string $key = null,
+    ): ?CacheRecord {
         if ($this->isPayloadTooLarge($blob)) {
             return null;
         }
 
-        $verified = $this->verifyAndExtractSignature($blob);
+        $verified = $this->verifyAndExtractSignature($blob, $storageIdentity, $key);
         if ($verified === null) {
             return null;
         }
@@ -65,6 +71,14 @@ final readonly class CachePayloadCodec
 
         try {
             $decoded = $this->unserializeNative($serialized);
+            if (is_array($decoded)) {
+                if (array_key_exists('value', $decoded)) {
+                    BoundedValueTraversal::assertSafe($decoded['value']);
+                }
+                if (array_key_exists('tags', $decoded)) {
+                    BoundedValueTraversal::assertSafe($decoded['tags']);
+                }
+            }
         } catch (Throwable) {
             return null;
         }
@@ -73,14 +87,17 @@ final readonly class CachePayloadCodec
     }
 
     /**
-     * @param array<string, string> $tags
+     * @param array<int|string, string> $tags
      */
     public function encode(
         mixed $value,
         ?int $expiresAt,
         array $tags = [],
         ?string $namespaceGeneration = null,
+        ?string $storageIdentity = null,
+        ?string $key = null,
     ): string {
+        BoundedValueTraversal::assertSafe($tags);
         [$encoding, $encodedValue] = $this->encodeValue($value);
         $serialized = serialize([
             'format' => 2,
@@ -103,7 +120,7 @@ final readonly class CachePayloadCodec
             }
         }
 
-        $encoded = $this->attachSignature($payload);
+        $encoded = $this->attachSignature($payload, $storageIdentity, $key);
         if ($this->isPayloadTooLarge($encoded)) {
             throw new RuntimeException('The stored cache payload exceeds the configured payload limit.');
         }
@@ -130,15 +147,27 @@ final readonly class CachePayloadCodec
         }
     }
 
-    private function attachSignature(string $payload): string
-    {
+    private function attachSignature(
+        string $payload,
+        ?string $storageIdentity,
+        ?string $key,
+    ): string {
         if ($this->options->integrityKey === null) {
             return $payload;
         }
+        if ($storageIdentity === null || $key === null) {
+            throw new InvalidArgumentException(
+                'Signed cache payloads require a logical storage identity and key.',
+            );
+        }
 
-        $signature = hash_hmac('sha256', $payload, $this->options->integrityKey);
+        $signature = hash_hmac(
+            'sha256',
+            $this->signatureInput($payload, $storageIdentity, $key),
+            $this->options->integrityKey,
+        );
 
-        return self::SIGNED_PREFIX . $signature . ':' . $payload;
+        return self::BOUND_SIGNED_PREFIX . $signature . ':' . $payload;
     }
 
     private function containsUnsupportedDecodedValue(mixed $value): bool
@@ -152,13 +181,11 @@ final readonly class CachePayloadCodec
         if (!is_array($value)) {
             return false;
         }
-        foreach ($value as $item) {
-            if ($this->containsUnsupportedDecodedValue($item)) {
-                return true;
-            }
-        }
 
-        return false;
+        return array_any(
+            $value,
+            fn(mixed $item): bool => $this->containsUnsupportedDecodedValue($item),
+        );
     }
 
     /**
@@ -198,6 +225,7 @@ final readonly class CachePayloadCodec
             return ['closure', ClosureSerializer::serialize($value)];
         }
 
+        BoundedValueTraversal::assertSafe($value);
         $this->assertNativeValueSupported($value);
 
         return ['native', $value];
@@ -265,9 +293,8 @@ final readonly class CachePayloadCodec
             return null;
         }
 
-        foreach ($tags as $tag => $generation) {
-            if (!is_string($tag)
-                || !is_string($generation)
+        foreach ($tags as $generation) {
+            if (!is_string($generation)
                 || strlen($generation) !== 32
                 || !ctype_xdigit($generation)) {
                 return null;
@@ -277,6 +304,14 @@ final readonly class CachePayloadCodec
         return new CacheRecord($value['value'], $expiresAt, $tags, $namespaceGeneration);
     }
 
+    private function signatureInput(string $payload, string $storageIdentity, string $key): string
+    {
+        return self::SIGNATURE_PURPOSE
+            . "\0" . strlen($storageIdentity) . ':' . $storageIdentity
+            . "\0" . strlen($key) . ':' . $key
+            . "\0" . $payload;
+    }
+
     private function unserializeNative(string $payload): mixed
     {
         set_error_handler(static fn(): bool => true);
@@ -284,34 +319,53 @@ final readonly class CachePayloadCodec
         try {
             return unserialize($payload, [
                 'allowed_classes' => $this->options->allowObjects,
-                'max_depth' => 128,
+                // Include the record envelope around the validated value graph.
+                'max_depth' => BoundedValueTraversal::MAX_DEPTH + 1,
             ]);
         } finally {
             restore_error_handler();
         }
     }
 
-    private function verifyAndExtractSignature(string $blob): ?string
+    private function unsignedPayload(string $blob): ?string
     {
-        if (!str_starts_with($blob, self::SIGNED_PREFIX)) {
-            return $this->options->integrityKey === null ? $blob : null;
+        return str_starts_with($blob, self::BOUND_SIGNED_PREFIX) ? null : $blob;
+    }
+
+    private function verifyAndExtractSignature(
+        string $blob,
+        ?string $storageIdentity,
+        ?string $key,
+    ): ?string {
+        $integrityKey = $this->options->integrityKey;
+        if ($integrityKey === null) {
+            return $this->unsignedPayload($blob);
         }
-        if ($this->options->integrityKey === null) {
+        if ($storageIdentity === null || $key === null
+            || !str_starts_with($blob, self::BOUND_SIGNED_PREFIX)) {
             return null;
         }
 
-        $separator = strpos($blob, ':', strlen(self::SIGNED_PREFIX));
+        $separator = strpos($blob, ':', strlen(self::BOUND_SIGNED_PREFIX));
         if ($separator === false) {
             return null;
         }
 
-        $signature = substr($blob, strlen(self::SIGNED_PREFIX), $separator - strlen(self::SIGNED_PREFIX));
+        $signature = substr(
+            $blob,
+            strlen(self::BOUND_SIGNED_PREFIX),
+            $separator - strlen(self::BOUND_SIGNED_PREFIX),
+        );
         $payload = substr($blob, $separator + 1);
         if (strlen($signature) !== 64 || !ctype_xdigit($signature)) {
             return null;
         }
 
-        $expected = hash_hmac('sha256', $payload, $this->options->integrityKey);
+        $expected = hash_hmac(
+            'sha256',
+            $this->signatureInput($payload, $storageIdentity, $key),
+            $integrityKey,
+        );
 
         return hash_equals($expected, strtolower($signature)) ? $payload : null;
     }

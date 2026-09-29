@@ -50,12 +50,16 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
 
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
+        $this->discardDeferredKey($key);
+
         return $this->withKeyLock($key, function () use ($key): CacheItemInterface {
             $record = $this->readLiveRecordUnlocked($key);
             if (!$record instanceof CacheRecord) {
                 return $this->genericMiss($key);
             }
-            $this->deleteItemUnlocked($key);
+            if (!$this->deleteItemUnlocked($key)) {
+                throw new RuntimeException('Unable to delete consumed file cache entry.');
+            }
 
             return $this->genericItemFromRecord($key, $record);
         });
@@ -95,12 +99,16 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
 
     public function deleteItem(string $key): bool
     {
+        $this->discardDeferredKey($key);
+
         return $this->withKeyLock($key, fn(): bool => $this->deleteItemUnlocked($key));
     }
 
     /** @param list<string> $keys */
     public function deleteItems(array $keys): bool
     {
+        $this->discardDeferredKeys($keys);
+
         $ok = true;
         foreach ($keys as $k) {
             $ok = $this->deleteItem($k) && $ok;
@@ -116,7 +124,7 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
             return $this->genericItemFromRecord($key, $record);
         }
 
-        return new CacheItem($this, $key);
+        return $this->genericMiss($key);
     }
 
     /**
@@ -203,12 +211,13 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
     {
         $baseDir = rtrim($baseDir ?? $this->defaultBaseDirectory(), DIRECTORY_SEPARATOR);
         $ns = CacheInput::namespace($ns);
-        $root = $baseDir . DIRECTORY_SEPARATOR . 'cache_' . $ns . DIRECTORY_SEPARATOR;
-        $this->dataDirectory = $root . 'data' . DIRECTORY_SEPARATOR;
-        $this->metadataDirectory = $root . 'meta' . DIRECTORY_SEPARATOR;
-        $this->lockDirectory = $root . 'locks' . DIRECTORY_SEPARATOR;
+        $root = $baseDir . DIRECTORY_SEPARATOR . 'cache_' . $ns;
+        $this->dataDirectory = $root . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR;
+        $this->metadataDirectory = $root . DIRECTORY_SEPARATOR . 'meta' . DIRECTORY_SEPARATOR;
+        $this->lockDirectory = $root . DIRECTORY_SEPARATOR . 'locks' . DIRECTORY_SEPARATOR;
 
         $this->ensureBaseDirectoryExists($baseDir);
+        $this->ensureCacheDirectoryExists($root);
         foreach ([$this->dataDirectory, $this->metadataDirectory, $this->lockDirectory] as $directory) {
             $this->ensureCacheDirectoryExists($directory);
         }
@@ -225,7 +234,7 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
     {
         $file = $this->fileFor($key);
 
-        return !is_file($file) || unlink($file);
+        return $this->deleteFile($file);
     }
 
     private function ensureBaseDirectoryExists(string $baseDir): void
@@ -302,7 +311,7 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
     {
         $file = $this->fileFor($key);
         $raw = is_file($file) ? file_get_contents($file) : false;
-        $record = is_string($raw) ? $this->decodeRecordFromBlob($raw) : null;
+        $record = is_string($raw) ? $this->decodeRecordFromBlob($raw, $key) : null;
         if (!$record instanceof CacheRecord || !$this->recordTagsAreCurrent($record)) {
             return null;
         }
@@ -313,6 +322,7 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
     private function recordTagsAreCurrent(CacheRecord $record): bool
     {
         foreach ($record->tags as $tag => $generation) {
+            $tag = (string) $tag;
             $current = is_file($this->metadataFileFor($tag))
                 ? file_get_contents($this->metadataFileFor($tag))
                 : false;
@@ -339,6 +349,7 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
     private function withKeyLock(string $key, callable $callback): mixed
     {
         $path = $this->lockDirectory . hash('xxh128', $key) . '.lock';
+        $this->assertPathNotSymlink($path, 'File cache key lock');
         $handle = fopen($path, 'c');
         if (!is_resource($handle) || !flock($handle, LOCK_EX)) {
             if (is_resource($handle)) {

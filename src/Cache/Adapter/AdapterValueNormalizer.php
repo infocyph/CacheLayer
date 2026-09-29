@@ -9,13 +9,7 @@ final class AdapterValueNormalizer
     /** @param array<mixed> $values */
     public static function allTrue(array $values): bool
     {
-        foreach ($values as $value) {
-            if ($value !== true) {
-                return false;
-            }
-        }
-
-        return true;
+        return array_all($values, static fn(mixed $value): bool => $value === true);
     }
 
     /**
@@ -39,13 +33,17 @@ final class AdapterValueNormalizer
      */
     public static function fromJsonOrArrayLike(mixed $value): ?array
     {
+        $arrayLike = self::fromArrayLikeOrToArray($value);
+        if ($arrayLike !== null) {
+            return $arrayLike;
+        }
         if ($value instanceof \JsonSerializable) {
             $json = $value->jsonSerialize();
 
             return is_array($json) ? self::normalizeAssoc($json) : null;
         }
 
-        return self::fromArrayLikeOrToArray($value);
+        return null;
     }
 
     public static function intOrZero(mixed $value): int

@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Infocyph\CacheLayer\Cache\Adapter;
 
+use Infocyph\CacheLayer\Cache\CacheInput;
 use Infocyph\CacheLayer\Cache\CacheOptions;
 use Infocyph\CacheLayer\Cache\CacheRecord;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Psr\Cache\CacheItemInterface;
 use Psr\Cache\CacheItemPoolInterface;
+use Throwable;
 
 abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalCachePoolInterface
 {
@@ -17,10 +19,26 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
 
     private ?CachePayloadCodec $codec = null;
 
+    private bool $committing = false;
+
     /** @var array<string, string> */
     private array $localMetadata = [];
 
     private ?CacheOptions $options = null;
+
+    private ?string $storageIdentity = null;
+
+    public function __destruct()
+    {
+        if ($this->deferred === []) {
+            return;
+        }
+
+        try {
+            $this->commit();
+        } catch (Throwable) {
+        }
+    }
 
     /**
      * @param list<string> $keys
@@ -31,6 +49,22 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
     /** @param array<string, CacheItemInterface> $items */
     abstract public function saveItems(array $items): bool;
 
+    /** @internal */
+    public function assertOptionsCompatible(CacheOptions $options): void
+    {
+        if ($this->options !== null && $this->options != $options) {
+            throw new \LogicException('Cache options cannot change after the adapter is bound to a facade.');
+        }
+    }
+
+    /** @internal */
+    public function assertStorageIdentityCompatible(string $storageIdentity): void
+    {
+        if ($this->storageIdentity !== null && $this->storageIdentity !== $storageIdentity) {
+            throw new \LogicException('Cache storage identity cannot change after the adapter is bound to a facade.');
+        }
+    }
+
     public function commit(): bool
     {
         if ($this->deferred === []) {
@@ -38,7 +72,14 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         }
 
         $deferred = $this->deferred;
-        $saved = $this->saveItems($deferred);
+        $this->committing = true;
+
+        try {
+            $saved = $this->saveItems($deferred);
+        } finally {
+            $this->committing = false;
+        }
+
         if ($saved) {
             $this->deferred = [];
         }
@@ -49,20 +90,22 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
     /** @internal */
     public function configureOptions(CacheOptions $options): void
     {
-        if ($this->codec !== null) {
-            if ($this->options == $options) {
-                return;
-            }
+        $this->assertOptionsCompatible($options);
+        $this->options ??= $options;
+    }
 
-            throw new \LogicException('Cache options cannot change after the adapter starts processing records.');
-        }
-
-        $this->options = $options;
+    /** @internal */
+    public function configureStorageIdentity(string $storageIdentity): void
+    {
+        $this->assertStorageIdentityCompatible($storageIdentity);
+        $this->storageIdentity ??= $storageIdentity;
     }
 
     public function createItem(string $key): CacheItemInterface
     {
-        return $this->genericMiss($key);
+        CacheInput::key($key);
+
+        return new CacheItem($this, $key);
     }
 
     /**
@@ -71,7 +114,19 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
      */
     public function getItems(array $keys = []): array
     {
-        return $this->multiFetch($keys);
+        $keys = CacheInput::keys($keys);
+        $items = $this->multiFetch($keys);
+
+        foreach ($keys as $key) {
+            $pending = $this->deferredRead($key);
+            if ($pending !== null) {
+                $items[$key] = $pending;
+            } elseif (!isset($items[$key])) {
+                $items[$key] = new CacheItem($this, $key);
+            }
+        }
+
+        return $items;
     }
 
     /** @param list<string> $tags */
@@ -111,7 +166,8 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
             return false;
         }
 
-        $this->deferred[$item->getKey()] = $item;
+        $snapshot = $this->deferredSnapshot($item);
+        $this->deferred[$this->deferredKey($item->getKey())] = $snapshot;
 
         return true;
     }
@@ -135,20 +191,56 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         return strtolower($value);
     }
 
-    protected function decodeRecordFromBase64(string $payload): ?CacheRecord
+    protected function decodeRecordFromBase64(string $payload, ?string $key = null): ?CacheRecord
     {
         $blob = base64_decode($payload, true);
 
-        return is_string($blob) ? $this->decodeRecordFromBlob($blob) : null;
+        return is_string($blob) ? $this->decodeRecordFromBlob($blob, $key) : null;
     }
 
-    protected function decodeRecordFromBlob(string $blob): ?CacheRecord
+    protected function decodeRecordFromBlob(string $blob, ?string $key = null): ?CacheRecord
     {
-        $record = $this->payloadCodec()->decode($blob);
+        $record = $this->payloadCodec()->decode($blob, $this->storageIdentity, $key);
 
         return $record !== null && !CachePayloadCodec::isExpired($record->expiresAt)
             ? $record
             : null;
+    }
+
+    protected function deferredRead(string $key): ?CacheItem
+    {
+        $pending = $this->deferred[$this->deferredKey($key)] ?? null;
+        if (!$pending instanceof CacheItem) {
+            return null;
+        }
+        if (!$pending->isHit()) {
+            return new CacheItem($this, $key);
+        }
+
+        return clone $pending;
+    }
+
+    protected function discardDeferredKey(string $key): void
+    {
+        CacheInput::key($key);
+        if ($this->committing) {
+            return;
+        }
+
+        unset($this->deferred[$this->deferredKey($key)]);
+    }
+
+    /** @param list<string> $keys */
+    protected function discardDeferredKeys(array $keys): void
+    {
+        $keys = CacheInput::keys($keys);
+        if ($this->committing) {
+            return;
+        }
+
+        foreach ($keys as $key) {
+            unset($this->deferred[$this->deferredKey($key)]);
+        }
     }
 
     protected function encodeItem(
@@ -158,7 +250,14 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
     ): string {
         $tags = $item instanceof CacheItem ? $item->getTagGenerations() : [];
 
-        return $this->payloadCodec()->encode($item->get(), $expiresAt, $tags, $namespaceGeneration);
+        return $this->payloadCodec()->encode(
+            $item->get(),
+            $expiresAt,
+            $tags,
+            $namespaceGeneration,
+            $this->storageIdentity,
+            $item->getKey(),
+        );
     }
 
     protected function genericDeleteAndMiss(string $key): CacheItem
@@ -178,7 +277,7 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
             $key,
             $payload,
             $onInvalid,
-            $this->decodeRecordFromBase64(...),
+            fn(string $encoded): ?CacheRecord => $this->decodeRecordFromBase64($encoded, $key),
         );
     }
 
@@ -192,12 +291,18 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
             $key,
             $blob,
             $onInvalid,
-            $this->decodeRecordFromBlob(...),
+            fn(string $encoded): ?CacheRecord => $this->decodeRecordFromBlob($encoded, $key),
         );
     }
 
     protected function genericItemFromRecord(string $key, CacheRecord $record): CacheItem
     {
+        CacheInput::key($key);
+        $pending = $this->deferredRead($key);
+        if ($pending !== null) {
+            return $pending;
+        }
+
         return new CacheItem(
             $this,
             $key,
@@ -210,7 +315,9 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
 
     protected function genericMiss(string $key): CacheItem
     {
-        return new CacheItem($this, $key);
+        CacheInput::key($key);
+
+        return $this->deferredRead($key) ?? new CacheItem($this, $key);
     }
 
     protected function options(): CacheOptions
@@ -242,19 +349,46 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
 
     protected function supportsItem(CacheItemInterface $item): bool
     {
-        return $item instanceof CacheItem && $item->belongsTo($this);
+        if (!$this->ownsItem($item)) {
+            return false;
+        }
+        if (!$this->committing) {
+            $this->discardDeferredKey($item->getKey());
+        }
+
+        return true;
     }
 
     /** @param array<string, CacheItemInterface> $items */
     protected function supportsItems(array $items): bool
     {
         foreach ($items as $item) {
-            if (!$this->supportsItem($item)) {
+            if (!$this->ownsItem($item)) {
                 return false;
+            }
+        }
+        if (!$this->committing) {
+            foreach ($items as $item) {
+                $this->discardDeferredKey($item->getKey());
             }
         }
 
         return true;
+    }
+
+    private function deferredKey(string $key): string
+    {
+        return "key:\0" . $key;
+    }
+
+    private function deferredSnapshot(CacheItemInterface $item): CacheItem
+    {
+        $ttl = $item instanceof CacheItem ? $item->ttlSeconds() : null;
+        $tags = $item instanceof CacheItem ? $item->getTagGenerations() : [];
+
+        return new CacheItem($this, $item->getKey(), $item->get(), true)
+            ->expiresAfter($ttl)
+            ->setTagGenerations($tags);
     }
 
     private function genericFromEncodedWithInvalidator(
@@ -263,18 +397,27 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         callable $onInvalid,
         callable $decoder,
     ): CacheItem {
+        $pending = $this->deferredRead($key);
+        if ($pending !== null) {
+            return $pending;
+        }
         if ($encoded === null) {
-            return $this->genericMiss($key);
+            return new CacheItem($this, $key);
         }
 
         $record = $decoder($encoded);
         if (!$record instanceof CacheRecord) {
             $onInvalid();
 
-            return $this->genericMiss($key);
+            return new CacheItem($this, $key);
         }
 
         return $this->genericItemFromRecord($key, $record);
+    }
+
+    private function ownsItem(CacheItemInterface $item): bool
+    {
+        return $item instanceof CacheItem && $item->belongsTo($this);
     }
 
     private function payloadCodec(): CachePayloadCodec

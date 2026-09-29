@@ -13,11 +13,10 @@ use Infocyph\CacheLayer\Cluster\Transport\InvalidationTransportInspectorInterfac
 use Infocyph\CacheLayer\Cluster\Transport\TransactionalInvalidationTransportInterface;
 use PDO;
 use PDOException;
+use Throwable;
 
 final readonly class PdoInvalidationTransport implements InvalidationTransportInspectorInterface, TransactionalInvalidationTransportInterface
 {
-    private const string TABLE = 'cachelayer_invalidation_events';
-
     private string $driver;
 
     public function __construct(
@@ -64,7 +63,8 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
     public function countAfter(string $cluster, ?string $cursor): int
     {
         try {
-            $sql = 'SELECT COUNT(*) FROM ' . self::TABLE . ' WHERE cluster_name = :cluster';
+            $sql = 'SELECT COUNT(*) FROM ' . PdoInvalidationSchema::EVENT_TABLE
+                . ' WHERE cluster_name = :cluster';
             if ($cursor !== null) {
                 $sql .= ' AND event_id > :cursor';
             }
@@ -101,7 +101,8 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
     {
         try {
             $statement = $this->connection->prepare(
-                'SELECT MIN(event_id) FROM ' . self::TABLE . ' WHERE cluster_name = :cluster',
+                'SELECT MIN(event_id) FROM ' . PdoInvalidationSchema::EVENT_TABLE
+                . ' WHERE cluster_name = :cluster',
             );
             $statement->execute([':cluster' => $cluster]);
             $id = $statement->fetchColumn();
@@ -132,7 +133,33 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
 
     public function publish(InvalidationEvent $event): string
     {
-        return $this->insert($this->connection, $event);
+        $ownsTransaction = !$this->connection->inTransaction();
+        $transactionStarted = false;
+
+        try {
+            if ($ownsTransaction) {
+                $this->connection->beginTransaction();
+                $transactionStarted = true;
+            }
+
+            $id = $this->publishLocked($this->connection, $event);
+
+            if ($ownsTransaction) {
+                $this->connection->commit();
+                $transactionStarted = false;
+            }
+
+            return $id;
+        } catch (Throwable $exception) {
+            if ($transactionStarted) {
+                $this->connection->rollBack();
+            }
+            if ($exception instanceof ClusterTransportException) {
+                throw $exception;
+            }
+
+            throw new ClusterTransportException('Unable to publish an invalidation event.', 0, $exception);
+        }
     }
 
     public function publishWithinTransaction(PDO $connection, InvalidationEvent $event): string
@@ -143,7 +170,7 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
             );
         }
 
-        return $this->insert($connection, $event);
+        return $this->publishLocked($connection, $event);
     }
 
     private function consumeSql(?string $cursor): string
@@ -154,14 +181,16 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
         }
 
         return 'SELECT event_id, cluster_name, namespace_name, event_type, identifier, origin_node_id, created_at '
-            . 'FROM ' . self::TABLE . ' WHERE ' . $where . ' ORDER BY event_id ASC LIMIT :limit';
+            . 'FROM ' . PdoInvalidationSchema::EVENT_TABLE . ' WHERE ' . $where
+            . ' ORDER BY event_id ASC LIMIT :limit';
     }
 
     private function eventBoundary(string $cluster, string $aggregate): ?string
     {
         try {
             $statement = $this->connection->prepare(
-                'SELECT ' . $aggregate . '(event_id) FROM ' . self::TABLE . ' WHERE cluster_name = :cluster',
+                'SELECT ' . $aggregate . '(event_id) FROM ' . PdoInvalidationSchema::EVENT_TABLE
+                . ' WHERE cluster_name = :cluster',
             );
             $statement->execute([':cluster' => $cluster]);
             $id = $statement->fetchColumn();
@@ -233,7 +262,7 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
     {
         try {
             $statement = $connection->prepare(
-                'INSERT INTO ' . self::TABLE . ' '
+                'INSERT INTO ' . PdoInvalidationSchema::EVENT_TABLE . ' '
                 . '(cluster_name, namespace_name, event_type, identifier, origin_node_id, created_at) '
                 . 'VALUES (:cluster, :namespace, :type, :identifier, :origin, :created_at)',
             );
@@ -257,13 +286,56 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
         return $id;
     }
 
+    private function lockCluster(PDO $connection, string $cluster): void
+    {
+        try {
+            $statement = $connection->prepare($this->lockRowInsertSql());
+            $statement->execute([':cluster' => $cluster]);
+            if ($this->driver === 'sqlite') {
+                return;
+            }
+
+            $statement = $connection->prepare(
+                'SELECT cluster_name FROM ' . PdoInvalidationSchema::LOCK_TABLE
+                . ' WHERE cluster_name = :cluster FOR UPDATE',
+            );
+            $statement->execute([':cluster' => $cluster]);
+            if ($statement->fetchColumn() === false) {
+                throw new ClusterTransportException('Unable to acquire the invalidation publication lock.');
+            }
+        } catch (PDOException $exception) {
+            throw new ClusterTransportException('Unable to acquire the invalidation publication lock.', 0, $exception);
+        }
+    }
+
+    private function lockRowInsertSql(): string
+    {
+        return match ($this->driver) {
+            'mysql' => 'INSERT INTO ' . PdoInvalidationSchema::LOCK_TABLE
+                . ' (cluster_name) VALUES (:cluster) '
+                . 'ON DUPLICATE KEY UPDATE cluster_name = VALUES(cluster_name)',
+            'pgsql' => 'INSERT INTO ' . PdoInvalidationSchema::LOCK_TABLE
+                . ' (cluster_name) VALUES (:cluster) ON CONFLICT (cluster_name) DO NOTHING',
+            default => 'INSERT OR IGNORE INTO ' . PdoInvalidationSchema::LOCK_TABLE
+                . ' (cluster_name) VALUES (:cluster)',
+        };
+    }
+
     private function pruneSql(): string
     {
-        $selection = 'SELECT event_id FROM ' . self::TABLE . ' WHERE created_at < :boundary ORDER BY event_id LIMIT :limit';
+        $selection = 'SELECT event_id FROM ' . PdoInvalidationSchema::EVENT_TABLE
+            . ' WHERE created_at < :boundary ORDER BY event_id LIMIT :limit';
         if ($this->driver === 'mysql') {
             $selection = 'SELECT event_id FROM (' . $selection . ') AS cachelayer_prunable_events';
         }
 
-        return 'DELETE FROM ' . self::TABLE . ' WHERE event_id IN (' . $selection . ')';
+        return 'DELETE FROM ' . PdoInvalidationSchema::EVENT_TABLE . ' WHERE event_id IN (' . $selection . ')';
+    }
+
+    private function publishLocked(PDO $connection, InvalidationEvent $event): string
+    {
+        $this->lockCluster($connection, $event->cluster);
+
+        return $this->insert($connection, $event);
     }
 }

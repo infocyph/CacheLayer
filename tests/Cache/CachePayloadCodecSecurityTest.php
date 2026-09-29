@@ -7,23 +7,38 @@ use Infocyph\CacheLayer\Cache\Adapter\ArrayCacheAdapter;
 use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Cache\CacheOptions;
 
-test('payload codec signs and verifies CacheLayer v2 records', function () {
+test('payload codec signs and verifies identity-bound CacheLayer records', function () {
     $codec = new CachePayloadCodec(new CacheOptions(integrityKey: 'secret-key-123'));
 
     $generation = bin2hex(random_bytes(16));
-    $blob = $codec->encode(['k' => 'v'], null, ['group' => $generation]);
-    expect(str_starts_with($blob, 'cl2-sig:'))->toBeTrue();
+    $blob = $codec->encode(
+        ['k' => 'v'],
+        null,
+        ['group' => $generation],
+        storageIdentity: 'tenant',
+        key: 'record',
+    );
+    expect(str_starts_with($blob, 'cl3-sig:'))->toBeTrue();
 
-    $record = $codec->decode($blob);
+    $record = $codec->decode($blob, 'tenant', 'record');
     expect($record?->value)->toBe(['k' => 'v'])
         ->and($record?->tags)->toBe(['group' => $generation]);
 });
 
 test('payload codec rejects tampered signed payload', function () {
     $codec = new CachePayloadCodec(new CacheOptions(integrityKey: 'secret-key-123'));
-    $blob = $codec->encode('value', null);
+    $blob = $codec->encode('value', null, storageIdentity: 'tenant', key: 'record');
 
-    expect($codec->decode($blob . 'x'))->toBeNull();
+    expect($codec->decode($blob . 'x', 'tenant', 'record'))->toBeNull();
+});
+
+test('signed codec rejects legacy unbound operation', function () {
+    $codec = new CachePayloadCodec(new CacheOptions(integrityKey: 'secret-key-123'));
+
+    expect(fn() => $codec->encode('value', null))
+        ->toThrow(InvalidArgumentException::class)
+        ->and($codec->decode('cl2-sig:' . str_repeat('0', 64) . ':cl2:payload'))
+        ->toBeNull();
 });
 
 test('cache treats a corrupted signed record as a miss and deletes it', function () {
@@ -74,7 +89,7 @@ test('weak map enforces object and closure policies without serializing referenc
 });
 
 test('payload codec delegates only top-level closures to special serialization', function () {
-    $codec = new CachePayloadCodec();
+    $codec = new CachePayloadCodec(new CacheOptions(allowClosures: true));
     $blob = $codec->encode(static fn(int $value): int => $value + 1, null);
     $closure = $codec->decode($blob)?->value;
     $resource = fopen('php://memory', 'r+');
@@ -111,3 +126,94 @@ test('payload codec does not decode legacy payload markers', function () {
     expect($codec->decode('imx-gz:payload'))->toBeNull()
         ->and($codec->decode('imx-sig-v1:payload'))->toBeNull();
 });
+
+
+test('payload traversal rejects wide graphs before exceeding the node budget', function () {
+    $codec = new CachePayloadCodec(new CacheOptions(maxPayloadBytes: 8 * 1024 * 1024));
+    $supported = array_fill(0, 65_534, 'x');
+    $tooWide = array_fill(0, 65_536, 'x');
+
+    $blob = $codec->encode($supported, null);
+    expect($codec->decode($blob)?->value)->toBe($supported)
+        ->and(fn() => $codec->encode($tooWide, null))
+        ->toThrow(InvalidArgumentException::class, 'traversal budget');
+
+    $serialized = serialize([
+        'format' => 2,
+        'encoding' => 'native',
+        'value' => $tooWide,
+        'expires' => null,
+        'tags' => [],
+        'namespace' => null,
+    ]);
+
+    expect(strlen($serialized))->toBeLessThan(8 * 1024 * 1024)
+        ->and($codec->decode('cl2:' . $serialized))->toBeNull();
+});
+
+test('payload traversal budgets tag metadata independently', function () {
+    $codec = new CachePayloadCodec(new CacheOptions(maxPayloadBytes: 8 * 1024 * 1024));
+    $generation = str_repeat('a', 32);
+    $supported = array_fill(0, 65_534, $generation);
+    $tooWide = array_fill(0, 65_536, $generation);
+
+    $blob = $codec->encode('value', null, $supported);
+    expect($codec->decode($blob)?->value)->toBe('value')
+        ->and(fn() => $codec->encode('value', null, $tooWide))
+        ->toThrow(InvalidArgumentException::class, 'traversal budget');
+
+    $serialized = serialize([
+        'format' => 2,
+        'encoding' => 'native',
+        'value' => 'value',
+        'expires' => null,
+        'tags' => $tooWide,
+        'namespace' => null,
+    ]);
+
+    expect(strlen($serialized))->toBeLessThan(8 * 1024 * 1024)
+        ->and($codec->decode('cl2:' . $serialized))->toBeNull();
+});
+
+test('payload traversal rejects recursive and over-deep graphs safely', function () {
+    $codec = new CachePayloadCodec();
+    $recursive = [];
+    $recursive['self'] = &$recursive;
+
+    expect(fn() => $codec->encode($recursive, null))
+        ->toThrow(InvalidArgumentException::class, 'Recursive array references');
+
+    $deep = 'leaf';
+    for ($depth = 0; $depth < 130; ++$depth) {
+        $deep = [$deep];
+    }
+
+    expect(fn() => $codec->encode($deep, null))
+        ->toThrow(InvalidArgumentException::class, 'nesting depth');
+});
+
+test('accepted value depth round-trips through the complete record envelope', function (bool $signed, bool $compressed, int $depth, mixed $leaf): void {
+    $value = $leaf;
+    for ($index = 0; $index < $depth; ++$index) {
+        $value = [$value];
+    }
+    $options = new CacheOptions(
+        integrityKey: $signed ? 'depth-boundary-key' : null,
+        compressionThreshold: $compressed ? 1 : null,
+        failOpen: false,
+    );
+    $codec = new CachePayloadCodec($options);
+    $cache = Cache::memory('depth-boundary', $options);
+
+    if ($depth <= 128) {
+        $encoded = $codec->encode($value, null, storageIdentity: 'depth-boundary', key: 'nested');
+        expect($codec->decode($encoded, 'depth-boundary', 'nested')?->value)->toBe($value)
+            ->and($cache->set('nested', $value))->toBeTrue()
+            ->and($cache->get('nested'))->toBe($value);
+
+        return;
+    }
+
+    expect(fn() => $codec->encode($value, null))->toThrow(InvalidArgumentException::class, 'nesting depth')
+        ->and(fn() => $cache->set('nested', $value))->toThrow(\Infocyph\CacheLayer\Exceptions\CacheBackendException::class);
+})->with([false, true])->with([false, true])->with([127, 128, 129])->with(['scalar leaf' => ['leaf'], 'empty array leaf' => [[]]]);

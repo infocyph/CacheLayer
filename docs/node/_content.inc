@@ -77,10 +77,11 @@ Write lifecycle
 3. A delete or namespace clear is attempted across both layers.
 4. Tagged entries and tag-generation metadata are local to this node.
 
-An L2 write failure never populates L1, even with ``failOpen: true``. This
-prevents a failed authoritative write from temporarily surfacing through L1.
-Set ``failOpen: false`` when a storage failure must be surfaced to the
-application instead of being returned as ``false``.
+An L2 write failure never populates L1. If an L1 mutation fails after SQLite
+has accepted the authoritative state, that Node adapter stops reading L1 so an
+older promoted value cannot override SQLite. Configure ``options->failOpen``
+according to whether storage failures should degrade to cache misses/false
+results or propagate to the application.
 
 Requirements and filesystem placement
 --------------------------------------
@@ -120,6 +121,7 @@ that database.
 
 .. code-block:: php
 
+   use Infocyph\CacheLayer\Cache\CacheOptions;
    use Infocyph\CacheLayer\Node\NodeCache;
    use Infocyph\CacheLayer\Node\NodeCacheConfig;
 
@@ -129,7 +131,10 @@ that database.
        lockDirectory: '/var/cache/my-application/locks',
        busyTimeoutMs: 1_000,
        apcuEnabled: true,
-       failOpen: true,
+       options: new CacheOptions(
+           integrityKey: $integrityKey,
+           failOpen: true,
+       ),
    );
 
    $cache = NodeCache::create($config);
@@ -159,10 +164,11 @@ Configuration reference
    Enables APCu L1 when the extension and SAPI support it. Set it to ``false``
    for deterministic SQLite-only behavior, CLI jobs, or troubleshooting.
 
-``failOpen``
-   Defaults to ``true``. When true, recoverable layer failures are treated as
-   cache degradation where possible. When false, APCu/SQLite failures propagate
-   to the caller.
+``options``
+   Optional :class:`CacheOptions` applied consistently to the Node facade,
+   SQLite L2, and APCu L1. Use it to configure payload integrity, payload limits,
+   compression, object/Closure policy, and ``failOpen``. Defaults to normal
+   CacheLayer cache options.
 
 ``lockProvider``
    Optional ``LockProviderInterface`` used by ``remember()``. When omitted,
@@ -348,6 +354,11 @@ rows, but pruning prevents the local SQLite file from accumulating them.
    Runs SQLite ``PRAGMA optimize``. Schedule it less frequently than pruning,
    for example as part of a daily maintenance job.
 
+``cycle($pruneLimit, $checkpoint, $optimize)``
+   Runs one serial bounded maintenance unit. This is convenient for framework
+   schedulers and the optional :doc:`/runwire` worker integration because one
+   call cannot overlap its own prune/checkpoint/optimize steps.
+
 A simple scheduled task can perform a small bounded prune every few minutes
 and checkpoint periodically. Do not run ``VACUUM`` on the request path; plan it
 separately if disk-space reclamation is required.
@@ -383,6 +394,11 @@ platform scheduler instead when that is how application jobs are operated.
 Only one maintenance task is needed per local SQLite file; it is safe to use a
 bounded prune limit if overlap cannot be ruled out.
 
+Applications already running Runwire 2.1 may instead use
+``RunwireWorkerIntegration::startNodeMaintenance()`` in a host-owned
+task/service worker. CacheLayer does not create a worker or event loop; see
+:doc:`/runwire` for lifecycle and topology requirements.
+
 Deployment and process guidance
 -------------------------------
 
@@ -410,10 +426,10 @@ Node Cache layer events. Export it through your application's telemetry path:
    $metrics = $cache->exportMetrics();
 
 Layer failures are represented by metrics such as APCu/SQLite failures when
-``failOpen`` is enabled. Alert on sustained failures, a sharp fall in hit rate,
-rapid SQLite file growth, and repeated lock contention. With ``failOpen``
-disabled, also handle the propagated cache exception according to the request's
-availability requirements.
+``options->failOpen`` is enabled. Alert on sustained failures, a sharp fall in
+hit rate, rapid SQLite file growth, and repeated lock contention. With
+``options->failOpen`` disabled, also handle the propagated cache exception
+according to the request's availability requirements.
 
 Troubleshooting
 ---------------
@@ -436,5 +452,6 @@ Troubleshooting
    removed by reads. Review TTL choices and cache cardinality as well.
 
 ``A cache failure should fail the request``
-   Create the configuration with ``failOpen: false`` and ensure the application
+   Create the configuration with
+   ``options: new CacheOptions(failOpen: false)`` and ensure the application
    handles the resulting exception at the appropriate boundary.

@@ -22,9 +22,18 @@ final class ClusterCache
         InvalidationTransportInterface $transport,
     ): ClusterRuntime {
         $cache = NodeCache::create($node);
-        $cursorStore = new SqliteCursorStore($node->sqliteFile, $cluster->cluster, $cluster->nodeId);
+        $cursorStore = new SqliteCursorStore(
+            $node->sqliteFile,
+            $cluster->cluster,
+            $cluster->nodeId,
+            $node->namespace,
+            $cluster->transportIdentity,
+        );
         $status = new ClusterStatusTracker();
         $recovery = new ClusterRecoveryManager($cache, $cursorStore, $transport, $cluster->cluster);
+        if ($cursorStore->requiresRecovery() && $recovery->recoverIfRequired()) {
+            $status->recordRecovery();
+        }
         $coordinator = new ClusterCoordinator(
             $cache,
             $cluster->cluster,

@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 use Infocyph\CacheLayer\Cache\AtomicCacheInterface;
 use Infocyph\CacheLayer\Cache\Cache;
+use Infocyph\CacheLayer\Counter\AtomicCounters;
+use Infocyph\CacheLayer\Counter\Exception\AtomicCounterException;
+use Infocyph\CacheLayer\Tests\Support\AtomicCounterProcessProbe;
 
 if (! class_exists(Redis::class)) {
-    test('phpredis ext not loaded - skipping valkey tests')->skip();
-
-    return;
+    throw new RuntimeException('phpredis is required for the configured Valkey test matrix.');
 }
 
 $valkeyHost = getenv('IC_VALKEY_HOST') ?: getenv('CACHELAYER_VALKEY_HOST') ?: getenv('IC_REDIS_HOST') ?: getenv('CACHELAYER_REDIS_HOST') ?: '127.0.0.1';
@@ -22,10 +23,8 @@ try {
         $probe->auth($valkeyPassword);
     }
     $probe->ping();
-} catch (Throwable) {
-    test('Valkey server unreachable - skipping')->skip();
-
-    return;
+} catch (Throwable $failure) {
+    throw new RuntimeException('Valkey service is required for the configured cache test matrix.', 0, $failure);
 }
 
 beforeEach(function () use ($valkeyHost, $valkeyPort, $valkeyPassword) {
@@ -36,6 +35,7 @@ beforeEach(function () use ($valkeyHost, $valkeyPort, $valkeyPassword) {
     }
     $client->flushDB();
 
+    $this->valkeyClient = $client;
     $this->cache = Cache::valkey(
         'valkey-tests',
         sprintf('valkey://%s:%d', $valkeyHost, $valkeyPort),
@@ -112,4 +112,86 @@ test('valkey atomic ttl permits a later claim', function () {
 
     expect($atomic->setIfAbsent('claim', 'second', 30))->toBeTrue()
         ->and($this->cache->get('claim'))->toBe('second');
+});
+
+
+test('Valkey atomic counters stay isolated from cache clear and preserve exact integers', function () {
+    $counters = AtomicCounters::valkey('valkey-tests', client: $this->valkeyClient);
+    $large = 9_007_199_254_740_993;
+    $first = $counters->increment('window', $large, 30);
+    $physical = 'cachelayer:counter:valkey-tests:window';
+    $ttlBefore = $this->valkeyClient->ttl($physical);
+    $later = $counters->decrement('window', 2, 30);
+    $ttlAfter = $this->valkeyClient->ttl($physical);
+
+    expect($first->value)->toBe($large)
+        ->and($first->initialized)->toBeTrue()
+        ->and($later->value)->toBe($large - 2)
+        ->and($later->initialized)->toBeFalse()
+        ->and($ttlAfter)->toBeGreaterThan(0)
+        ->and($ttlAfter)->toBeLessThanOrEqual($ttlBefore)
+        ->and($this->cache->set('ordinary', 'value'))->toBeTrue()
+        ->and($this->cache->clear())->toBeTrue()
+        ->and($counters->get('window'))->toBe($large - 2);
+
+    $this->valkeyClient->set('cachelayer:counter:valkey-tests:invalid', '9223372036854775808');
+    expect(fn () => $counters->get('invalid'))->toThrow(AtomicCounterException::class);
+});
+
+test('Valkey atomic counter initialization has exactly one winner under contention', function () use ($valkeyHost, $valkeyPort, $valkeyPassword) {
+    $counters = AtomicCounters::valkey('valkey-tests', client: $this->valkeyClient);
+    $wins = AtomicCounterProcessProbe::initializedWinners(
+        'valkey',
+        $valkeyHost,
+        $valkeyPort,
+        $valkeyPassword,
+        'valkey-tests',
+        'contended-counter',
+    );
+
+    expect($wins)->toBe(1)
+        ->and($counters->get('contended-counter'))->toBe(8);
+});
+
+
+test('Valkey atomic counters expire fixed windows', function () {
+    $counters = AtomicCounters::valkey('valkey-tests', client: $this->valkeyClient);
+
+    expect($counters->increment('short-window', 1, 1)->initialized)->toBeTrue()
+        ->and($counters->get('short-window'))->toBe(1);
+    usleep(2_000_000);
+
+    expect($counters->get('short-window'))->toBeNull();
+});
+
+
+test('Valkey atomic consume discards deferred overlays without resurrection', function () {
+    $atomic = $this->cache->atomic();
+    expect($atomic)->not->toBeNull()
+        ->and($this->cache->set('deferred-consume', 'stored'))->toBeTrue()
+        ->and($this->cache->saveDeferred($this->cache->getItem('deferred-consume')->set('pending')))->toBeTrue()
+        ->and($atomic->getAndDelete('deferred-consume', 'missing'))->toBe('stored')
+        ->and($atomic->getAndDelete('deferred-consume', 'missing'))->toBe('missing')
+        ->and($this->cache->commit())->toBeTrue()
+        ->and($this->cache->get('deferred-consume'))->toBeNull();
+});
+
+
+test('Valkey clear in boundary namespace preserves counter and lock domains', function () {
+    $cache = Cache::valkey('cachelayer', client: $this->valkeyClient);
+    $counters = AtomicCounters::valkey('audit-counter', client: $this->valkeyClient);
+    $locks = new \Infocyph\CacheLayer\Cache\Lock\RedisLockProvider($this->valkeyClient);
+
+    expect($cache->set('ordinary', 'value'))->toBeTrue()
+        ->and($counters->increment('window', 5, 30)->value)->toBe(5);
+
+    $held = $locks->acquire('boundary-lock', 0.0, 30.0);
+    expect($held)->not->toBeNull();
+
+    expect($cache->clear())->toBeTrue()
+        ->and($cache->get('ordinary'))->toBeNull()
+        ->and($counters->get('window'))->toBe(5)
+        ->and($locks->acquire('boundary-lock', 0.0, 30.0))->toBeNull();
+
+    $locks->release($held);
 });

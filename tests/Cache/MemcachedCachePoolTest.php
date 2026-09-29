@@ -10,16 +10,16 @@ declare(strict_types=1);
  */
 
 use Infocyph\CacheLayer\Cache\Cache;
+use Infocyph\CacheLayer\Cache\CacheOptions;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Cache\Lock\MemcachedLockProvider;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
+use Infocyph\CacheLayer\Support\MemcachedValueGuard;
 
 /* ── Skip suite if Memcached unavailable ─────────────────────────── */
 
 if (! class_exists(Memcached::class)) {
-    test('Memcached ext not loaded – skipping')->skip();
-
-    return;
+    throw new RuntimeException('Memcached extension is required for the configured cache test matrix.');
 }
 
 $memcachedHost = getenv('IC_MEMCACHED_HOST') ?: getenv('CACHELAYER_MEMCACHED_HOST') ?: '127.0.0.1';
@@ -29,9 +29,7 @@ $probe = new Memcached;
 $probe->addServer($memcachedHost, $memcachedPort);
 $probe->set('ping', 'pong');
 if ($probe->getResultCode() !== Memcached::RES_SUCCESS) {
-    test('No Memcached server available – skipping')->skip();
-
-    return;
+    throw new RuntimeException('Memcached service is required for the configured cache test matrix.');
 }
 
 /* ── Test bootstrap / teardown ───────────────────────────────────── */
@@ -45,7 +43,8 @@ beforeEach(function () use ($memcachedHost, $memcachedPort) {
     $this->cache = Cache::memcached(
         'tests',
         [[$memcachedHost, $memcachedPort, 0]],
-        $client
+        $client,
+        new CacheOptions(allowClosures: true),
     );
 
 });
@@ -90,7 +89,7 @@ test('PSR-6 getItem()/save()', function () {
 
 test('saveDeferred() + commit()', function () {
     $this->cache->getItem('a')->set('A')->saveDeferred();
-    expect($this->cache->get('a'))->toBeNull();
+    expect($this->cache->get('a'))->toBe('A');
 
     $this->cache->commit();
     expect($this->cache->get('a'))->toBe('A');
@@ -152,4 +151,88 @@ test('Memcached adapter multiFetch()', function () {
     expect($items['m1']->get())->toBe('foo')
         ->and($items['m2']->get())->toBe('bar')
         ->and($items['missing']->isHit())->toBeFalse();
+});
+
+
+test('Memcached long TTLs remain relative at the CacheLayer boundary', function () {
+    $thirtyDays = 2_592_000;
+    $thirtyDaysAndOne = $thirtyDays + 1;
+    $thirtyOneDays = 2_678_400;
+
+    expect($this->cache->set('ttl-30d', 'exact', $thirtyDays))->toBeTrue()
+        ->and($this->cache->get('ttl-30d'))->toBe('exact')
+        ->and($this->cache->set('ttl-30d-plus', 'plus', $thirtyDaysAndOne))->toBeTrue()
+        ->and($this->cache->get('ttl-30d-plus'))->toBe('plus')
+        ->and($this->cache->set('ttl-31d', 'month', $thirtyOneDays))->toBeTrue()
+        ->and($this->cache->get('ttl-31d'))->toBe('month')
+        ->and($this->cache->set('ttl-interval', 'interval', new DateInterval('P31D')))->toBeTrue()
+        ->and($this->cache->get('ttl-interval'))->toBe('interval')
+        ->and($this->cache->set(
+            'ttl-absolute',
+            'absolute',
+            (new DateTimeImmutable())->modify('+31 days'),
+        ))->toBeTrue()
+        ->and($this->cache->get('ttl-absolute'))->toBe('absolute');
+});
+
+test('Memcached atomic writes and leases normalize long TTLs', function () {
+    $longTtl = 2_592_001;
+    $atomic = $this->cache->atomic();
+    expect($atomic)->not->toBeNull();
+    if ($atomic === null) {
+        return;
+    }
+
+    expect($atomic->setIfAbsent('atomic-long', 'first', $longTtl))->toBeTrue()
+        ->and($this->cache->get('atomic-long'))->toBe('first')
+        ->and($atomic->compareAndSet('atomic-long', 'first', 'second', $longTtl))->toBeTrue()
+        ->and($this->cache->get('atomic-long'))->toBe('second');
+
+    $provider = new MemcachedLockProvider($this->client);
+    $handle = $provider->acquire('long-lease', 0.0, (float) $longTtl);
+    expect($handle)->not->toBeNull();
+    if ($handle !== null) {
+        expect($this->client->get($handle->key))->toBe($handle->token)
+            ->and($provider->refresh($handle, (float) $longTtl))->toBeTrue();
+        $provider->release($handle);
+    }
+});
+
+
+test('Memcached compare-safe guard preserves a concurrent replacement', function () {
+    $key = 'tests:guard:race';
+
+    $this->client->set($key, 'fresh', 30);
+    expect(MemcachedValueGuard::replaceIfUnchanged(
+        $this->client,
+        $key,
+        'stale',
+        'repair',
+        1,
+    ))->toBe('fresh')
+        ->and($this->client->get($key))->toBe('fresh');
+
+    $this->client->set($key, 'stale', 30);
+    expect(MemcachedValueGuard::replaceIfUnchanged(
+        $this->client,
+        $key,
+        'stale',
+        'repair',
+        1,
+    ))->toBe('repair')
+        ->and($this->client->get($key))->toBe('repair');
+});
+
+test('Memcached delete reports backend errors but treats missing keys as success', function () {
+    $unavailable = new Memcached;
+    $adapter = new \Infocyph\CacheLayer\Cache\Adapter\MemcachedCacheAdapter(
+        'unavailable',
+        [],
+        $unavailable,
+    );
+
+    expect($this->cache->delete('missing-delete'))->toBeTrue()
+        ->and($this->cache->deleteItems(['missing-one', 'missing-two']))->toBeTrue()
+        ->and($adapter->deleteItem('key'))->toBeFalse()
+        ->and($adapter->deleteItems(['key']))->toBeFalse();
 });
