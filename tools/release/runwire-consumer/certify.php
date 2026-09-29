@@ -33,7 +33,7 @@ function percentile(array $samples, float $percentile): float
     return (float) ($samples[$index] ?? 0.0);
 }
 
-/** @param array<string, mixed> $usage */
+/** @param array<array-key, mixed> $usage */
 function usageValue(array $usage, string $key): int
 {
     $value = $usage[$key] ?? 0;
@@ -42,8 +42,8 @@ function usageValue(array $usage, string $key): int
 }
 
 /**
- * @param array<string, mixed> $start
- * @param array<string, mixed> $end
+ * @param array<array-key, mixed> $start
+ * @param array<array-key, mixed> $end
  */
 function cpuMicros(array $start, array $end): int
 {
