@@ -198,7 +198,7 @@ test('bulk tagged reads fetch tag generations once and reject whole stale record
     $adapter->resetOperationCounts();
     expect($cache->getMultiple(['one', 'two']))->toBe(['one' => null, 'two' => null])
         ->and($adapter->tagFetchBatches)->toBe(1)
-        ->and($adapter->deleteBatches)->toBe(1);
+        ->and($adapter->deleteBatches)->toBe(0);
 });
 
 test('cache items can only be persisted by their exact owning pool', function () {

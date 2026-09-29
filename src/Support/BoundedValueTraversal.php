@@ -19,32 +19,6 @@ final class BoundedValueTraversal
         self::visit($value, 0, [], $nodes);
     }
 
-    /**
-     * @param array<string,true> $references
-     */
-    private static function visit(
-        mixed $value,
-        int $depth,
-        array $references,
-        int &$nodes,
-    ): void {
-        self::assertNodeBudget(++$nodes);
-        if (!is_array($value)) {
-            return;
-        }
-
-        self::assertDepth($depth, $value);
-        foreach ($value as $key => $item) {
-            self::assertNodeBudget($nodes + 1);
-            self::visit(
-                $item,
-                $depth + 1,
-                self::childReferences($value, $key, $references),
-                $nodes,
-            );
-        }
-    }
-
     /** @param array<mixed> $value */
     private static function assertDepth(int $depth, array $value): void
     {
@@ -79,5 +53,31 @@ final class BoundedValueTraversal
         $references[$id] = true;
 
         return $references;
+    }
+
+    /**
+     * @param array<string,true> $references
+     */
+    private static function visit(
+        mixed $value,
+        int $depth,
+        array $references,
+        int &$nodes,
+    ): void {
+        self::assertNodeBudget(++$nodes);
+        if (!is_array($value)) {
+            return;
+        }
+
+        self::assertDepth($depth, $value);
+        foreach ($value as $key => $item) {
+            self::assertNodeBudget($nodes + 1);
+            self::visit(
+                $item,
+                $depth + 1,
+                self::childReferences($value, $key, $references),
+                $nodes,
+            );
+        }
     }
 }

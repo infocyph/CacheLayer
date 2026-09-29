@@ -281,6 +281,13 @@ it('turns an unhandled CacheLayer consumer failure into a Runwire worker stop', 
             return false;
         }
 
+        public function newestAvailableId(string $cluster): ?string
+        {
+            unset($cluster);
+
+            return null;
+        }
+
         public function oldestAvailableId(string $cluster): ?string
         {
             unset($cluster);

@@ -910,6 +910,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         if (CacheTagSnapshots::isCurrent($item, $generations)) {
             return $item;
         }
+
         return $this->miss($item->getKey());
     }
 
