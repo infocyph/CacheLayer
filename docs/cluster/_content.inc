@@ -217,6 +217,7 @@ needed.
        cluster: new ClusterCacheConfig(
            cluster: 'production',
            nodeId: gethostname() ?: 'catalog-unknown-node',
+           transportIdentity: 'primary-postgres-v1',
        ),
        transport: $transport,
    );
@@ -270,8 +271,9 @@ deployment supplies a different ``$nodeId`` on each machine or instance:
                namespace: 'catalog',
            ),
            cluster: new ClusterCacheConfig(
-               cluster: 'production-catalog', // identical on every node
-               nodeId: $nodeId,                // unique on every node
+               cluster: 'production-catalog',       // identical on every node
+               nodeId: $nodeId,                      // unique on every node
+               transportIdentity: 'primary-postgres-v1', // same history generation
            ),
            transport: $transport,              // points to one shared event store
        );

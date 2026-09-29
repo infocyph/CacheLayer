@@ -4,8 +4,10 @@
 Memoization
 ===================
 
-CacheLayer includes process-local memoization primitives for fast repeated
-in-process calls.
+CacheLayer includes in-process memoization primitives for fast repeated calls.
+The normal path is process-local; an active Runwire request receives isolated
+request-owned memoizers, while a persistent concurrent Runwire runtime without a
+shared request scope bypasses global memoization.
 
 Available components:
 

@@ -60,7 +60,10 @@ Inspecting/Resetting Memoizer State
    $memo->flush();
    flush_memoizers(); // also resets once() and is suitable at request boundaries
 
-Memoized state is process-local, not request-local. In PHP-FPM it normally dies
-with the request process lifecycle, but event loops and persistent workers can
-reuse it across requests. Call ``flush_memoizers()`` at the boundary when that
-reuse is not intentional.
+Without Runwire request ownership, memoized state is process-local. In PHP-FPM
+it normally follows the process lifecycle, while event loops and persistent
+workers can reuse it across requests. When an active Runwire request is shared,
+the helpers use request-owned memoizers and ``flush_memoizers()`` flushes only
+that request. In a persistent concurrent Runwire runtime with no shared request
+scope, helper calls bypass global memoization rather than risk cross-request
+leakage.

@@ -71,6 +71,30 @@ Atomicity and counters
   a concurrent replacement.
 * Tag generation initialization is race-safe across supported backend families.
 
+Release verification
+====================
+
+The 4.0 release gate covers:
+
+* PHP 8.4 and 8.5 with stable and lowest supported dependency resolution;
+* Linux and Windows core smoke tests plus clean no-dev consumer installs;
+* independent PSR-6 and PSR-16 contract consumers;
+* documentation builds with warnings treated as errors;
+* real Redis Cluster and Scylla CQL release jobs, with real MongoDB exercised
+  by the PHPForge service matrix;
+* Runwire 2.1 consumer certification and persistent-worker soak coverage across
+  PHP 8.4/8.5 stable and lowest dependency sets.
+
+The Runwire certification measures 4,000 cache operations after a separate
+250-iteration warmup and validates the expected 3,500 reads plus 500 writes in
+both baseline and integrated runs. It is a bounded regression/correctness gate,
+not a universal production-throughput claim.
+
+The supported cluster-history reset contract is explicit: recreated, restored,
+or ID-reused invalidation histories require a new, never-used
+``transportIdentity`` and coordinated reconciliation of every APCu/L1 domain.
+Arbitrary same-identity history resets are not supported.
+
 Upgrade
 =======
 

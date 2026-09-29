@@ -13,8 +13,14 @@ memoize()
 
 Two modes:
 
-* ``memoize()`` returns the singleton ``Infocyph\CacheLayer\Memoize\Memoizer``
-* ``memoize($callable, $params)`` executes memoized call lookup for global/static scope
+* ``memoize()`` returns the memoizer owned by the current execution scope
+* ``memoize($callable, $params)`` executes memoized call lookup in that scope
+
+Without Runwire, or in a non-concurrent runtime, the normal owner is the
+process-local singleton. An active Runwire request uses a request-owned isolated
+memoizer. A bound persistent concurrent Runwire runtime without a shared request
+scope bypasses global memoization: callable form executes directly and the
+zero-argument form returns a fresh isolated memoizer.
 
 Example:
 
@@ -36,8 +42,11 @@ Object-scoped memoization helper.
 
 Two modes:
 
-* ``remember()`` returns the singleton ``Memoizer``
-* ``remember($object, $callable, $params)`` caches value per object instance
+* ``remember()`` returns the memoizer owned by the current execution scope
+* ``remember($object, $callable, $params)`` caches value per object instance in that scope
+
+Runwire ownership follows the same request-isolation and concurrent no-scope
+bypass rules as ``memoize()``.
 
 If object is provided but callable is missing, it throws ``InvalidArgumentException``.
 
@@ -62,6 +71,8 @@ flush_memoizers()
 
 .. php:function:: flush_memoizers(): void
 
-Clears the process-local ``memoize()``, object ``remember()``, and ``once()``
-state. Persistent workers should call it at a request boundary when values must
-not leak into a later request.
+Clears memoizer state owned by the current execution context. Inside a shared
+Runwire request it flushes only that request's ``memoize()``, object
+``remember()``, and ``once()`` state; otherwise it flushes the normal
+process-local singleton state. One request does not reset another live request's
+callable identities or values.
