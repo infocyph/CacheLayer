@@ -22,7 +22,7 @@ require dirname(__DIR__, 3) . '/examples/runwire-invalidation-worker.php';
 
 $extensions = array_values(array_filter(
     ['pcntl', 'posix', 'event', 'swoole', 'openswoole'],
-    static fn(string $extension): bool => extension_loaded($extension),
+    extension_loaded(...),
 ));
 
 fwrite(STDOUT, sprintf(
