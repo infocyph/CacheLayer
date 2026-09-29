@@ -111,3 +111,27 @@ test('tiered bulk reads preserve numeric-string logical keys', function () {
         ['01', 'value-01'],
     ]);
 });
+
+
+test('tiered L1 remains fenced after unrelated successful writes until full clear', function () {
+    $l1 = new ArrayCacheAdapter('fenced-l1');
+    $l2 = new ArrayCacheAdapter('fenced-l2');
+    $cache = Cache::tiered([$l1, $l2]);
+    $adapter = (new ReflectionClass($cache))->getProperty('adapter')->getValue($cache);
+
+    expect($cache->set('x', 'old'))->toBeTrue();
+    $l2->save($l2->getItem('x')->set('new'));
+
+    $readable = new ReflectionProperty($adapter, 'l1Readable');
+    $readable->setValue($adapter, false);
+
+    expect($cache->get('x'))->toBe('new')
+        ->and($cache->set('unrelated', 'value'))->toBeTrue()
+        ->and($readable->getValue($adapter))->toBeFalse()
+        ->and($cache->get('x'))->toBe('new')
+        ->and($cache->delete('unrelated'))->toBeTrue()
+        ->and($readable->getValue($adapter))->toBeFalse()
+        ->and($cache->get('x'))->toBe('new')
+        ->and($cache->clear())->toBeTrue()
+        ->and($readable->getValue($adapter))->toBeTrue();
+});
