@@ -71,8 +71,13 @@ final readonly class CachePayloadCodec
 
         try {
             $decoded = $this->unserializeNative($serialized);
-            if (is_array($decoded) && array_key_exists('value', $decoded)) {
-                BoundedValueTraversal::assertSafe($decoded['value']);
+            if (is_array($decoded)) {
+                if (array_key_exists('value', $decoded)) {
+                    BoundedValueTraversal::assertSafe($decoded['value']);
+                }
+                if (array_key_exists('tags', $decoded)) {
+                    BoundedValueTraversal::assertSafe($decoded['tags']);
+                }
             }
         } catch (Throwable) {
             return null;
