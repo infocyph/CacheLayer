@@ -325,7 +325,7 @@ Related source finding: `Cache` excludes only Tiered and Null adapters when calc
 
 ## Implementation batches
 
-Batches 1-6 are complete. Batch 7, Runwire 2.1 integration, is now required and blocks final 4.0 release-ready status.
+Batches 1-7 are complete. Required Runwire 2.1 integration and its release acceptance gates have passed; CacheLayer 4.0 is release-ready at the completed-plan level.
 
 1. **Security and transaction containment — R01, R03, R04, R05, R09, R10.**
    - [x] Add bounded adversarial subprocess and filesystem/transaction tests.
