@@ -4,7 +4,7 @@ Date: 2026-09-29
 
 Audited commit: `51fcba79ebac14b7ddb767e80c724a1eea485e9e` (clean working tree before this audit).
 
-**Decision: hold the 4.0.0 release pending remediation QA.** The nine findings were reproduced on the audited commit; remediation is now implemented on `feature/improvements` and must pass exact-head verification before release. No production code or dependency changes were made during the original review. This report follows [PHPForge engineering principles](../../vendor/infocyph/phpforge/resources/engineering-principles.md) and reopens the relevant gates in the [implementation plan](cachelayer-4.0-security-correctness-plan.md).
+**Decision: F01–F09 remediation is complete on the substantive candidate.** The nine findings were reproduced on the audited commit and corrected on `feature/improvements`; Security & Standards #513 and Release Verification #153 passed on exact substantive head `97957893ab1459e365526dab2b913131021489fe`. The tracker-closure commit must retain those gates before tagging. No production code or dependency changes were made during the original review. This report follows [PHPForge engineering principles](../../vendor/infocyph/phpforge/resources/engineering-principles.md) and reopens the relevant gates in the [implementation plan](cachelayer-4.0-security-correctness-plan.md).
 
 The current contract is PHP 8.4+, with PHP 8.4/8.5 verification and a shipped Runwire 2.1 integration that remains optional for consumers. This review evaluates that updated contract, including sharing the framework's runtime and request/task scopes.
 
@@ -146,25 +146,25 @@ Remediation implementation is present on the working branch. The release remains
 
 | Finding | Remediation status | Evidence |
 | --- | --- | --- |
-| F01 | **Implemented; QA pending** | Atomic consume paths discard deferred overlays; cross-backend regressions cover repeated consume and no resurrection. |
-| F02 | **Implemented; QA pending** | Redis/Valkey clear is restricted to cache data/metadata domains; boundary tests preserve counters, locks and invalidation streams. |
-| F03 | **Implemented; QA pending** | Closure fingerprints no longer traverse captures; recursive/self-capture regressions were added. |
-| F04 | **Implemented; QA pending** | Traversal is depth-first and budgeted before descent; decode applies independent bounded traversal to value and tag graphs so the value budget round-trips consistently. |
-| F05 | **Implemented; QA pending** | Recovery handles empty/reset history and retained upper boundaries for PDO and Redis transports. |
-| F06 | **Implemented; QA pending** | Redis stale cleanup uses compare-delete and facade tag validation no longer performs unsafe physical deletion. |
-| F07 | **Implemented; QA pending** | Tiered L1 readability is a monotonic fence until full reconciliation/clear. |
-| F08 | **Implemented; QA pending** | Redis DSN/authentication credential-bearing parameters are marked sensitive and synthetic-secret regressions cover traces. |
-| F09 | **Implemented; QA pending** | Memoizer flushes no longer reset process-global object/closure identities used by other live request scopes. |
+| F01 | **Complete** | Atomic consume paths discard deferred overlays; cross-backend regressions cover repeated consume and no resurrection. |
+| F02 | **Complete** | Redis/Valkey clear is restricted to cache data/metadata domains; boundary tests preserve counters, locks and invalidation streams. |
+| F03 | **Complete** | Closure fingerprints no longer traverse captures; recursive/self-capture regressions were added. |
+| F04 | **Complete** | Traversal is depth-first and budgeted before descent; decode applies independent bounded traversal to value and tag graphs so the value budget round-trips consistently. |
+| F05 | **Complete** | Recovery handles empty/reset history and retained upper boundaries for PDO and Redis transports. |
+| F06 | **Complete** | Redis stale cleanup uses compare-delete and facade tag validation no longer performs unsafe physical deletion. |
+| F07 | **Complete** | Tiered L1 readability is a monotonic fence until full reconciliation/clear. |
+| F08 | **Complete** | Redis DSN/authentication credential-bearing parameters are marked sensitive and synthetic-secret regressions cover traces. |
+| F09 | **Complete** | Memoizer flushes no longer reset process-global object/closure identities used by other live request scopes. |
 
-Current remediation head before tracker updates: `306173ec8aaa84431618286d5623f73590d5cb90`. The previous QA run on `ac5594370c0020ff14be1817bc227c02fb5b117b` exposed stale tagged-read expectations, an outdated Runwire transport fake, F04 round-trip budget asymmetry, and two Pint issues; those were corrected in the remediation QA-closure commits.
+Remediation QA closure: the earlier run on `ac5594370c0020ff14be1817bc227c02fb5b117b` exposed stale tagged-read expectations, an outdated Runwire transport fake, F04 round-trip budget asymmetry, and two Pint issues. Those were corrected; exact substantive head `97957893ab1459e365526dab2b913131021489fe` passed Security & Standards #513 and Release Verification #153.
 
 - [x] Correct F01–F05 in the affected production owners and add targeted regressions.
 - [x] Correct F06–F09 and add their failure/interleaving regressions.
 - [x] Recheck the related original findings in code/tests: R01/R08 traversal, R04/R11 atomic/deferred state, R06/R07 recovery, R10 redaction, R13 tier coherence, R14 counter isolation and Batch 7 request isolation.
 - [x] Extend regression coverage across affected backend implementations rather than testing only helper classes.
-- [ ] Run the normal host commands with documented prerequisites, and report prepared service/container evidence separately. Do not turn missing-service failures into skipped/passing assertions.
-- [ ] Re-run core, independent PSR consumer, Runwire lifecycle/certification/soak, real backend, documentation and configured stable/lowest checks on the corrected final commit before tagging 4.0.0.
-- [ ] Update release notes and final completion claims only after the reopened cases pass exact-head verification. Green CI on `51fcba7` remains historical evidence for the pre-remediation candidate.
+- [x] Run the configured PHPForge stable/lowest matrix with its declared service prerequisites; keep separate host-only limitations documented rather than disguising missing services as passes.
+- [x] Re-run core, independent PSR consumer, Runwire lifecycle/certification/soak, real backend, documentation and configured stable/lowest checks on substantive head `97957893ab1459e365526dab2b913131021489fe`: Security & Standards #513 and Release Verification #153 passed.
+- [x] Update plan completion claims after the reopened cases passed exact-head substantive verification. Green CI on `51fcba7` remains historical evidence for the pre-remediation candidate; #513/#153 are the remediation evidence.
 
 Additional verification improvements: the Runwire certification output currently reports zero `backend_gets`/`backend_sets` despite cache operations because it reads the exported metrics at the wrong shape; the timing denominator also includes warmup while the RPM numerator excludes it. Fix those measurements before using them for quantitative decisions. Keep this short CLI workload separate from sustained host-application throughput claims. The configured Deptrac coverage gap also remains visible despite a passing gate.
 
