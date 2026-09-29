@@ -142,7 +142,7 @@ See [RedisConnection.php](../../src/Support/RedisConnection.php), line 44. This 
 
 ## Remediation and release gates
 
-Remediation implementation is present on the working branch. The release remains blocked until the corrected exact head passes the full configured gates.
+Remediation and the final release sweep are complete on the working branch. Exact substantive sweep head `909f73fb3b57525fcced5e0d024c5a4b92ea9d03` passed Security & Standards #516 and Release Verification #156; the final documentation-only tracker head is reverified before tagging.
 
 | Finding | Remediation status | Evidence |
 | --- | --- | --- |
@@ -165,8 +165,9 @@ Remediation QA closure: the earlier run on `ac5594370c0020ff14be1817bc227c02fb5b
 - [x] Run the configured PHPForge stable/lowest matrix with its declared service prerequisites; keep separate host-only limitations documented rather than disguising missing services as passes.
 - [x] Re-run core, independent PSR consumer, Runwire lifecycle/certification/soak, real backend, documentation and configured stable/lowest checks on substantive head `97957893ab1459e365526dab2b913131021489fe`: Security & Standards #513 and Release Verification #153 passed.
 - [x] Update plan completion claims after the reopened cases passed exact-head substantive verification. Green CI on `51fcba7` remains historical evidence for the pre-remediation candidate; #513/#153 are the remediation evidence.
+- [x] Final sweep corrected tag-budget encode/decode symmetry, Runwire certification metrics/timing, and stale release-contract documentation; substantive head `909f73fb3b57525fcced5e0d024c5a4b92ea9d03` passed Security & Standards #516 and Release Verification #156.
 
-Additional verification improvements: the Runwire certification output currently reports zero `backend_gets`/`backend_sets` despite cache operations because it reads the exported metrics at the wrong shape; the timing denominator also includes warmup while the RPM numerator excludes it. Fix those measurements before using them for quantitative decisions. Keep this short CLI workload separate from sustained host-application throughput claims. The configured Deptrac coverage gap also remains visible despite a passing gate.
+Additional verification improvements: **resolved in the final sweep.** The Runwire certification now reads the nested exported metrics correctly, excludes warmup from the measured RPM denominator, reports warmup separately, and fails if measured get/set counts do not total the configured iteration count. Release Verification #156 recorded 3,500 gets + 500 sets for both baseline and integrated 4,000-iteration workloads. Keep this short CLI workload separate from sustained host-application throughput claims. The configured Deptrac uncovered-dependency count remains visible despite a passing gate and is retained as tooling-coverage follow-up, not hidden by exclusions.
 
 ## Local reproduction artifacts
 
