@@ -1,9 +1,13 @@
 # CacheLayer security, correctness, and release plan
 
 Date: 2026-09-28  
-Status: Implementation complete; Batches 1-7 complete; Runwire 2.1 integration and release validation passed
+Status: Reopened by 2026-09-29 release re-audit; 4.0.0 blocked by nine reproduced findings
 Audited revision: `b064b8196ddc4672ce37be252bc7a4cadb78527e` (local tag `3.4`)  
 Release target: **4.0.0 — next major release**
+
+## Latest release re-audit
+
+The updated candidate `51fcba79ebac14b7ddb767e80c724a1eea485e9e` passed both configured CI workflows, but adversarial rechecking reproduced nine unresolved findings. **Hold the 4.0.0 release.** See the [release re-audit report](cachelayer-4.0-release-reaudit.md) for evidence, source references, remediation and validation requirements. The batch completion records below are historical implementation evidence and do not close these newly reproduced cases.
 
 ## Implementation tracker
 
@@ -98,7 +102,7 @@ Draft PR: [#29 — CacheLayer 4.0 security and correctness hardening](https://gi
 
 ## Decision
 
-The planned 4.0 security, correctness, backend, migration, core release-gate, and required Runwire 2.1 integration work is implemented and validated. CacheLayer 4.0 is release-ready at the completed-plan level. The Runwire certification workload is a bounded CI regression/correctness gate, not a production-throughput claim; broader production-equivalent measurement remains a separate operational follow-up.
+The planned 4.0 work was implemented and passed its existing CI gates, but the 2026-09-29 re-audit reopens security, atomic/deferred state, recovery, tier coherence and request-isolation requirements. CacheLayer 4.0 is not release-ready until the linked F01–F09 findings are resolved. The Runwire certification workload is a bounded CI regression/correctness gate, not a production-throughput claim; broader production-equivalent measurement remains a separate operational follow-up.
 
 Target **4.0.0** for the complete plan, as explicitly selected by the maintainer. CacheLayer 4.0 has **no backward-compatibility preservation requirement with 3.x**: public API shape, named parameters, defaults, storage formats, schemas, and behavioral contracts may change when a cleaner, safer, or more coherent design results. Patch backports and an alternative minor release are outside this plan. Avoid unrelated rewrites, but do not retain legacy contracts solely for BC.
 
@@ -325,7 +329,7 @@ Related source finding: `Cache` excludes only Tiered and Null adapters when calc
 
 ## Implementation batches
 
-Batches 1-7 are complete. Required Runwire 2.1 integration and its release acceptance gates have passed; CacheLayer 4.0 is release-ready at the completed-plan level.
+Batches 1-7 have historical implementation and CI completion evidence. Their relevant correctness/security gates are reopened by F01–F09 in the release re-audit; retain the completed work and add focused remediation before tagging.
 
 1. **Security and transaction containment — R01, R03, R04, R05, R09, R10.**
    - [x] Add bounded adversarial subprocess and filesystem/transaction tests.
@@ -436,7 +440,7 @@ These are not substitutes for the required fixes:
 
 ### Correctness and security
 
-- [x] Every R01–R19 item is resolved with targeted evidence or, for a suspected source finding, disproved with a documented test on the actual affected backend.
+- [ ] Revalidate the reopened R01–R19 requirements against F01–F09 in the release re-audit; every finding must be resolved with targeted evidence on the actual affected paths/backends.
 - [x] Run real PHP 8.4 and 8.5 with highest supported and lowest supported dependency sets and `E_ALL`. Verify optional extensions and native-client versions explicitly.
 - [x] Exercise SQLite, MySQL, MariaDB, PostgreSQL, Redis, Valkey, Memcached, MongoDB, Scylla CQL, and real Redis Cluster for their advertised features. Fakes supplement these gates.
 - [x] Use separate processes/connections for one-winner claims, one-time consumption, tag initialization, invalidation, clear/write races, and lock expiration/ownership. An in-process fake cannot prove distributed atomicity.
@@ -471,7 +475,7 @@ git diff --check
 - [x] Build documentation with warnings as errors and test the examples relevant to changed public contracts.
 - [x] Install the candidate in a fresh consumer using `composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction`; verify optional adapters are lazy and runtime code does not depend on development packages.
 - [x] Recheck advisories against both the resolved candidate and production-only dependencies. The current untracked development lockfile is evidence for this checkout, not every consumer resolution.
-- [x] Require all configured CI checks on the **exact final commit**, including stable/lowest jobs, before creating a release tag. Historical CI does not validate later edits.
+- [ ] Require all configured CI checks on the **corrected final commit**, including stable/lowest jobs and the new regression cases, before creating a release tag. Historical CI does not validate later edits.
 
 ### Migration and rollback
 
