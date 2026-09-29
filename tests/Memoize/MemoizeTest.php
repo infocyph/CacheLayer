@@ -198,3 +198,47 @@ it('per-object memoization does not retain collected owners', function () {
 
     expect($reference->get())->toBeNull();
 });
+
+
+it('memoizer fingerprints recursive closure captures without traversing their graphs', function () {
+    $recursive = [];
+    $recursive['self'] = &$recursive;
+    $arrayClosure = static fn(): int => count($recursive);
+
+    $selfClosure = null;
+    $selfClosure = static function () use (&$selfClosure): int {
+        return 7;
+    };
+
+    $left = null;
+    $right = null;
+    $left = static function () use (&$right): int {
+        return 11;
+    };
+    $right = static function () use (&$left): int {
+        return 13;
+    };
+
+    expect(memoize($arrayClosure))->toBe(1)
+        ->and(memoize($arrayClosure))->toBe(1)
+        ->and(memoize($selfClosure))->toBe(7)
+        ->and(memoize($selfClosure))->toBe(7)
+        ->and(memoize($left))->toBe(11)
+        ->and(memoize($right))->toBe(13);
+});
+
+it('flushing an isolated memoizer does not invalidate another memoizer identity map', function () {
+    $first = Memoizer::isolated();
+    $second = Memoizer::isolated();
+    $runs = 0;
+    $callback = static function () use (&$runs): int {
+        return ++$runs;
+    };
+
+    expect($first->get($callback))->toBe(1);
+    $second->get(static fn(): string => 'other');
+    $second->flush();
+
+    expect($first->get($callback))->toBe(1)
+        ->and($runs)->toBe(1);
+});
