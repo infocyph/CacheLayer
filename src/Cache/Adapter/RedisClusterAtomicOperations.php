@@ -106,6 +106,8 @@ LUA;
 
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
+        $this->discardDeferredKey($key);
+
         $bucket = $this->bucket($key);
         $result = $this->call(
             'eval',
