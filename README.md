@@ -237,11 +237,19 @@ $runtime->consume();
 
 Failed local invalidation stops consumption without advancing the cursor; operators can repair the cause and retry. A poison event can only be skipped explicitly with `skipEventAfterClear()`, which clears the local namespace before advancing. Plain key invalidation cannot fence an in-flight resolver, so mutable read-through data that requires ordering should also use a tag generation. It does not replicate values and is not a distributed lock, session store, or counter system.
 
+## Runwire 2.1 integration
+
+CacheLayer 4.0 ships optional Runwire 2.1 integration without making Runwire a core dependency. A framework shares its active `RuntimeContext` at worker/application bootstrap and the current `RequestContext` / `CoroutineScope` at the request or task boundary. CacheLayer then uses relevant capabilities automatically; when Runwire is absent, inactive, or missing a capability, the ordinary CacheLayer path remains in use.
+
+Runwire keeps ownership of listeners, workers, supervisors, and event loops. `RunwireWorkerIntegration` can place bounded Cluster invalidation consumption and Node SQLite maintenance inside a host-provided task/service worker scope; CacheLayer never starts background work merely because Runwire is installed. Synchronous backend calls remain synchronous.
+
+Concurrent persistent Runwire requests receive request-owned memoizer state. If a concurrent runtime is bound without a shared request scope, memoization helpers bypass the process-global cache rather than risk cross-request leakage. See `docs/runwire.rst` and the executable `examples/runwire-invalidation-worker.php`.
+
 ## Atomic counters and memoization
 
 `AtomicCounters` uses an `AtomicCounterStoreInterface`; Redis/Valkey is the distributed implementation. Counters are never emulated with cache `get()` plus `set()`. They live in a dedicated `cachelayer:counter:<namespace>:` keyspace, so ordinary cache `clear()` does not reset them, and the Lua update returns an exact decimal string before PHP range validation. Atomic counters are separate from `Cache::atomic()`: counters mutate numeric state, while the cache capability provides conditional claim/replace/consume primitives for encoded cache records.
 
-The `memoize()`, `remember(object: ...)`, and `once()` helpers plus `MemoizeTrait` provide bounded process-local memoization. Their state survives requests in persistent workers until evicted or reset with `flush_memoizers()`; call that reset at request boundaries when cross-request reuse is not intended. They are independent of persistent backend caching.
+The `memoize()`, `remember(object: ...)`, and `once()` helpers plus `MemoizeTrait` provide bounded process-local memoization on the normal path. With an active Runwire request scope they use request-owned memoizers; a concurrent persistent Runwire runtime without a shared request scope bypasses global memoization rather than leaking state between requests. `flush_memoizers()` resets the currently owned memoizer scope. They are independent of persistent backend caching.
 
 ## Metrics and benchmarks
 
