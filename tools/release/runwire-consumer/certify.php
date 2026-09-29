@@ -107,7 +107,9 @@ function workload(RuntimeContext $runtime, bool $integrated): array
         $started = hrtime(true);
 
         try {
-            $operation = static fn(): null => runCacheOperation($cache, $index);
+            $operation = static function () use ($cache, $index): void {
+                runCacheOperation($cache, $index);
+            };
             if ($integrated) {
                 RunwireIntegration::share($request, null, $operation);
             } else {
