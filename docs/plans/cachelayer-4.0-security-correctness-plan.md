@@ -1,7 +1,7 @@
 # CacheLayer security, correctness, and release plan
 
 Date: 2026-09-28  
-Status: Re-audit remediation complete; final tracker-closure exact-head verification in progress
+Status: Re-audit remediation complete; tracker-closure exact-head verification passed
 Audited revision: `b064b8196ddc4672ce37be252bc7a4cadb78527e` (local tag `3.4`)  
 Release target: **4.0.0 — next major release**
 
@@ -24,7 +24,7 @@ Draft PR: [#29 — CacheLayer 4.0 security and correctness hardening](https://gi
 | 5 — Counters and backend races | R14 plus race review | **Complete** | Implemented and verified on exact commit `d2f0bbb356690a8acb8d9fd9532822c453f953ee`; Security & Standards run #352 passed. |
 | 6 — Release gates and integration | R19 plus core release acceptance | **Complete** | Exact implementation head `9219b25a56a6c459b6a3c001c36e4b9564fddd2a` passed Security & Standards run #406 and Release Verification run #46. |
 | 7 — Runwire 2.1 integration | Required runtime integration workstream | **Complete** | Exact implementation head `8dd980f1827f2272f70c83cefaf89c479e562b5c` passed Security & Standards #465 and Release Verification #105, including PHP 8.4/8.5 lowest/stable Runwire consumer certification and soak gates. |
-| 8 — Release re-audit remediation | F01–F09 | **Complete** | Exact substantive head `97957893ab1459e365526dab2b913131021489fe` passed Security & Standards #513 and Release Verification #153 after focused QA closure. Final tracker-only head is reverified before tagging. |
+| 8 — Release re-audit remediation | F01–F09 | **Complete** | Exact substantive head `97957893ab1459e365526dab2b913131021489fe` passed Security & Standards #513 and Release Verification #153; tracker-closure head `4f4e3912bccba11c2ba9e2ef6b1ee60a26c8a2c5` passed Security & Standards #514 and Release Verification #154. |
 
 ### Batch 1 tracker
 
@@ -476,7 +476,7 @@ git diff --check
 - [x] Build documentation with warnings as errors and test the examples relevant to changed public contracts.
 - [x] Install the candidate in a fresh consumer using `composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction`; verify optional adapters are lazy and runtime code does not depend on development packages.
 - [x] Recheck advisories against both the resolved candidate and production-only dependencies. The current untracked development lockfile is evidence for this checkout, not every consumer resolution.
-- [x] All configured substantive CI checks passed on corrected head `97957893ab1459e365526dab2b913131021489fe`: Security & Standards #513 and Release Verification #153. Reverify this tracker-only closure head before tagging.
+- [x] All configured CI checks passed on corrected head `97957893ab1459e365526dab2b913131021489fe` (#513/#153) and tracker-closure head `4f4e3912bccba11c2ba9e2ef6b1ee60a26c8a2c5` (#514/#154).
 
 ### Migration and rollback
 

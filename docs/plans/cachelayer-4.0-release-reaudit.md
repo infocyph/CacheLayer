@@ -4,7 +4,7 @@ Date: 2026-09-29
 
 Audited commit: `51fcba79ebac14b7ddb767e80c724a1eea485e9e` (clean working tree before this audit).
 
-**Decision: F01–F09 remediation is complete on the substantive candidate.** The nine findings were reproduced on the audited commit and corrected on `feature/improvements`; Security & Standards #513 and Release Verification #153 passed on exact substantive head `97957893ab1459e365526dab2b913131021489fe`. The tracker-closure commit must retain those gates before tagging. No production code or dependency changes were made during the original review. This report follows [PHPForge engineering principles](../../vendor/infocyph/phpforge/resources/engineering-principles.md) and reopens the relevant gates in the [implementation plan](cachelayer-4.0-security-correctness-plan.md).
+**Decision: F01–F09 remediation is complete and reverified.** The nine findings were reproduced on the audited commit and corrected on `feature/improvements`. Substantive head `97957893ab1459e365526dab2b913131021489fe` passed Security & Standards #513 and Release Verification #153; tracker-closure head `4f4e3912bccba11c2ba9e2ef6b1ee60a26c8a2c5` then passed Security & Standards #514 and Release Verification #154. No production code or dependency changes were made during the original review. This report follows [PHPForge engineering principles](../../vendor/infocyph/phpforge/resources/engineering-principles.md) and reopens the relevant gates in the [implementation plan](cachelayer-4.0-security-correctness-plan.md).
 
 The current contract is PHP 8.4+, with PHP 8.4/8.5 verification and a shipped Runwire 2.1 integration that remains optional for consumers. This review evaluates that updated contract, including sharing the framework's runtime and request/task scopes.
 
@@ -156,7 +156,7 @@ Remediation implementation is present on the working branch. The release remains
 | F08 | **Complete** | Redis DSN/authentication credential-bearing parameters are marked sensitive and synthetic-secret regressions cover traces. |
 | F09 | **Complete** | Memoizer flushes no longer reset process-global object/closure identities used by other live request scopes. |
 
-Remediation QA closure: the earlier run on `ac5594370c0020ff14be1817bc227c02fb5b117b` exposed stale tagged-read expectations, an outdated Runwire transport fake, F04 round-trip budget asymmetry, and two Pint issues. Those were corrected; exact substantive head `97957893ab1459e365526dab2b913131021489fe` passed Security & Standards #513 and Release Verification #153.
+Remediation QA closure: the earlier run on `ac5594370c0020ff14be1817bc227c02fb5b117b` exposed stale tagged-read expectations, an outdated Runwire transport fake, F04 round-trip budget asymmetry, and two Pint issues. Those were corrected; exact substantive head `97957893ab1459e365526dab2b913131021489fe` passed Security & Standards #513 and Release Verification #153, and tracker-closure head `4f4e3912bccba11c2ba9e2ef6b1ee60a26c8a2c5` passed #514/#154.
 
 - [x] Correct F01–F05 in the affected production owners and add targeted regressions.
 - [x] Correct F06–F09 and add their failure/interleaving regressions.
