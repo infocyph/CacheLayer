@@ -1,0 +1,28 @@
+{
+    "name": "infocyph/cachelayer-runwire-release-consumer",
+    "type": "project",
+    "require": {
+        "php": ">=8.4",
+        "ext-pdo": "*",
+        "ext-pdo_sqlite": "*",
+        "infocyph/cachelayer": "4.0.x-dev",
+        "infocyph/runwire": "^2.1"
+    },
+    "repositories": [
+        {
+            "type": "path",
+            "url": "../../..",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "infocyph/cachelayer": "4.0.x-dev"
+                }
+            }
+        }
+    ],
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "config": {
+        "sort-packages": true
+    }
+}
