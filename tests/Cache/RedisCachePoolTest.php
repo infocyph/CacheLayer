@@ -498,3 +498,64 @@ test('tag-stale Redis reads return misses without physically deleting an observe
         ->and($this->cache->setTagged('tagged-stale', 'fresh', ['products'], 30))->toBeTrue()
         ->and($this->cache->get('tagged-stale'))->toBe('fresh');
 });
+
+
+test('Redis Stream recovery clears stale local state after complete history loss', function () {
+    $directory = sys_get_temp_dir() . '/cachelayer-redis-history-' . uniqid('', true);
+    mkdir($directory, 0700, true);
+
+    try {
+        $transport = new \Infocyph\CacheLayer\Cluster\Transport\RedisStreamInvalidationTransport(
+            $this->redisClient,
+            'cachelayer:history:',
+        );
+        $runtime = \Infocyph\CacheLayer\Cluster\ClusterCache::create(
+            new \Infocyph\CacheLayer\Node\NodeCacheConfig(
+                $directory . '/node.sqlite',
+                'application',
+                apcuEnabled: false,
+            ),
+            new \Infocyph\CacheLayer\Cluster\ClusterCacheConfig(
+                'redis-history-loss',
+                'consumer',
+                'redis-history-loss',
+            ),
+            $transport,
+        );
+
+        $transport->publish(
+            \Infocyph\CacheLayer\Cluster\Event\InvalidationEvent::key(
+                'redis-history-loss',
+                'application',
+                'first',
+                'writer',
+            ),
+        );
+        expect($runtime->consume())->toBe(1);
+
+        $runtime->cache()->set('stale', 'value', 300);
+        $transport->publish(
+            \Infocyph\CacheLayer\Cluster\Event\InvalidationEvent::key(
+                'redis-history-loss',
+                'application',
+                'stale',
+                'writer',
+            ),
+        );
+        $this->redisClient->del('cachelayer:history:redis-history-loss');
+
+        expect($runtime->recoverIfRequired())->toBeTrue()
+            ->and($runtime->cache()->get('stale'))->toBeNull()
+            ->and($runtime->status()->cursor)->toBeNull()
+            ->and($runtime->recoverIfRequired())->toBeFalse();
+    } finally {
+        if (is_dir($directory)) {
+            foreach (glob($directory . '/*') ?: [] as $file) {
+                if (is_file($file)) {
+                    unlink($file);
+                }
+            }
+            rmdir($directory);
+        }
+    }
+});
