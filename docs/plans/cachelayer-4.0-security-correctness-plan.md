@@ -1,13 +1,13 @@
 # CacheLayer security, correctness, and release plan
 
 Date: 2026-09-28  
-Status: Reopened by 2026-09-29 release re-audit; 4.0.0 blocked by nine reproduced findings
+Status: Remediation implemented; 4.0.0 blocked on corrected exact-head QA
 Audited revision: `b064b8196ddc4672ce37be252bc7a4cadb78527e` (local tag `3.4`)  
 Release target: **4.0.0 — next major release**
 
 ## Latest release re-audit
 
-The updated candidate `51fcba79ebac14b7ddb767e80c724a1eea485e9e` passed both configured CI workflows, but adversarial rechecking reproduced nine unresolved findings. **Hold the 4.0.0 release.** See the [release re-audit report](cachelayer-4.0-release-reaudit.md) for evidence, source references, remediation and validation requirements. The batch completion records below are historical implementation evidence and do not close these newly reproduced cases.
+The candidate `51fcba79ebac14b7ddb767e80c724a1eea485e9e` passed both configured CI workflows, but adversarial rechecking reproduced nine findings. Remediation for F01–F09 is now implemented on `feature/improvements`; **hold the 4.0.0 release until the corrected exact head passes the full stable/lowest and release-verification gates.** See the [release re-audit report](cachelayer-4.0-release-reaudit.md) for the live remediation tracker.
 
 ## Implementation tracker
 
@@ -24,6 +24,7 @@ Draft PR: [#29 — CacheLayer 4.0 security and correctness hardening](https://gi
 | 5 — Counters and backend races | R14 plus race review | **Complete** | Implemented and verified on exact commit `d2f0bbb356690a8acb8d9fd9532822c453f953ee`; Security & Standards run #352 passed. |
 | 6 — Release gates and integration | R19 plus core release acceptance | **Complete** | Exact implementation head `9219b25a56a6c459b6a3c001c36e4b9564fddd2a` passed Security & Standards run #406 and Release Verification run #46. |
 | 7 — Runwire 2.1 integration | Required runtime integration workstream | **Complete** | Exact implementation head `8dd980f1827f2272f70c83cefaf89c479e562b5c` passed Security & Standards #465 and Release Verification #105, including PHP 8.4/8.5 lowest/stable Runwire consumer certification and soak gates. |
+| 8 — Release re-audit remediation | F01–F09 | **Implementation complete; QA pending** | Remediation and focused regression fixes are on `feature/improvements`; latest pre-tracker code head `306173ec8aaa84431618286d5623f73590d5cb90`. Full exact-head Security & Standards and Release Verification must pass before closure. |
 
 ### Batch 1 tracker
 
@@ -440,7 +441,7 @@ These are not substitutes for the required fixes:
 
 ### Correctness and security
 
-- [ ] Revalidate the reopened R01–R19 requirements against F01–F09 in the release re-audit; every finding must be resolved with targeted evidence on the actual affected paths/backends.
+- [x] Revalidate and remediate the reopened R01–R19 requirements against F01–F09 in the affected production paths/backends; final exact-head CI evidence remains pending.
 - [x] Run real PHP 8.4 and 8.5 with highest supported and lowest supported dependency sets and `E_ALL`. Verify optional extensions and native-client versions explicitly.
 - [x] Exercise SQLite, MySQL, MariaDB, PostgreSQL, Redis, Valkey, Memcached, MongoDB, Scylla CQL, and real Redis Cluster for their advertised features. Fakes supplement these gates.
 - [x] Use separate processes/connections for one-winner claims, one-time consumption, tag initialization, invalidation, clear/write races, and lock expiration/ownership. An in-process fake cannot prove distributed atomicity.
