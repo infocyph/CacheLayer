@@ -95,6 +95,8 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
 
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
+        $this->discardDeferredKey($key);
+
         $document = $this->collection->findOneAndDelete(['_id' => $this->mapData($key)]);
         $row = AdapterValueNormalizer::fromJsonOrArrayLike($document);
         $record = is_array($row) ? $this->recordFromRow($key, $row) : null;
