@@ -46,7 +46,6 @@ final class Memoizer
         $this->staticCache = [];
         $this->objectCache = new WeakMap();
         $this->hits = $this->misses = 0;
-        CallableFingerprint::flush();
     }
 
     /**
