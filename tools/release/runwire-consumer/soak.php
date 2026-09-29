@@ -62,7 +62,7 @@ for ($index = 0; $index < SEQUENTIAL_REQUESTS; ++$index) {
             null,
             static function () use ($cache, $index, &$validated): void {
                 $tenant = $index % 64;
-                $key = 'tenant-' . $tenant . ':request-' . $index;
+                $key = 'tenant-' . $tenant . '-request-' . $index;
 
                 $memoized = memoize(static fn(int $value): int => $value + 1, [$index]);
                 if ($memoized !== $index + 1 || memoize(static fn(int $value): int => $value + 1, [$index]) !== $index + 1) {
@@ -150,7 +150,7 @@ $coroutines->run(
                                 }
 
                                 $tenant = $index % 16;
-                                $key = 'concurrent-' . $tenant . ':' . $index;
+                                $key = 'concurrent-' . $tenant . '-' . $index;
                                 $memo = memoize(static fn(int $value): int => $value * 2, [$index]);
                                 $scope->yieldNow();
                                 if (memoize(static fn(int $value): int => $value * 2, [$index]) !== $memo) {
