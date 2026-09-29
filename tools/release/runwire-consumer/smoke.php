@@ -20,4 +20,15 @@ if (!is_string($version) || !str_starts_with(ltrim($version, 'v'), '2.1')) {
 putenv('CACHELAYER_EXAMPLE_AUTOLOAD=' . __DIR__ . '/vendor/autoload.php');
 require dirname(__DIR__, 3) . '/examples/runwire-invalidation-worker.php';
 
-fwrite(STDOUT, sprintf("CacheLayer Runwire consumer smoke passed with %s.\n", $version));
+$extensions = array_values(array_filter(
+    ['pcntl', 'posix', 'event', 'swoole', 'openswoole'],
+    static fn(string $extension): bool => extension_loaded($extension),
+));
+
+fwrite(STDOUT, sprintf(
+    "CacheLayer Runwire consumer smoke passed with %s on PHP %s (%d-bit); native extensions: %s.\n",
+    $version,
+    PHP_VERSION,
+    PHP_INT_SIZE * 8,
+    $extensions === [] ? 'none' : implode(', ', $extensions),
+));
