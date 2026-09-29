@@ -442,3 +442,59 @@ test('Redis atomic consume discards deferred overlays without resurrection', fun
         ->and($this->cache->commit())->toBeTrue()
         ->and($this->cache->get('deferred-consume'))->toBeNull();
 });
+
+
+test('Redis clear in boundary namespace preserves counters locks and invalidation streams', function () {
+    $cache = Cache::redis('cachelayer', client: $this->redisClient);
+    $counters = AtomicCounters::redis('audit-counter', client: $this->redisClient);
+    $locks = new \Infocyph\CacheLayer\Cache\Lock\RedisLockProvider($this->redisClient);
+    $transport = new \Infocyph\CacheLayer\Cluster\Transport\RedisStreamInvalidationTransport($this->redisClient);
+
+    expect($cache->set('ordinary', 'value'))->toBeTrue()
+        ->and($counters->increment('window', 5, 30)->value)->toBe(5);
+
+    $held = $locks->acquire('boundary-lock', 0.0, 30.0);
+    expect($held)->not->toBeNull();
+
+    $eventId = $transport->publish(
+        \Infocyph\CacheLayer\Cluster\Event\InvalidationEvent::key(
+            'clear-boundary',
+            'application',
+            'product.42',
+            'writer',
+        ),
+    );
+    expect($eventId)->not->toBe('');
+
+    expect($cache->clear())->toBeTrue()
+        ->and($cache->get('ordinary'))->toBeNull()
+        ->and($counters->get('window'))->toBe(5)
+        ->and($locks->acquire('boundary-lock', 0.0, 30.0))->toBeNull()
+        ->and($this->redisClient->xLen('cachelayer:invalidation:clear-boundary'))->toBe(1);
+
+    $locks->release($held);
+});
+
+test('Redis compare-safe cleanup preserves a concurrent replacement', function () {
+    $key = 'cachelayer:guard:stale-read';
+    $this->redisClient->set($key, 'observed-invalid');
+    $observed = $this->redisClient->get($key);
+    expect($observed)->toBe('observed-invalid');
+
+    $this->redisClient->set($key, 'replacement');
+
+    expect(RedisValueGuard::deleteIfUnchanged($this->redisClient, $key, (string) $observed))->toBeFalse()
+        ->and($this->redisClient->get($key))->toBe('replacement');
+});
+
+test('tag-stale Redis reads return misses without physically deleting an observed record', function () {
+    expect($this->cache->setTagged('tagged-stale', 'old', ['products'], 30))->toBeTrue();
+    $physical = 'tests:d:tagged-stale';
+    expect($this->redisClient->exists($physical))->toBe(1);
+
+    expect($this->cache->invalidateTag('products'))->toBeTrue()
+        ->and($this->cache->get('tagged-stale'))->toBeNull()
+        ->and($this->redisClient->exists($physical))->toBe(1)
+        ->and($this->cache->setTagged('tagged-stale', 'fresh', ['products'], 30))->toBeTrue()
+        ->and($this->cache->get('tagged-stale'))->toBe('fresh');
+});
