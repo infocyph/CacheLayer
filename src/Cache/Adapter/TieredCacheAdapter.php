@@ -95,8 +95,8 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         foreach ($this->pools as $index => $pool) {
             $poolDeleted = $pool->deleteItem($key);
             $deleted = $poolDeleted && $deleted;
-            if ($index === 0 && !$poolDeleted) {
-                $this->l1Readable = false;
+            if ($index === 0) {
+                $this->l1Readable = $this->l1Readable && $poolDeleted;
             }
         }
 
@@ -111,8 +111,8 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         foreach ($this->pools as $index => $pool) {
             $poolDeleted = $pool->deleteItems($keys);
             $deleted = $poolDeleted && $deleted;
-            if ($index === 0 && !$poolDeleted) {
-                $this->l1Readable = false;
+            if ($index === 0) {
+                $this->l1Readable = $this->l1Readable && $poolDeleted;
             }
         }
 
@@ -265,9 +265,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
 
     private function finishL1Write(bool $written): bool
     {
-        if (!$written) {
-            $this->l1Readable = false;
-        }
+        $this->l1Readable = $this->l1Readable && $written;
 
         return $written;
     }
@@ -280,9 +278,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         }
 
         $invalidated = $this->pools[0]->deleteItems($keys);
-        if (!$invalidated) {
-            $this->l1Readable = false;
-        }
+        $this->l1Readable = $this->l1Readable && $invalidated;
 
         return $written && $invalidated;
     }
