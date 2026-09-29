@@ -483,6 +483,13 @@ Supervised long-running worker
    Supervisor, Kubernetes, or your framework queue/worker runtime. It calls
    bounded ``consume()`` loops and polls/sleeps between iterations.
 
+Runwire 2.1 task/service worker
+   When the application already uses Runwire 2.1, bind the active runtime and
+   let :doc:`/runwire` place bounded consumption inside the host-owned worker
+   scope. Runwire retains worker/event-loop ownership and cancellation/drain.
+   If the needed capability is unavailable, keep the explicit ``consume()``
+   path above.
+
 Transport-native delivery
    A custom transport can integrate with a durable broker's worker model, but
    it still must preserve the replay/cursor contract. CacheLayer's consumer is
