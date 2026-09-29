@@ -56,6 +56,7 @@
         "ext-pdo_sqlite": "For default SQLite usage via Cache::pdo(...) or Cache::sqlite(...)",
         "ext-redis": "For Redis-based caching (persistent, networked)",
         "ext-sysvshm": "For shared-memory caching via SharedMemoryCacheAdapter",
+        "infocyph/runwire": "For optional Runwire 2.1 request/task isolation and worker-owned invalidation/maintenance integration",
         "mongodb/mongodb": "For MongoDB caching via MongoDbCacheAdapter"
     },
     "minimum-stability": "stable",
