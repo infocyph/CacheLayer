@@ -233,3 +233,37 @@ it('releases request-owned memoizers across repeated persistent request lifecycl
         expect($reference->get())->toBeNull();
     }
 });
+
+
+it('flushing one Runwire request does not change another live request memoizer identity', function (): void {
+    $runtime = cacheLayerRunwireContext(concurrent: true);
+    RunwireIntegration::bind($runtime);
+    $requestA = RequestContext::create($runtime);
+    $requestB = RequestContext::create($runtime);
+    $runs = 0;
+    $callback = static function () use (&$runs): int {
+        return ++$runs;
+    };
+
+    $result = RunwireIntegration::share(
+        $requestA,
+        null,
+        static function () use ($requestB, $callback, &$runs): array {
+            $first = memoize($callback);
+
+            RunwireIntegration::share(
+                $requestB,
+                null,
+                static function (): void {
+                    memoize();
+                    once(static fn(): string => 'request-b');
+                    flush_memoizers();
+                },
+            );
+
+            return [$first, memoize($callback), $runs];
+        },
+    );
+
+    expect($result)->toBe([1, 1, 1]);
+});
