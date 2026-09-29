@@ -55,6 +55,8 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
 
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
+        $this->discardDeferredKey($key);
+
         $current = $this->getItem($key);
         if (!$current->isHit()) {
             return $current;
