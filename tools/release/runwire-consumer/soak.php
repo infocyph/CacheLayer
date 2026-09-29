@@ -43,15 +43,60 @@ $deadlines = 0;
 $validated = 0;
 
 for ($index = 0; $index < SEQUENTIAL_REQUESTS; ++$index) {
-    $policy = ($index % 257) === 0
+    $deadlineCase = ($index % 257) === 0;
+    $cancellationCase = !$deadlineCase && ($index % 223) === 0;
+    $policy = $deadlineCase
         ? new RequestExecutionPolicy(maxExecutionSeconds: 0.001)
         : new RequestExecutionPolicy();
-    $start = ($index % 257) === 0
+    $start = $deadlineCase
         ? (int) hrtime(true) - 2_000_000
         : null;
     $request = RequestContext::create($runtime, $policy, startNanoseconds: $start);
 
     try {
+        if ($deadlineCase) {
+            try {
+                (new CoroutineRuntime())->runRequest(
+                    $request,
+                    static function (CoroutineScope $scope) use ($request): void {
+                        RunwireIntegration::share(
+                            $request,
+                            $scope,
+                            static function (): void {
+                                RunwireIntegration::checkpoint();
+                            },
+                        );
+                    },
+                );
+            } catch (CancelledException) {
+                ++$deadlines;
+            }
+
+            continue;
+        }
+
+        if ($cancellationCase) {
+            try {
+                (new CoroutineRuntime())->runRequest(
+                    $request,
+                    static function (CoroutineScope $scope) use ($request): void {
+                        RunwireIntegration::share(
+                            $request,
+                            $scope,
+                            static function () use ($request): void {
+                                $request->cancel(CancellationReason::HOST_CANCELLED);
+                                RunwireIntegration::checkpoint();
+                            },
+                        );
+                    },
+                );
+            } catch (CancelledException) {
+                ++$cancellations;
+            }
+
+            continue;
+        }
+
         if (($index % 191) === 0) {
             ++$errors;
             throw new RuntimeException('intentional soak failure');
@@ -81,7 +126,9 @@ for ($index = 0; $index < SEQUENTIAL_REQUESTS; ++$index) {
             throw $exception;
         }
     } finally {
-        $request->complete();
+        if (!$request->completed()) {
+            $request->complete();
+        }
     }
 }
 
@@ -90,8 +137,6 @@ $coroutines->run(
     static function (CoroutineScope $scope) use (
         $runtime,
         $cache,
-        &$cancellations,
-        &$deadlines,
         &$validated,
     ): void {
         $tasks = [];
@@ -102,54 +147,20 @@ $coroutines->run(
                     $scope,
                     $cache,
                     $index,
-                    &$cancellations,
-                    &$deadlines,
                     &$validated,
                 ): void {
-                    $deadlineCase = ($index % 61) === 0;
-                    $policy = $deadlineCase
-                        ? new RequestExecutionPolicy(maxExecutionSeconds: 0.001)
-                        : new RequestExecutionPolicy();
-                    $start = $deadlineCase
-                        ? (int) hrtime(true) - 2_000_000
-                        : null;
-                    $request = RequestContext::create($runtime, $policy, startNanoseconds: $start);
+                    $request = RequestContext::create($runtime);
 
                     try {
                         RunwireIntegration::share(
                             $request,
                             $scope,
                             static function () use (
-                                $request,
                                 $scope,
                                 $cache,
                                 $index,
-                                $deadlineCase,
-                                &$cancellations,
-                                &$deadlines,
                                 &$validated,
                             ): void {
-                                if ($deadlineCase) {
-                                    try {
-                                        RunwireIntegration::checkpoint();
-                                    } catch (CancelledException) {
-                                        ++$deadlines;
-
-                                        return;
-                                    }
-                                }
-
-                                if (($index % 53) === 0) {
-                                    $request->cancel(CancellationReason::HOST_CANCELLED);
-                                    try {
-                                        RunwireIntegration::checkpoint();
-                                    } catch (CancelledException) {
-                                        ++$cancellations;
-
-                                        return;
-                                    }
-                                }
-
                                 $tenant = $index % 16;
                                 $key = 'concurrent-' . $tenant . '-' . $index;
                                 $memo = memoize(static fn(int $value): int => $value * 2, [$index]);
