@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use Infocyph\CacheLayer\Cluster\ClusterCache;
 use Infocyph\CacheLayer\Cluster\ClusterCacheConfig;
+use Infocyph\CacheLayer\Cluster\Transport\InvalidationTransportInterface;
+use Infocyph\CacheLayer\Cluster\Event\InvalidationBatch;
 use Infocyph\CacheLayer\Cluster\Event\InvalidationEvent;
 use Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration;
 use Infocyph\CacheLayer\Integration\Runwire\RunwireWorkerIntegration;
@@ -21,6 +23,7 @@ use Infocyph\Runwire\Runtime\Enum\CancellationReason;
 use Infocyph\Runwire\Runtime\Enum\RuntimeDriver;
 use Infocyph\Runwire\RuntimeCapabilities;
 use Infocyph\Runwire\RuntimeContext;
+use Infocyph\Runwire\Supervisor\Enum\ShutdownReason;
 use Infocyph\Runwire\Supervisor\Enum\WorkerRole;
 use Infocyph\Runwire\Supervisor\WorkerContext;
 
@@ -255,6 +258,91 @@ it('keeps worker automation inactive when the shared runtime lacks Runwire corou
             $worker,
             NodeCache::maintenance($this->runwireWorkerNodeConfig),
         ))->toBeNull();
+
+    $worker->close();
+    fclose($readyParent);
+});
+
+
+it('turns an unhandled CacheLayer consumer failure into a Runwire worker stop', function (): void {
+    $transport = new class implements InvalidationTransportInterface
+    {
+        public function consumeAfter(string $cluster, ?string $cursor, int $limit): InvalidationBatch
+        {
+            throw new RuntimeException('intentional invalidation backend failure');
+        }
+
+        public function isCursorBefore(string $cursor, string $oldestAvailableId): bool
+        {
+            return false;
+        }
+
+        public function oldestAvailableId(string $cluster): ?string
+        {
+            return null;
+        }
+
+        public function publish(InvalidationEvent $event): string
+        {
+            return '1';
+        }
+    };
+    $cluster = ClusterCache::create(
+        $this->runwireWorkerNodeConfig,
+        new ClusterCacheConfig('runwire-failure', 'node-a', 'runwire-failure'),
+        $transport,
+    );
+
+    $runtime = cacheLayerWorkerRuntimeContext();
+    RunwireIntegration::bind($runtime);
+    [$worker, $readyParent] = cacheLayerBackgroundWorkerContext();
+    $loop = new SelectLoop();
+    $worker->attachLoop($loop, 0.25);
+
+    $task = RunwireWorkerIntegration::startClusterConsumer(
+        $worker,
+        $cluster,
+        batchSize: 1,
+        idleSeconds: 0.001,
+    );
+    expect($task)->not->toBeNull();
+
+    $loop->run();
+
+    expect($task?->state())->toBe(TaskState::FAILED)
+        ->and($worker->stopping())->toBeTrue()
+        ->and($worker->shutdownReason())->toBe(ShutdownReason::FATAL_RUNTIME_ERROR)
+        ->and($worker->backgroundDrainExpired())->toBeFalse();
+
+    $worker->close();
+    fclose($readyParent);
+});
+
+it('does not take worker or loop ownership for unsupported worker topology', function (): void {
+    $runtime = cacheLayerWorkerRuntimeContext();
+    RunwireIntegration::bind($runtime);
+
+    [$readyParent, $readyChild] = stream_socket_pair(
+        STREAM_PF_UNIX,
+        STREAM_SOCK_STREAM,
+        STREAM_IPPROTO_IP,
+    );
+    $pid = getmypid();
+    $worker = new WorkerContext(
+        group: 'cachelayer-http',
+        slot: 0,
+        generation: 1,
+        pid: is_int($pid) ? $pid : 0,
+        parentPid: 0,
+        readyStream: $readyChild,
+        role: WorkerRole::HTTP,
+    );
+
+    expect(RunwireWorkerIntegration::startClusterConsumer(
+        $worker,
+        $this->runwireWorkerCluster,
+    ))->toBeNull()
+        ->and($worker->stopping())->toBeFalse();
 
     $worker->close();
     fclose($readyParent);
