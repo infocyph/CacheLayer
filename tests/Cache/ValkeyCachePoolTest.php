@@ -175,3 +175,23 @@ test('Valkey atomic consume discards deferred overlays without resurrection', fu
         ->and($this->cache->commit())->toBeTrue()
         ->and($this->cache->get('deferred-consume'))->toBeNull();
 });
+
+
+test('Valkey clear in boundary namespace preserves counter and lock domains', function () {
+    $cache = Cache::valkey('cachelayer', client: $this->valkeyClient);
+    $counters = AtomicCounters::valkey('audit-counter', client: $this->valkeyClient);
+    $locks = new \Infocyph\CacheLayer\Cache\Lock\RedisLockProvider($this->valkeyClient);
+
+    expect($cache->set('ordinary', 'value'))->toBeTrue()
+        ->and($counters->increment('window', 5, 30)->value)->toBe(5);
+
+    $held = $locks->acquire('boundary-lock', 0.0, 30.0);
+    expect($held)->not->toBeNull();
+
+    expect($cache->clear())->toBeTrue()
+        ->and($cache->get('ordinary'))->toBeNull()
+        ->and($counters->get('window'))->toBe(5)
+        ->and($locks->acquire('boundary-lock', 0.0, 30.0))->toBeNull();
+
+    $locks->release($held);
+});
