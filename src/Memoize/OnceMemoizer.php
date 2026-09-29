@@ -36,7 +36,6 @@ final class OnceMemoizer
     {
         $this->cache = [];
         $this->order = [];
-        CallableFingerprint::flush();
     }
 
     public function once(callable $callback, int $callerOffset = 0): mixed
