@@ -559,3 +559,30 @@ test('Redis Stream recovery clears stale local state after complete history loss
         }
     }
 });
+
+
+test('Redis authentication failures do not expose supplied passwords in exception traces', function () use ($redisHost, $redisPort) {
+    $secret = 'AUDIT_SENTINEL_40';
+    $previousIgnoreArgs = ini_get('zend.exception_ignore_args');
+    $previousMaxLen = ini_get('zend.exception_string_param_max_len');
+    ini_set('zend.exception_ignore_args', '0');
+    ini_set('zend.exception_string_param_max_len', '128');
+
+    try {
+        try {
+            \Infocyph\CacheLayer\Support\RedisConnection::connect(
+                sprintf('redis://:%s@%s:%d', rawurlencode($secret), $redisHost, $redisPort),
+            );
+            test()->fail('Expected Redis authentication with the synthetic secret to fail.');
+        } catch (Throwable $failure) {
+            expect((string) $failure)->not->toContain($secret);
+        }
+    } finally {
+        if (is_string($previousIgnoreArgs)) {
+            ini_set('zend.exception_ignore_args', $previousIgnoreArgs);
+        }
+        if (is_string($previousMaxLen)) {
+            ini_set('zend.exception_string_param_max_len', $previousMaxLen);
+        }
+    }
+});
