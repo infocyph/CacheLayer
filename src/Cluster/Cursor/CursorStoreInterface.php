@@ -10,6 +10,7 @@ interface CursorStoreInterface
 
     public function current(): ?string;
 
+    /** Whether this scope needs a successful local clear before replay can start. */
     public function requiresRecovery(): bool;
 
     public function reset(?string $eventId): void;

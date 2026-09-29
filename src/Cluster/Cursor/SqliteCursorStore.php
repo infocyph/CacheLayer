@@ -13,10 +13,6 @@ use PDOException;
 
 final readonly class SqliteCursorStore implements CursorStoreInterface
 {
-    private const string LEGACY_TABLE = 'cachelayer_cluster_cursors';
-
-    private const string PREVIOUS_TABLE = 'cachelayer_cluster_cursors_v2';
-
     private const string TABLE = 'cachelayer_cluster_cursors_v3';
 
     private string $cluster;
@@ -70,11 +66,7 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
 
     public function requiresRecovery(): bool
     {
-        if ($this->scopeExists()) {
-            return false;
-        }
-
-        return $this->legacyScopeExists() || $this->previousScopeExists();
+        return !$this->scopeExists();
     }
 
     public function reset(?string $eventId): void
@@ -108,42 +100,6 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
         } catch (PDOException $exception) {
             throw new ClusterCacheException('Unable to initialize the cluster cursor store.', 0, $exception);
         }
-    }
-
-    private function legacyScopeExists(): bool
-    {
-        if (!$this->tableExists(self::LEGACY_TABLE)) {
-            return false;
-        }
-
-        return $this->rowExists(
-            'SELECT 1 FROM ' . self::LEGACY_TABLE . ' '
-            . 'WHERE cluster_name = :cluster AND node_id = :node_id LIMIT 1',
-            [
-                ':cluster' => $this->cluster,
-                ':node_id' => $this->nodeId,
-            ],
-            'Unable to inspect the legacy cluster cursor scope.',
-        );
-    }
-
-    private function previousScopeExists(): bool
-    {
-        if (!$this->tableExists(self::PREVIOUS_TABLE)) {
-            return false;
-        }
-
-        return $this->rowExists(
-            'SELECT 1 FROM ' . self::PREVIOUS_TABLE . ' '
-            . 'WHERE cluster_name = :cluster AND node_id = :node_id '
-            . 'AND namespace_name = :namespace LIMIT 1',
-            [
-                ':cluster' => $this->cluster,
-                ':node_id' => $this->nodeId,
-                ':namespace' => $this->namespace,
-            ],
-            'Unable to inspect the previous cluster cursor scope.',
-        );
     }
 
     private function read(string $sql, string $failureMessage): mixed
@@ -193,15 +149,6 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
             ':namespace' => $this->namespace,
             ':transport_identity' => $this->transportIdentity,
         ];
-    }
-
-    private function tableExists(string $table): bool
-    {
-        return $this->rowExists(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = :table LIMIT 1",
-            [':table' => $table],
-            'Unable to inspect the cluster cursor schema.',
-        );
     }
 
     private function write(?string $eventId): void

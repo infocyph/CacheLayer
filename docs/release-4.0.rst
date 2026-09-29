@@ -19,6 +19,7 @@ Security and storage
 ====================
 
 * Bounded recursive payload traversal prevents cyclic/deep value exhaustion.
+  Accepted nesting depths remain readable inside signed/compressed record envelopes.
 * Signed cache records authenticate logical storage identity and key.
 * Object and Closure deserialization is opt-in instead of enabled by default.
 * Filesystem paths validate symlink/trust boundaries across file-backed owners.
@@ -33,11 +34,15 @@ Correctness
 * Node L1 identity includes the SQLite store and stale L1 failures are fenced.
 * PDO invalidation publication uses commit-safe cluster-scoped ordering.
 * Cluster cursors are scoped by cluster, node, namespace, and transport identity.
+  New scopes are cold-cleared before runtime exposure. Recreated/restored histories
+  require a coordinated cutover to a new, never-used transport identity.
 * PSR-6 deferred reads and mutation ordering are coherent before and after
   ``commit()``.
 * Numeric-string key/tag identity is preserved through batching and tiering.
 * Memcached long TTLs use the correct absolute-expiration conversion.
-* Tiered caches invalidate/fence skipped L1 state rather than serving stale data.
+* Tiered caches fence upper tiers on false returns and exceptions during writes,
+  invalidation, and promotion. Reads use the authoritative last tier until a
+  successful full clear reconciles every tier.
 
 Runwire 2.1
 ===========

@@ -319,7 +319,8 @@ final readonly class CachePayloadCodec
         try {
             return unserialize($payload, [
                 'allowed_classes' => $this->options->allowObjects,
-                'max_depth' => 128,
+                // Include the record envelope around the validated value graph.
+                'max_depth' => BoundedValueTraversal::MAX_DEPTH + 1,
             ]);
         } finally {
             restore_error_handler();

@@ -51,17 +51,15 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
 
     public function clear(): bool
     {
-        $cleared = true;
-        foreach ($this->pools as $index => $pool) {
-            $poolCleared = $pool->clear();
-            $cleared = $poolCleared && $cleared;
-            if ($index === 0) {
-                $this->l1Readable = $poolCleared;
+        return $this->mutate(function (): bool {
+            $cleared = true;
+            foreach ($this->pools as $pool) {
+                $cleared = $pool->clear() && $cleared;
             }
-        }
-        $this->deferred = [];
+            $this->deferred = [];
 
-        return $cleared;
+            return $cleared;
+        }, reconcile: true);
     }
 
     #[\Override]
@@ -91,28 +89,30 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
     public function deleteItem(string $key): bool
     {
         $this->discardDeferredKey($key);
-        $deleted = $this->pools[0]->deleteItem($key);
-        $this->l1Readable = $this->l1Readable && $deleted;
 
-        foreach (array_slice($this->pools, 1) as $pool) {
-            $deleted = $pool->deleteItem($key) && $deleted;
-        }
+        return $this->mutate(function () use ($key): bool {
+            $deleted = true;
+            foreach ($this->pools as $pool) {
+                $deleted = $pool->deleteItem($key) && $deleted;
+            }
 
-        return $deleted;
+            return $deleted;
+        });
     }
 
     /** @param list<string> $keys */
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
-        $deleted = $this->pools[0]->deleteItems($keys);
-        $this->l1Readable = $this->l1Readable && $deleted;
 
-        foreach (array_slice($this->pools, 1) as $pool) {
-            $deleted = $pool->deleteItems($keys) && $deleted;
-        }
+        return $this->mutate(function () use ($keys): bool {
+            $deleted = true;
+            foreach ($this->pools as $pool) {
+                $deleted = $pool->deleteItems($keys) && $deleted;
+            }
 
-        return $deleted;
+            return $deleted;
+        });
     }
 
     public function getItem(string $key): CacheItem
@@ -207,15 +207,17 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
             return false;
         }
 
-        $start = $this->writeStart();
-        $written = true;
-        for ($index = $start, $count = count($this->pools); $index < $count; ++$index) {
-            $written = $this->saveOneIntoPool($this->pools[$index], $item) && $written;
-        }
+        return $this->mutate(function () use ($item): bool {
+            $start = $this->writeStart();
+            $written = true;
+            for ($index = $start, $count = count($this->pools); $index < $count; ++$index) {
+                $written = $this->saveOneIntoPool($this->pools[$index], $item) && $written;
+            }
 
-        return $start === 0
-            ? $this->finishL1Write($written)
-            : $this->invalidateSkippedL1([$item->getKey()], $written);
+            return $start === 0
+                ? $written
+                : $this->invalidateSkippedL1([$item->getKey()], $written);
+        });
     }
 
     /** @param array<string, CacheItemInterface> $items */
@@ -225,7 +227,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
             return false;
         }
 
-        return $this->writeBatch($items);
+        return $this->mutate(fn(): bool => $this->writeBatch($items));
     }
 
     private function copyItem(CacheItemInterface $source): CacheItem
@@ -259,13 +261,6 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         return [$hits, $misses];
     }
 
-    private function finishL1Write(bool $written): bool
-    {
-        $this->l1Readable = $this->l1Readable && $written;
-
-        return $written;
-    }
-
     /** @param list<string> $keys */
     private function invalidateSkippedL1(array $keys, bool $written): bool
     {
@@ -274,9 +269,20 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         }
 
         $invalidated = $this->pools[0]->deleteItems($keys);
-        $this->l1Readable = $this->l1Readable && $invalidated;
 
         return $written && $invalidated;
+    }
+
+    /** @param callable(): bool $operation */
+    private function mutate(callable $operation, bool $reconcile = false): bool
+    {
+        $wasReadable = $this->l1Readable;
+        // Fence before entering a backend: an exception must leave upper tiers bypassed.
+        $this->l1Readable = false;
+        $success = $operation();
+        $this->l1Readable = $success && ($wasReadable || $reconcile);
+
+        return $success;
     }
 
     /** @param array<string, CacheItem> $items */
@@ -287,12 +293,8 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         }
 
         for ($index = 0; $index < $tierIndex; ++$index) {
-            if (!$this->saveIntoPool($this->pools[$index], $items)) {
-                if ($index === 0) {
-                    $this->l1Readable = false;
-                }
-
-                continue;
+            if (!$this->mutate(fn(): bool => $this->saveIntoPool($this->pools[$index], $items))) {
+                return;
             }
             $this->metrics->increment(self::class, 'promotion_batch');
             $this->metrics->increment(self::class, 'promotion_keys', count($items));
@@ -306,9 +308,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         }
 
         for ($index = 0; $index < $tierIndex; ++$index) {
-            if (!$this->saveOneIntoPool($this->pools[$index], $item) && $index === 0) {
-                $this->l1Readable = false;
-
+            if (!$this->mutate(fn(): bool => $this->saveOneIntoPool($this->pools[$index], $item))) {
                 return;
             }
         }
@@ -321,10 +321,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
             return $this->pools;
         }
 
-        $pools = $this->pools;
-        unset($pools[0]);
-
-        return $pools;
+        return array_slice($this->pools, -1, 1, true);
     }
 
     /** @param array<string, CacheItemInterface> $items */
@@ -365,7 +362,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         }
 
         if ($start === 0) {
-            return $this->finishL1Write($written);
+            return $written;
         }
 
         $keys = array_map(

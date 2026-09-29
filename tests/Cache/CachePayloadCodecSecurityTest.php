@@ -191,3 +191,29 @@ test('payload traversal rejects recursive and over-deep graphs safely', function
     expect(fn() => $codec->encode($deep, null))
         ->toThrow(InvalidArgumentException::class, 'nesting depth');
 });
+
+test('accepted value depth round-trips through the complete record envelope', function (bool $signed, bool $compressed, int $depth, mixed $leaf): void {
+    $value = $leaf;
+    for ($index = 0; $index < $depth; ++$index) {
+        $value = [$value];
+    }
+    $options = new CacheOptions(
+        integrityKey: $signed ? 'depth-boundary-key' : null,
+        compressionThreshold: $compressed ? 1 : null,
+        failOpen: false,
+    );
+    $codec = new CachePayloadCodec($options);
+    $cache = Cache::memory('depth-boundary', $options);
+
+    if ($depth <= 128) {
+        $encoded = $codec->encode($value, null, storageIdentity: 'depth-boundary', key: 'nested');
+        expect($codec->decode($encoded, 'depth-boundary', 'nested')?->value)->toBe($value)
+            ->and($cache->set('nested', $value))->toBeTrue()
+            ->and($cache->get('nested'))->toBe($value);
+
+        return;
+    }
+
+    expect(fn() => $codec->encode($value, null))->toThrow(InvalidArgumentException::class, 'nesting depth')
+        ->and(fn() => $cache->set('nested', $value))->toThrow(\Infocyph\CacheLayer\Exceptions\CacheBackendException::class);
+})->with([false, true])->with([false, true])->with([127, 128, 129])->with(['scalar leaf' => ['leaf'], 'empty array leaf' => [[]]]);

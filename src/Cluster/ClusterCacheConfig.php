@@ -8,6 +8,9 @@ use Infocyph\CacheLayer\Cluster\Exception\ClusterConfigurationException;
 
 final readonly class ClusterCacheConfig
 {
+    /**
+     * @param string $transportIdentity Durable history generation; rotate to a never-used value after history reset.
+     */
     public function __construct(
         public string $cluster,
         public string $nodeId,

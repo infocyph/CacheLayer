@@ -9,7 +9,7 @@ use ReflectionReference;
 
 final class BoundedValueTraversal
 {
-    private const int MAX_DEPTH = 128;
+    public const int MAX_DEPTH = 128;
 
     private const int MAX_NODES = 65_536;
 

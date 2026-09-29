@@ -4,9 +4,72 @@ Date: 2026-09-29
 
 Audited commit: `51fcba79ebac14b7ddb767e80c724a1eea485e9e` (clean working tree before this audit).
 
-**Decision: F01–F09 remediation is complete and reverified.** The nine findings were reproduced on the audited commit and corrected on `feature/improvements`. Substantive head `97957893ab1459e365526dab2b913131021489fe` passed Security & Standards #513 and Release Verification #153; tracker-closure head `4f4e3912bccba11c2ba9e2ef6b1ee60a26c8a2c5` then passed Security & Standards #514 and Release Verification #154. No production code or dependency changes were made during the original review. This report follows [PHPForge engineering principles](../../vendor/infocyph/phpforge/resources/engineering-principles.md) and reopens the relevant gates in the [implementation plan](cachelayer-4.0-security-correctness-plan.md).
+**Latest decision: F01–F09 and V01–V03 are resolved in the working tree; release sign-off awaits verification of the final committed revision.** The nine findings were reproduced on the audited commit and corrected on `feature/improvements`. Substantive head `97957893ab1459e365526dab2b913131021489fe` passed Security & Standards #513 and Release Verification #153; tracker-closure head `4f4e3912bccba11c2ba9e2ef6b1ee60a26c8a2c5` then passed Security & Standards #514 and Release Verification #154. No production code or dependency changes were made during the original review. This report follows [PHPForge engineering principles](../../vendor/infocyph/phpforge/resources/engineering-principles.md) and reopens the relevant gates in the [implementation plan](cachelayer-4.0-security-correctness-plan.md).
 
 The current contract is PHP 8.4+, with PHP 8.4/8.5 verification and a shipped Runwire 2.1 integration that remains optional for consumers. This review evaluates that updated contract, including sharing the framework's runtime and request/task scopes.
+
+## Resolution of V01–V03 (working tree, 2026-09-29)
+
+Implemented against base `69845554ab743c9656f84af586207efd390f16d1`:
+
+- **V01 resolved:** the native decoder includes the enclosing record depth using the same bounded-traversal limit as the encoder. Scalar and empty-array leaves at depths 127/128/129 are covered through both the codec and facade, with signing/compression combinations.
+- **V02 resolved:** tier mutations and promotions establish the coherence fence before calling a backend. False returns and exceptions leave upper tiers bypassed; unrelated successful writes cannot restore them. Reads use the authoritative last tier until a complete successful clear. Tests cover real failure control flow, strict/fail-open policy, single/bulk operations, skipped L1 writes, and three-tier promotion.
+- **V03 resolved through the explicit history-generation contract:** a new cursor scope is cold-cleared during `ClusterCache::create()` before the runtime is returned, and initialization is recorded only after a successful clear. Restarting an established scope preserves progress. Recreated/restored logs require coordinated rotation to a new, never-used `transportIdentity` and reconciliation of every APCu/L1 domain. Overlapping history IDs are tested with the real PDO transport in SQLite testing mode. Arbitrary same-identity resets remain unsupported; boundary heuristics are not an epoch detector.
+
+Current validation:
+
+- Targeted regression suite: **102 passed, 427 assertions**.
+- Prepared-host 34-file integration subset with CLI APCu and isolated Redis/Valkey/Memcached: **402 passed, 2 failed, 1,651 assertions**. The two failures require unavailable Scylla Alternator; four SQL/real-MongoDB test files remain outside this subset. This is not a full matrix pass.
+- `composer ic:process` passes. Detailed static checks pass, including PHPStan and Psalm. Normal-host `composer ic:tests:details` and final `composer ic:release:guard` fail at Pest discovery because CLI APCu is disabled. The guard reports zero dependency advisories and one abandoned development package (`doctrine/annotations`).
+- Core smoke passes with OPcache off/on on PHP 8.5.4. Runwire certification and soak pass using the installed checkout (temporary copies change only the autoload path; not a fresh consumer installation); soak validates 2,277 requests.
+- Sphinx builds with warnings as errors. `git diff --check` passes.
+
+**Pre-tag gate:** commit the final changes and obtain green Security & Standards and Release Verification on that exact revision, including PHP 8.4/8.5 stable/lowest dependencies, all configured real services, independent consumers, and portability checks. Earlier green CI below does not cover this working tree.
+
+## Independent verification of the applied fixes
+
+Verified 2026-09-29 at clean commit `69845554ab743c9656f84af586207efd390f16d1`. The preceding implementation/CI closure records and the original findings below remain historical evidence; this section records the newest independent result.
+
+**All nine original reproductions now pass.** Signed atomic consume returns the stored value once without resurrection on memory, File, PHP-files, SQLite, Redis and Memcached. Redis cleanup preserves the replacement, counter state survives clear, closure cycles return normally, the 4,439,019-byte wide payload is rejected without exhaustion, a false-returning L1 stays fenced, empty history clears local state, authentication traces redact the synthetic secret, and independent memoizer flushes preserve other scopes' results.
+
+The following three cases were reproduced before the working-tree resolution above:
+
+### V01 — P2: accepted depth does not round-trip (F04 boundary)
+
+**Reproduced through `Cache::memory()` with `failOpen=false`.** Build a scalar wrapped in 128 nested arrays. `set('x', $value)` returns true, but the immediate `get('x')` returns a miss. Depths 126 and 127 round-trip in the same probe.
+
+`BoundedValueTraversal` allows this value, while `CachePayloadCodec::unserializeNative()` at `src/Cache/Adapter/CachePayloadCodec.php:322` applies `max_depth=128` to the entire serialized record, including its enclosing array. The accepted value depth and decoder's record depth disagree. The final sweep corrected node-count symmetry but not depth symmetry.
+
+**Required:** account for envelope depth consistently, or reject the value before reporting a successful save. Test encode/decode and facade set/get immediately below, at and above the effective depth limit, with signing and compression variants. A successful save must not create an intrinsically unreadable record.
+
+### V02 — P2: an L1 exception bypasses the coherence fence (F07 failure boundary)
+
+**Reproduced with the same deterministic L1 fixture, changing only its invalidation failure from `false` to an exception.** With `writeToL1=false`, promote `x=old`; write `x=new` to L2 while L1 deletion throws. The facade's default fail-open handling returns false from the write, but subsequent reads still return `old`. The output is `[write=false, read=old, laterRead=old]`; L2 contains `new`.
+
+`TieredCacheAdapter::invalidateSkippedL1()` at `src/Cache/Adapter/TieredCacheAdapter.php:276` updates `l1Readable` only after the fallible deletion returns. Exceptions escape to the facade before the adapter is fenced. Equivalent throwing save/delete/promotion paths need review; the new regression currently forces the private flag to false and therefore does not verify how an actual failure establishes it.
+
+**Required:** fence the affected tier on exceptional exits as well as false returns, preserving error policy. Test real control flow with throwing and false-returning fixtures, single/bulk operations, unrelated successful operations and full-clear recovery. Do not weaken the assertion to accept stale data after an unsuccessful update.
+
+### V03 — conditional recovery gap: recreated history can overlap the old cursor (F05)
+
+**Reproduced with the real PDO transport in SQLite testing mode.** Consume old IDs 1 and 2, retain cached `x=stale`, recreate the event history with new ID 1 invalidating `x` and new IDs 2 and 3 targeting other keys. With the old cursor and transport identity retained, recovery returns false, consume processes only ID 3, and `x` stays stale. Observed state: `cursor=2, oldest=1, newest=3, recovered=false, consumed=1, value=stale`.
+
+`ClusterRecoveryManager` detects a reset only when the new upper boundary is below the old cursor. Once the new history overlaps/passes the cursor, boundary comparisons cannot distinguish its epoch. The added test covers a recreated log that remains behind the cursor only.
+
+**Contract boundary:** the transport-identity documentation already requires a different identity for independent history. A deployment that guarantees identity rotation and a cold clear/rebuild on recreation can exclude this scenario. However, the same-identity automatic-reset recovery tested and described in F05 is only partial. Do not advertise general recreation recovery from these bounds alone.
+
+**Required:** either implement a durable history epoch/fence, or explicitly require coordinated identity rotation plus local cache/cursor reconciliation for recreated logs and test that supported recovery procedure. Add the overlap case so the limits are explicit. Do not claim the current heuristic proves safe replay after arbitrary history reset.
+
+### Verification results for this revision
+
+- [Security & Standards](https://github.com/infocyph/CacheLayer/actions/runs/36526249783) and [Release Verification](https://github.com/infocyph/CacheLayer/actions/runs/36526249302) both succeeded on `6984555`.
+- The same 34-file prepared-host subset, with CLI APCu and isolated Redis/Valkey/Memcached services, produced **348 passed, 2 failed, 1,415 assertions**. Both failures still require the unprovisioned Scylla Alternator service; the same four SQL/real-MongoDB files remain outside this subset.
+- Normal-host `composer ic:release:guard` still fails at Pest discovery because CLI APCu is disabled. This remains an environment prerequisite, not a newly introduced product regression.
+- Core release smoke passed with CLI OPcache disabled and enabled. Updated Runwire certification and soak passed against the installed checkout using temporary copies with only the autoload path adjusted. Certification now reports the expected 3,500 gets and 500 sets; the measurement fix is verified.
+- The locked dependency audit reports zero advisories and one abandoned development package, `doctrine/annotations`.
+- New local probes: `/tmp/cachelayer40-boundaries.php` (V01/V03) and `/tmp/cachelayer40-throw.php` (V02). Both require the same isolation precautions as the original probes.
+
+**Historical audit outcome:** V01–V03 required remediation. That remediation is now recorded above; final committed-revision CI remains pending.
 
 ## Scope and evidence
 
@@ -142,17 +205,17 @@ See [RedisConnection.php](../../src/Support/RedisConnection.php), line 44. This 
 
 ## Remediation and release gates
 
-Remediation and the final release sweep are complete on the working branch. Exact substantive sweep head `909f73fb3b57525fcced5e0d024c5a4b92ea9d03` passed Security & Standards #516 and Release Verification #156; the final documentation-only tracker head is reverified before tagging.
+The original F01–F09 release sweep completed on the working branch; the V01–V03 follow-up above still needs final committed-revision CI. Historical substantive sweep head `909f73fb3b57525fcced5e0d024c5a4b92ea9d03` passed Security & Standards #516 and Release Verification #156; the final documentation-only tracker head is reverified before tagging.
 
 | Finding | Remediation status | Evidence |
 | --- | --- | --- |
 | F01 | **Complete** | Atomic consume paths discard deferred overlays; cross-backend regressions cover repeated consume and no resurrection. |
 | F02 | **Complete** | Redis/Valkey clear is restricted to cache data/metadata domains; boundary tests preserve counters, locks and invalidation streams. |
 | F03 | **Complete** | Closure fingerprints no longer traverse captures; recursive/self-capture regressions were added. |
-| F04 | **Complete** | Traversal is depth-first and budgeted before descent; decode applies independent bounded traversal to value and tag graphs so the value budget round-trips consistently. |
-| F05 | **Complete** | Recovery handles empty/reset history and retained upper boundaries for PDO and Redis transports. |
+| F04 | **Resolved locally, including V01** | Traversal is depth-first and budgeted before descent; decode applies independent bounded traversal to value and tag graphs so the value budget round-trips consistently. |
+| F05 | **Resolved locally under the V03 identity-rotation contract** | Recovery handles empty/reset history and retained upper boundaries for PDO and Redis transports. |
 | F06 | **Complete** | Redis stale cleanup uses compare-delete and facade tag validation no longer performs unsafe physical deletion. |
-| F07 | **Complete** | Tiered L1 readability is a monotonic fence until full reconciliation/clear. |
+| F07 | **Resolved locally, including V02** | Tiered L1 readability is a monotonic fence until full reconciliation/clear. |
 | F08 | **Complete** | Redis DSN/authentication credential-bearing parameters are marked sensitive and synthetic-secret regressions cover traces. |
 | F09 | **Complete** | Memoizer flushes no longer reset process-global object/closure identities used by other live request scopes. |
 

@@ -135,3 +135,83 @@ test('tiered L1 remains fenced after unrelated successful writes until full clea
         ->and($cache->clear())->toBeTrue()
         ->and($readable->getValue($adapter))->toBeTrue();
 });
+
+test('tier mutation failures fence reads until a complete clear', function (string $operation, bool $throws, bool $failOpen): void {
+    $directory = sys_get_temp_dir() . '/cachelayer-tier-failure-' . bin2hex(random_bytes(6));
+    $l1 = new \Infocyph\CacheLayer\Tests\Cache\Support\FaultingFileCacheAdapter('fault', $directory);
+    $l2 = new ArrayCacheAdapter('fault');
+    $cache = Cache::tiered([$l1, $l2], options: new \Infocyph\CacheLayer\Cache\CacheOptions(failOpen: $failOpen));
+    $cache->set('x', 'old');
+    $l2->save($l2->getItem('x')->set('new'));
+    $l1->failure = $operation;
+    $l1->throws = $throws;
+
+    $mutate = match ($operation) {
+        'clear' => fn() => $cache->clear(),
+        'save' => fn() => $cache->set('unrelated', 'value'),
+        'saveItems' => fn() => $cache->setMultiple(['unrelated' => 'value']),
+        'deleteItem' => fn() => $cache->delete('unrelated'),
+        'deleteItems' => fn() => $cache->deleteMultiple(['unrelated']),
+    };
+
+    try {
+        if ($throws && !$failOpen) {
+            expect($mutate)->toThrow(\Infocyph\CacheLayer\Exceptions\CacheBackendException::class);
+        } else {
+            expect($mutate())->toBeFalse();
+        }
+        $expected = $l2->getItem('x')->get();
+        expect($cache->get('x'))->toBe($expected);
+        $l1->failure = null;
+        $cache->set('unrelated', 'recovered');
+        expect($cache->get('x'))->toBe($expected)
+            ->and($cache->clear())->toBeTrue()
+            ->and($l1->getItem('x')->isHit())->toBeFalse()
+            ->and($cache->get('x'))->toBeNull();
+    } finally {
+        $l1->failure = null;
+        $l1->clear();
+        $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
+        foreach ($files as $file) {
+            $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
+        }
+        rmdir($directory);
+    }
+})->with(['clear', 'save', 'saveItems', 'deleteItem', 'deleteItems'])->with([false, true])->with([false, true]);
+
+
+test('skipped writes and failed promotions keep every upper tier fenced', function (string $operation, bool $throws, bool $bulk): void {
+    $directory = sys_get_temp_dir() . '/cachelayer-tier-promotion-' . bin2hex(random_bytes(6));
+    $l1 = new \Infocyph\CacheLayer\Tests\Cache\Support\FaultingFileCacheAdapter('promotion', $directory);
+    $middle = new ArrayCacheAdapter('middle');
+    $last = new ArrayCacheAdapter('last');
+    $cache = Cache::tiered([$l1, $middle, $last], writeToL1: $operation !== 'skip');
+    $cache->set('x', 'old');
+    $cache->get('x');
+    $last->save($last->getItem('x')->set('new'));
+    $l1->throws = $throws;
+    $l1->failure = $operation === 'skip' ? 'deleteItems' : ($bulk ? 'saveItems' : 'save');
+
+    try {
+        if ($operation === 'skip') {
+            expect($bulk ? $cache->setMultiple(['x' => 'new']) : $cache->set('x', 'new'))->toBeFalse();
+        } else {
+            $last->save($last->getItem('promote')->set('authoritative'));
+            $bulk ? $cache->getMultiple(['promote']) : $cache->get('promote');
+        }
+        expect($cache->get('x'))->toBe('new')
+            ->and($cache->getMultiple(['x']))->toBe(['x' => 'new']);
+        $l1->failure = null;
+        $cache->set('unrelated', 'value');
+        expect($cache->get('x'))->toBe('new');
+        $cache->clear();
+    } finally {
+        $l1->failure = null;
+        $l1->clear();
+        $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
+        foreach ($files as $file) {
+            $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
+        }
+        rmdir($directory);
+    }
+})->with(['skip', 'promote'])->with([false, true])->with([false, true]);

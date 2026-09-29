@@ -194,8 +194,8 @@ test('legacy cursor migration clears the affected scope before establishing new 
     );
 
     expect($runtime->status()->cursor)->toBeNull()
-        ->and($runtime->cache()->get('stale'))->toBe('value')
-        ->and($runtime->recoverIfRequired())->toBeTrue()
+        ->and($runtime->cache()->get('stale'))->toBeNull()
+        ->and($runtime->status()->lastRecoveryAt)->not->toBeNull()
         ->and($runtime->cache()->get('stale'))->toBeNull()
         ->and($runtime->status()->cursor)->toBeNull()
         ->and($runtime->recoverIfRequired())->toBeFalse();
@@ -227,8 +227,8 @@ test('namespace-scoped v2 cursor migration is isolated per transport identity', 
         new InMemoryInvalidationTransport(),
     );
 
-    expect($runtime->recoverIfRequired())->toBeTrue()
-        ->and($runtime->cache()->get('stale'))->toBeNull()
+    expect($runtime->cache()->get('stale'))->toBeNull()
+        ->and($runtime->status()->lastRecoveryAt)->not->toBeNull()
         ->and($runtime->recoverIfRequired())->toBeFalse();
 });
 
@@ -448,6 +448,7 @@ test('consumer keeps its cursor when local invalidation returns false', function
         'application',
         'memory-primary',
     );
+    $cursor->reset(null); // This test exercises replay after successful scope initialization.
     $recovery = new ClusterRecoveryManager($cache, $cursor, $transport, 'failed-cluster');
     $consumer = new InvalidationConsumer(
         $transport,
@@ -564,4 +565,59 @@ test('PDO recovery clears stale local state after complete retained-history loss
         ->and($runtime->cache()->get('stale'))->toBeNull()
         ->and($runtime->status()->cursor)->toBeNull()
         ->and($runtime->recoverIfRequired())->toBeFalse();
+});
+
+test('a new history identity clears local state before exposing overlapping recreated events', function () {
+    $connection = new PDO('sqlite:' . $this->clusterDirectory . '/epoch-events.sqlite');
+    $transport = new PdoInvalidationTransport($connection, allowSqliteForTesting: true);
+    $node = new NodeCacheConfig($this->clusterDirectory . '/epoch-node.sqlite', 'application', apcuEnabled: false);
+    $old = ClusterCache::create($node, new ClusterCacheConfig('epoch', 'consumer', 'history-1'), $transport);
+    foreach (['one', 'two'] as $key) {
+        $transport->publish(InvalidationEvent::key('epoch', 'application', $key, 'writer'));
+    }
+    expect($old->consume())->toBe(2);
+    $old->cache()->set('stale', 'old value');
+    unset($old);
+    $connection->exec('DELETE FROM ' . PdoInvalidationSchema::EVENT_TABLE);
+    $connection->exec("DELETE FROM sqlite_sequence WHERE name = 'cachelayer_invalidation_events'");
+    foreach (['stale', 'one', 'two'] as $key) {
+        $transport->publish(InvalidationEvent::key('epoch', 'application', $key, 'writer'));
+    }
+    $config = new ClusterCacheConfig('epoch', 'consumer', 'history-2');
+    $replacement = ClusterCache::create($node, $config, $transport);
+    expect($replacement->cache()->get('stale'))->toBeNull()
+        ->and($replacement->status()->cursor)->toBeNull()
+        ->and($replacement->consume())->toBe(3);
+    $replacement->cache()->set('warm', 'kept');
+    unset($replacement);
+    $restarted = ClusterCache::create($node, $config, $transport);
+    expect($restarted->cache()->get('warm'))->toBe('kept')
+        ->and($restarted->status()->cursor)->toBe('3')
+        ->and($restarted->consume())->toBe(0);
+});
+
+
+test('a failed initial clear leaves a new history scope uninitialized for retry', function () {
+    $cursor = new SqliteCursorStore(
+        $this->clusterDirectory . '/uninitialized.sqlite',
+        'new-history',
+        'consumer',
+        'application',
+        'generation-2',
+    );
+    $transport = new InMemoryInvalidationTransport();
+    $failed = new ClusterRecoveryManager(new Cache(new RejectingClusterCacheAdapter()), $cursor, $transport, 'new-history');
+    expect($cursor->requiresRecovery())->toBeTrue()
+        ->and(fn() => $failed->recoverIfRequired())->toThrow(ClusterCacheException::class)
+        ->and($cursor->requiresRecovery())->toBeTrue()
+        ->and($cursor->updatedAt())->toBeNull();
+
+    $cache = Cache::memory('application');
+    $cache->set('stale', 'value');
+    $retry = new ClusterRecoveryManager($cache, $cursor, $transport, 'new-history');
+    expect($retry->recoverIfRequired())->toBeTrue()
+        ->and($cache->get('stale'))->toBeNull()
+        ->and($cursor->requiresRecovery())->toBeFalse()
+        ->and($cursor->current())->toBeNull()
+        ->and($retry->recoverIfRequired())->toBeFalse();
 });

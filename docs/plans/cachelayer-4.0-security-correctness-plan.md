@@ -1,13 +1,17 @@
 # CacheLayer security, correctness, and release plan
 
 Date: 2026-09-28  
-Status: Re-audit remediation and final release sweep complete
+Status: Original re-audit reproductions fixed; independent verification leaves V01–V03 resolved locally; final CI pending
 Audited revision: `b064b8196ddc4672ce37be252bc7a4cadb78527e` (local tag `3.4`)  
 Release target: **4.0.0 — next major release**
 
 ## Latest release re-audit
 
 The candidate `51fcba79ebac14b7ddb767e80c724a1eea485e9e` passed both configured CI workflows, but adversarial rechecking reproduced nine findings. Remediation for F01–F09 is now implemented on `feature/improvements`; **hold the 4.0.0 release until the corrected exact head passes the full stable/lowest and release-verification gates.** See the [release re-audit report](cachelayer-4.0-release-reaudit.md) for the live remediation tracker.
+
+## Latest independent verification
+
+Verification of `69845554ab743c9656f84af586207efd390f16d1` confirmed all nine original reproductions were fixed and both CI workflows passed, then identified V01–V03. Those follow-ups are now resolved in the working tree: accepted codec depth round-trips, tier mutation/promotion failures fence all upper tiers, and new history identities cold-clear local state before runtime exposure. Recreated/restored event logs require coordinated identity rotation and reconciliation of every APCu/L1 domain; arbitrary same-identity resets are unsupported. The targeted suite passes 102 tests / 427 assertions. See the [resolution and validation record](cachelayer-4.0-release-reaudit.md#resolution-of-v01v03-working-tree-2026-09-29) for prepared-host results and remaining environment limits. **Final committed-revision Security & Standards and Release Verification remain required before tagging 4.0.0.**
 
 ## Implementation tracker
 
@@ -104,7 +108,7 @@ Draft PR: [#29 — CacheLayer 4.0 security and correctness hardening](https://gi
 
 ## Decision
 
-The planned 4.0 work was implemented and passed its existing CI gates, but the 2026-09-29 re-audit reopens security, atomic/deferred state, recovery, tier coherence and request-isolation requirements. CacheLayer 4.0 is not release-ready until the linked F01–F09 findings are resolved. The Runwire certification workload is a bounded CI regression/correctness gate, not a production-throughput claim; broader production-equivalent measurement remains a separate operational follow-up.
+The planned 4.0 work was implemented and passed its existing CI gates, but the 2026-09-29 re-audit reopens security, atomic/deferred state, recovery, tier coherence and request-isolation requirements. F01–F09 and the V01–V03 follow-ups are resolved locally; final committed-revision CI is still required for release sign-off. The Runwire certification workload is a bounded CI regression/correctness gate, not a production-throughput claim; broader production-equivalent measurement remains a separate operational follow-up.
 
 Target **4.0.0** for the complete plan, as explicitly selected by the maintainer. CacheLayer 4.0 has **no backward-compatibility preservation requirement with 3.x**: public API shape, named parameters, defaults, storage formats, schemas, and behavioral contracts may change when a cleaner, safer, or more coherent design results. Patch backports and an alternative minor release are outside this plan. Avoid unrelated rewrites, but do not retain legacy contracts solely for BC.
 
@@ -441,6 +445,13 @@ These are not substitutes for the required fixes:
 ## Release acceptance
 
 ### Correctness and security
+
+Historical checked gates below apply to the recorded earlier commits. For the current follow-up:
+
+- [x] Resolve V01 codec depth symmetry with boundary regressions.
+- [x] Resolve V02 exceptional tier exits and verify false/throwing single/bulk operations and promotion.
+- [x] Resolve V03 with documented coordinated identity rotation and cold clear before runtime exposure; verify overlapping IDs and failed-clear retry.
+- [ ] Pass both configured workflows on the final committed revision, including the full service/dependency/platform matrix.
 
 - [x] Revalidate and remediate the reopened R01–R19 requirements against F01–F09 in the affected production paths/backends; final exact-head CI evidence remains pending.
 - [x] Run real PHP 8.4 and 8.5 with highest supported and lowest supported dependency sets and `E_ALL`. Verify optional extensions and native-client versions explicitly.

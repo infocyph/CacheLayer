@@ -80,9 +80,18 @@ Cluster cursor identity is scoped by cluster, node, namespace, and transport
 identity. Legacy ``(cluster,node)`` and intermediate
 ``(cluster,node,namespace)`` cursors are not copied into the new scope.
 
-When an old cursor format is detected, CacheLayer clears the affected local
-namespace before establishing new progress. This trades cache warmth for proof
-that an old shared cursor cannot skip invalidations.
+Every previously unseen cursor scope is cleared during ``ClusterCache::create()``
+before a runtime is returned, including legacy migration and first cluster
+adoption of a warm namespace. A failed clear aborts construction and leaves the
+scope pending for retry. Existing scopes retain their cache and cursor on restart.
+
+After event-log truncation, recreation, restoration, or event-ID reuse, stop old
+writers/consumers and application workers, then deploy a new, never-used
+``transportIdentity`` to every node. Reconcile every APCu/L1 domain before resuming
+traffic; a CLI clear cannot reach a separate PHP-FPM APCu domain. Never reuse an
+old generation, even on rollback. Boundary checks cannot detect overlapping IDs
+from a different history, so arbitrary same-identity resets are unsupported.
+See the coordinated cutover procedure in the Cluster Cache documentation.
 
 Keep transport retention long enough for deployment and outage windows. After
 cutover, verify every node has a stable node ID, namespace, transport identity,

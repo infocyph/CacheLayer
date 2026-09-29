@@ -92,6 +92,10 @@ Cluster identity, nodes, and namespaces
    namespace. Use the same value when reconnecting to the same durable event
    log and a different value when switching to a different database, Redis
    deployment, stream prefix/domain, or other independent transport history.
+   Treat this identity as the history generation: use a new, never-used value
+   after truncation, recreation, backup restoration, or any event-ID reuse.
+   A previously unseen local cursor scope is cleared during
+   ``ClusterCache::create()`` before the runtime becomes available.
 
 ``consumerBatchSize``
    Maximum events fetched by ``consume()`` when no explicit limit is supplied.
@@ -595,9 +599,32 @@ local data remains.
 
 During the 4.0 cursor upgrade, legacy cluster/node cursors and the intermediate
 cluster/node/namespace cursor format are never copied into the new full scope.
-If an affected legacy scope is detected, recovery clears that namespace before
-establishing new cursor progress. This deliberately trades cache warmth for
-proof that an old shared cursor cannot skip invalidations.
+Every previously unseen cursor scope is cold-cleared during
+``ClusterCache::create()`` before a runtime is returned. This includes first
+cluster adoption of a warm Node Cache namespace and identity rotation. Only a
+successful clear establishes the scope; a failed clear aborts construction and
+leaves initialization pending for retry. A restart with the same established
+scope retains its cache and cursor.
+
+Recreating or restoring an event log requires a coordinated cutover:
+
+1. stop writers, consumers, and application workers using the old history;
+2. assign a new, never-used ``transportIdentity`` consistently across nodes;
+3. restart every node with that identity, allowing construction to clear its
+   local namespace and establish new cursor progress;
+4. clear every APCu/L1 domain that can serve the namespace, or disable APCu
+   until all application workers and SAPIs have been reconciled;
+5. resume traffic and verify consumption against the new history.
+
+Do not reuse an old identity, including on rollback; use another new generation.
+Do not run old and new history generations concurrently over the same local
+namespace. A CLI consumer's clear cannot clear a separate PHP-FPM APCu domain.
+
+Empty-history and backward-ID checks are additional recovery safeguards. They
+cannot detect a recreated log whose IDs overlap or pass the saved cursor.
+Automatic recovery after arbitrary same-identity history resets is unsupported;
+identity rotation and the coordinated cold clear above are required even when
+the transport endpoint and stream name remain unchanged.
 
 This safe reset is why event retention is an availability and cache-warmth
 decision rather than a correctness shortcut. Short retention causes more full

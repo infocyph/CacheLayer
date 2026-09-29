@@ -31,6 +31,9 @@ final class ClusterCache
         );
         $status = new ClusterStatusTracker();
         $recovery = new ClusterRecoveryManager($cache, $cursorStore, $transport, $cluster->cluster);
+        if ($cursorStore->requiresRecovery() && $recovery->recoverIfRequired()) {
+            $status->recordRecovery();
+        }
         $coordinator = new ClusterCoordinator(
             $cache,
             $cluster->cluster,
