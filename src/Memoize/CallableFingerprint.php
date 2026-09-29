@@ -7,7 +7,6 @@ namespace Infocyph\CacheLayer\Memoize;
 use Closure;
 use Infocyph\CacheLayer\Support\BoundedValueTraversal;
 use ReflectionFunction;
-use ReflectionReference;
 use WeakMap;
 
 /** @internal */
@@ -72,16 +71,6 @@ final class CallableFingerprint
         }
 
         $reflection = new ReflectionFunction($closure);
-        $statics = $reflection->getStaticVariables();
-        $captures = [];
-        foreach ($statics as $name => $value) {
-            $reference = ReflectionReference::fromArrayElement($statics, $name);
-            $captures[] = [
-                'name' => $name,
-                'reference' => $reference instanceof ReflectionReference ? bin2hex($reference->getId()) : null,
-                'value' => self::normalizeValue($value),
-            ];
-        }
         $bound = $reflection->getClosureThis();
         $scope = $reflection->getClosureScopeClass();
         $identity = [
@@ -89,7 +78,6 @@ final class CallableFingerprint
             'file' => $reflection->getFileName() ?: 'internal',
             'start' => $reflection->getStartLine(),
             'end' => $reflection->getEndLine(),
-            'captures' => $captures,
             'bound' => $bound === null ? null : self::objectIdentity($bound),
             'scope' => $scope?->getName(),
         ];
