@@ -206,7 +206,7 @@ function createCache(string $integrityKey): Cache
 }
 ```
 
-Records use only the CacheLayer v2 markers `cl2:`, `cl2-gz:`, and `cl2-sig:`. Compression is threshold-based and retained only when smaller. HMAC verification, payload bounds, bounded decompression, and deserialization policy are isolated per cache instance. Corrupt payloads are safe misses.
+Records use the plain/compressed v2 markers `cl2:` and `cl2-gz:`, plus the identity-bound signed marker `cl3-sig:`. Compression is threshold-based and retained only when smaller. HMAC verification, payload bounds, bounded decompression, and deserialization policy are isolated per cache instance. Corrupt payloads are safe misses.
 
 Construction and configuration errors throw. Runtime backend failures default to fail-open: reads become misses, writes/deletes return `false`, and `backend_failure` is recorded. Set `failOpen: false` to propagate runtime failures. Pass deploy-varying values from the application's composition root; CacheLayer never reads process environment state.
 

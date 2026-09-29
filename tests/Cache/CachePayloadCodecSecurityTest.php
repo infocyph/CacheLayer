@@ -151,6 +151,30 @@ test('payload traversal rejects wide graphs before exceeding the node budget', f
         ->and($codec->decode('cl2:' . $serialized))->toBeNull();
 });
 
+test('payload traversal budgets tag metadata independently', function () {
+    $codec = new CachePayloadCodec(new CacheOptions(maxPayloadBytes: 8 * 1024 * 1024));
+    $generation = str_repeat('a', 32);
+    $supported = array_fill(0, 65_534, $generation);
+    $tooWide = array_fill(0, 65_536, $generation);
+
+    $blob = $codec->encode('value', null, $supported);
+    expect($codec->decode($blob)?->value)->toBe('value')
+        ->and(fn() => $codec->encode('value', null, $tooWide))
+        ->toThrow(InvalidArgumentException::class, 'traversal budget');
+
+    $serialized = serialize([
+        'format' => 2,
+        'encoding' => 'native',
+        'value' => 'value',
+        'expires' => null,
+        'tags' => $tooWide,
+        'namespace' => null,
+    ]);
+
+    expect(strlen($serialized))->toBeLessThan(8 * 1024 * 1024)
+        ->and($codec->decode('cl2:' . $serialized))->toBeNull();
+});
+
 test('payload traversal rejects recursive and over-deep graphs safely', function () {
     $codec = new CachePayloadCodec();
     $recursive = [];

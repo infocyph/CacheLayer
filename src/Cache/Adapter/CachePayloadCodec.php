@@ -97,6 +97,7 @@ final readonly class CachePayloadCodec
         ?string $storageIdentity = null,
         ?string $key = null,
     ): string {
+        BoundedValueTraversal::assertSafe($tags);
         [$encoding, $encodedValue] = $this->encodeValue($value);
         $serialized = serialize([
             'format' => 2,

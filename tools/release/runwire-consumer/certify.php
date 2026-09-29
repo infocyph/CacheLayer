@@ -89,10 +89,62 @@ function cleanupDirectory(string $base): void
     rmdir($base);
 }
 
+/**
+ * @param array<string, array<string, int>> $metrics
+ */
+function metricTotal(array $metrics, string $metric): int
+{
+    $total = 0;
+    foreach ($metrics as $counters) {
+        $total += $counters[$metric] ?? 0;
+    }
+
+    return $total;
+}
+
+function executeCacheRequest(
+    RuntimeContext $runtime,
+    Cache $cache,
+    int $index,
+    bool $integrated,
+): bool {
+    $request = RequestContext::create($runtime);
+
+    try {
+        $operation = static function () use ($cache, $index): void {
+            runCacheOperation($cache, $index);
+        };
+        if ($integrated) {
+            RunwireIntegration::share($request, null, $operation);
+        } else {
+            $operation();
+        }
+
+        return true;
+    } catch (Throwable) {
+        return false;
+    } finally {
+        $request->complete();
+    }
+}
+
 /** @return array<string, int|float> */
 function workload(RuntimeContext $runtime, bool $integrated): array
 {
     $cache = Cache::memory($integrated ? 'runwire-on' : 'runwire-off');
+    if ($integrated) {
+        RunwireIntegration::bind($runtime);
+    } else {
+        RunwireIntegration::release();
+    }
+
+    for ($index = 0; $index < WARMUP; ++$index) {
+        if (!executeCacheRequest($runtime, $cache, $index, $integrated)) {
+            throw new RuntimeException('Runwire certification warmup failed.');
+        }
+    }
+
+    $startingMetrics = $cache->exportMetrics();
     $latencies = [];
     $errors = 0;
     $startMemory = memory_get_usage(true);
@@ -102,34 +154,12 @@ function workload(RuntimeContext $runtime, bool $integrated): array
     }
     $start = hrtime(true);
 
-    if ($integrated) {
-        RunwireIntegration::bind($runtime);
-    } else {
-        RunwireIntegration::release();
-    }
-
-    for ($index = 0; $index < ITERATIONS + WARMUP; ++$index) {
-        $request = RequestContext::create($runtime);
+    for ($iteration = 0; $iteration < ITERATIONS; ++$iteration) {
         $started = hrtime(true);
-
-        try {
-            $operation = static function () use ($cache, $index): void {
-                runCacheOperation($cache, $index);
-            };
-            if ($integrated) {
-                RunwireIntegration::share($request, null, $operation);
-            } else {
-                $operation();
-            }
-        } catch (Throwable) {
+        if (!executeCacheRequest($runtime, $cache, WARMUP + $iteration, $integrated)) {
             ++$errors;
-        } finally {
-            $request->complete();
         }
-
-        if ($index >= WARMUP) {
-            $latencies[] = (hrtime(true) - $started) / 1_000_000;
-        }
+        $latencies[] = (hrtime(true) - $started) / 1_000_000;
     }
 
     $elapsed = (hrtime(true) - $start) / 1_000_000_000;
@@ -140,7 +170,9 @@ function workload(RuntimeContext $runtime, bool $integrated): array
     $metrics = $cache->exportMetrics();
     $cpuMicros = cpuMicros($startCpu, $endCpu);
 
-    RunwireIntegration::release($runtime);
+    if ($integrated) {
+        RunwireIntegration::release($runtime);
+    }
     gc_collect_cycles();
 
     return [
@@ -152,8 +184,8 @@ function workload(RuntimeContext $runtime, bool $integrated): array
         'memory_delta_bytes' => max(0, memory_get_usage(true) - $startMemory),
         'peak_memory_bytes' => memory_get_peak_usage(true),
         'cpu_ms' => $cpuMicros / 1_000,
-        'backend_gets' => (int) ($metrics['get'] ?? 0),
-        'backend_sets' => (int) ($metrics['set'] ?? 0),
+        'backend_gets' => max(0, metricTotal($metrics, 'get') - metricTotal($startingMetrics, 'get')),
+        'backend_sets' => max(0, metricTotal($metrics, 'set') - metricTotal($startingMetrics, 'set')),
     ];
 }
 
@@ -243,6 +275,7 @@ $report = [
     'php' => PHP_VERSION,
     'runwire' => Composer\InstalledVersions::getPrettyVersion('infocyph/runwire'),
     'iterations' => ITERATIONS,
+    'warmup_iterations' => WARMUP,
     'baseline' => $baseline,
     'integrated' => $integrated,
     'rpm_ratio' => $ratio,
@@ -263,6 +296,8 @@ if (
     || $ratio < MIN_RPM_RATIO
     || $integrated['p99_ms'] > $p99Budget
     || $integrated['memory_delta_bytes'] > MAX_MEMORY_DELTA_BYTES
+    || (int) $baseline['backend_gets'] + (int) $baseline['backend_sets'] !== ITERATIONS
+    || (int) $integrated['backend_gets'] + (int) $integrated['backend_sets'] !== ITERATIONS
     || $operational['invalidation_events'] !== 100
     || $operational['pending_events'] !== 0
 ) {

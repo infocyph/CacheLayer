@@ -9,8 +9,10 @@ memoize(callable, params)
 
 ``memoize($callable, $params)`` caches return values by:
 
-* callable identity, including Closure source/captures and object instance
+* callable identity, including Closure instance/source metadata and bound-object identity
 * normalized parameters hash
+
+Closure capture graphs are not traversed for identity; this avoids recursive-capture exhaustion while distinct live Closure instances remain isolated.
 
 Internally this uses ``Memoizer::get()``.
 
