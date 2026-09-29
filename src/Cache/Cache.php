@@ -910,8 +910,6 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         if (CacheTagSnapshots::isCurrent($item, $generations)) {
             return $item;
         }
-        $this->backendBool(fn(): bool => $this->adapter->deleteItem($item->getKey()));
-
         return $this->miss($item->getKey());
     }
 
@@ -935,10 +933,6 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
             return CacheTagSnapshots::missTagged($items, $this->miss(...));
         }
         $validated = CacheTagSnapshots::rejectStale($items, $generations, $this->miss(...));
-        $stale = $validated['stale'];
-        if ($stale !== []) {
-            $this->backendBool(fn(): bool => $this->adapter->deleteItems($stale));
-        }
 
         return $validated['items'];
     }
