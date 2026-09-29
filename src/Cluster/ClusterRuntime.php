@@ -109,8 +109,7 @@ final readonly class ClusterRuntime
         ?int $limit = null,
         int $cycles = 1,
         float $idleSeconds = 0.1,
-    ): int
-    {
+    ): int {
         $limit ??= $this->consumerBatchSize;
         if ($limit < 1 || $cycles < 1 || !is_finite($idleSeconds) || $idleSeconds < 0.0 || $idleSeconds > 60.0) {
             throw new ClusterCacheException('Cluster polling requires a positive limit/cycle count and a 0-60 second idle interval.');
