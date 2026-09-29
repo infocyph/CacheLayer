@@ -51,6 +51,8 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
 
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
+        $this->discardDeferredKey($key);
+
         $mapped = $this->map($key);
         $record = $this->atomicRecord($key, $mapped);
         if (!$record instanceof CacheRecord) {
