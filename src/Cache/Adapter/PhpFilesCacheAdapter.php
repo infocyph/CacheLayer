@@ -49,6 +49,8 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
 
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
+        $this->discardDeferredKey($key);
+
         return $this->withKeyLock($key, function () use ($key): CacheItemInterface {
             $record = $this->readLiveRecordUnlocked($key);
             if (!$record instanceof CacheRecord) {
