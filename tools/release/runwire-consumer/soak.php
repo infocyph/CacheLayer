@@ -99,6 +99,7 @@ for ($index = 0; $index < SEQUENTIAL_REQUESTS; ++$index) {
 
         if (($index % 191) === 0) {
             ++$errors;
+
             throw new RuntimeException('intentional soak failure');
         }
 
