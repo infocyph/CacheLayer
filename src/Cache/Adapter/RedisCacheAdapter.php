@@ -128,6 +128,8 @@ LUA;
 
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
+        $this->discardDeferredKey($key);
+
         $raw = $this->redis->eval(self::GET_AND_DELETE_SCRIPT, [$this->map($key)], 1);
         if (!is_string($raw)) {
             return $this->genericMiss($key);
