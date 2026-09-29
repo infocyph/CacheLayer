@@ -45,6 +45,8 @@ trait PdoAtomicOperations
 
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
+        $this->discardDeferredKey($key);
+
         if (!$this->supportsAtomicCache()) {
             return $this->genericMiss($key);
         }
