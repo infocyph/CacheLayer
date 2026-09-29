@@ -24,12 +24,66 @@ const MAX_P99_MULTIPLIER = 3.0;
 const MAX_EXTRA_P99_MS = 1.0;
 const MAX_MEMORY_DELTA_BYTES = 8_388_608;
 
+/** @param list<float> $samples */
 function percentile(array $samples, float $percentile): float
 {
     sort($samples, SORT_NUMERIC);
     $index = (int) floor((count($samples) - 1) * $percentile);
 
-    return $samples[$index] ?? 0.0;
+    return (float) ($samples[$index] ?? 0.0);
+}
+
+/** @param array<string, mixed> $usage */
+function usageValue(array $usage, string $key): int
+{
+    $value = $usage[$key] ?? 0;
+
+    return is_int($value) ? $value : (int) $value;
+}
+
+/** @param array<string, mixed> $start @param array<string, mixed> $end */
+function cpuMicros(array $start, array $end): int
+{
+    return (usageValue($end, 'ru_utime.tv_sec') - usageValue($start, 'ru_utime.tv_sec')) * 1_000_000
+        + usageValue($end, 'ru_utime.tv_usec') - usageValue($start, 'ru_utime.tv_usec')
+        + (usageValue($end, 'ru_stime.tv_sec') - usageValue($start, 'ru_stime.tv_sec')) * 1_000_000
+        + usageValue($end, 'ru_stime.tv_usec') - usageValue($start, 'ru_stime.tv_usec');
+}
+
+function runCacheOperation(Cache $cache, int $index): void
+{
+    $tenant = $index % 32;
+    $key = 'tenant-' . $tenant . '-item-' . ($index % 256);
+
+    if (($index % 8) === 0) {
+        if (!$cache->set($key, $index, 60)) {
+            throw new RuntimeException('Cache write failed.');
+        }
+
+        return;
+    }
+
+    $cache->get($key);
+}
+
+function cleanupDirectory(string $base): void
+{
+    if (!is_dir($base)) {
+        return;
+    }
+
+    $files = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($base, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::CHILD_FIRST,
+    );
+    foreach ($files as $file) {
+        if (!$file instanceof SplFileInfo) {
+            continue;
+        }
+
+        $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
+    }
+    rmdir($base);
 }
 
 /** @return array<string, int|float> */
@@ -53,19 +107,7 @@ function workload(RuntimeContext $runtime, bool $integrated): array
         $started = hrtime(true);
 
         try {
-            $operation = static function () use ($cache, $index): void {
-                $tenant = $index % 32;
-                $key = 'tenant-' . $tenant . '-item-' . ($index % 256);
-
-                if (($index % 8) === 0) {
-                    if (!$cache->set($key, $index, 60)) {
-                        throw new RuntimeException('Cache write failed.');
-                    }
-                } else {
-                    $cache->get($key);
-                }
-            };
-
+            $operation = static fn(): null => runCacheOperation($cache, $index);
             if ($integrated) {
                 RunwireIntegration::share($request, null, $operation);
             } else {
@@ -85,12 +127,7 @@ function workload(RuntimeContext $runtime, bool $integrated): array
     $elapsed = (hrtime(true) - $start) / 1_000_000_000;
     $endCpu = getrusage();
     $metrics = $cache->exportMetrics();
-    $cpuMicros = (
-        (($endCpu['ru_utime.tv_sec'] ?? 0) - ($startCpu['ru_utime.tv_sec'] ?? 0)) * 1_000_000
-        + (($endCpu['ru_utime.tv_usec'] ?? 0) - ($startCpu['ru_utime.tv_usec'] ?? 0))
-        + (($endCpu['ru_stime.tv_sec'] ?? 0) - ($startCpu['ru_stime.tv_sec'] ?? 0)) * 1_000_000
-        + (($endCpu['ru_stime.tv_usec'] ?? 0) - ($startCpu['ru_stime.tv_usec'] ?? 0))
-    );
+    $cpuMicros = cpuMicros($startCpu, $endCpu);
 
     RunwireIntegration::release($runtime);
     gc_collect_cycles();
@@ -165,16 +202,7 @@ function invalidationAndMaintenance(): array
             'pending_events' => $cluster->status()->pendingEventCount ?? -1,
         ];
     } finally {
-        if (is_dir($base)) {
-            $files = new RecursiveIteratorIterator(
-                new RecursiveDirectoryIterator($base, FilesystemIterator::SKIP_DOTS),
-                RecursiveIteratorIterator::CHILD_FIRST,
-            );
-            foreach ($files as $file) {
-                $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
-            }
-            rmdir($base);
-        }
+        cleanupDirectory($base);
     }
 }
 
