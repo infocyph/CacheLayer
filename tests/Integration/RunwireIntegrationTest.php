@@ -172,3 +172,39 @@ it('restores the normal path after the shared Runwire runtime is released', func
         ->and(memoize($loader))->toBe(1)
         ->and($runs)->toBe(1);
 });
+
+
+it('replaces runtime bindings without retaining a previous worker request scope', function (): void {
+    $firstRuntime = cacheLayerRunwireContext(concurrent: true);
+    $secondRuntime = RuntimeContext::fromCapabilities(
+        new RuntimeCapabilities(
+            driver: RuntimeDriver::NATIVE,
+            persistentProcess: true,
+            persistentApplication: true,
+            runwireLoopAvailable: true,
+            supportsRunwireCoroutines: true,
+        ),
+        'cachelayer-replacement-test',
+        workerSlot: 1,
+        generation: 2,
+        concurrent: true,
+    );
+    $oldRequest = RequestContext::create($firstRuntime);
+
+    RunwireIntegration::bind($firstRuntime);
+    RunwireIntegration::share(
+        $oldRequest,
+        null,
+        static fn(): int => memoize(static fn(): int => 1),
+    );
+    RunwireIntegration::bind($secondRuntime);
+
+    expect(RunwireIntegration::runtime())->toBe($secondRuntime)
+        ->and(RunwireIntegration::current())->toBeNull();
+
+    expect(fn(): mixed => RunwireIntegration::share(
+        $oldRequest,
+        null,
+        static fn(): string => 'stale',
+    ))->toThrow(LogicException::class, 'different runtime');
+});
