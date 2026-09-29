@@ -486,3 +486,51 @@ test('recovery keeps its cursor when the required clear returns false', function
         ->and($cursor->current())->toBe('1')
         ->and(array_keys($adapter->rejectedOperations))->toBe(['clear']);
 });
+
+
+test('recovery clears stale local state when retained invalidation history disappears completely', function () {
+    $this->transport->publish(
+        InvalidationEvent::key('test-cluster', 'application', 'first', 'writer'),
+    );
+    expect($this->nodeB->consume())->toBe(1);
+
+    $this->nodeB->cache()->set('stale-after-loss', 'value', 300);
+    $this->transport->publish(
+        InvalidationEvent::key('test-cluster', 'application', 'stale-after-loss', 'writer'),
+    );
+    $this->transport->discardBefore('test-cluster', PHP_INT_MAX);
+
+    expect($this->nodeB->recoverIfRequired())->toBeTrue()
+        ->and($this->nodeB->cache()->get('stale-after-loss'))->toBeNull()
+        ->and($this->nodeB->status()->cursor)->toBeNull()
+        ->and($this->nodeB->recoverIfRequired())->toBeFalse();
+});
+
+test('recovery clears and replays when a recreated transport restarts behind the stored cursor', function () {
+    $this->transport->publish(
+        InvalidationEvent::key('test-cluster', 'application', 'one', 'writer'),
+    );
+    $this->transport->publish(
+        InvalidationEvent::key('test-cluster', 'application', 'two', 'writer'),
+    );
+    expect($this->nodeB->consume(2))->toBe(2)
+        ->and($this->nodeB->status()->cursor)->toBe('2');
+
+    $this->nodeB->cache()->set('reset-key', 'stale', 300);
+
+    $replacementTransport = new InMemoryInvalidationTransport();
+    $replacementTransport->publish(
+        InvalidationEvent::key('test-cluster', 'application', 'reset-key', 'writer'),
+    );
+    $replacementRuntime = ClusterCache::create(
+        $this->nodeConfigB,
+        $this->clusterConfigB,
+        $replacementTransport,
+    );
+
+    expect($replacementRuntime->recoverIfRequired())->toBeTrue()
+        ->and($replacementRuntime->cache()->get('reset-key'))->toBeNull()
+        ->and($replacementRuntime->status()->cursor)->toBeNull()
+        ->and($replacementRuntime->consume())->toBe(1)
+        ->and($replacementRuntime->status()->cursor)->toBe('1');
+});
