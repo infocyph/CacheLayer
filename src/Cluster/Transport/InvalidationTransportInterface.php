@@ -13,6 +13,8 @@ interface InvalidationTransportInterface
 
     public function isCursorBefore(string $cursor, string $oldestAvailableId): bool;
 
+    public function newestAvailableId(string $cluster): ?string;
+
     public function oldestAvailableId(string $cluster): ?string;
 
     public function publish(InvalidationEvent $event): string;
