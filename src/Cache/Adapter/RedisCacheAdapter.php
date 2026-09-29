@@ -186,13 +186,15 @@ LUA;
 
     public function clear(): bool
     {
-        $cursor = null;
-        do {
-            $keys = $this->redis->scan($cursor, $this->ns . ':*', 1000);
-            if ($keys) {
-                $this->redis->del($keys);
-            }
-        } while ($cursor);
+        foreach ([$this->ns . ':d:*', $this->ns . ':m:*'] as $pattern) {
+            $cursor = null;
+            do {
+                $keys = $this->redis->scan($cursor, $pattern, 1000);
+                if ($keys) {
+                    $this->redis->del($keys);
+                }
+            } while ($cursor);
+        }
         $this->deferred = [];
 
         return true;
@@ -235,7 +237,7 @@ LUA;
             if ($record !== null) {
                 return $this->genericItemFromRecord($key, $record);
             }
-            $this->redis->del($this->map($key));
+            RedisValueGuard::deleteIfUnchanged($this->redis, $this->map($key), $raw);
         }
 
         return $this->genericMiss($key);
