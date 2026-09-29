@@ -179,3 +179,18 @@ test('shared memory atomic claim has one winner under process contention', funct
 
     $cache->clear();
 });
+
+
+test('shared memory atomic consume discards deferred overlays without resurrection', function () {
+    $cache = Cache::sharedMemory('shm-deferred-consume');
+    $atomic = $cache->atomic();
+    expect($atomic)->not->toBeNull()
+        ->and($cache->set('state', 'stored'))->toBeTrue()
+        ->and($cache->saveDeferred($cache->getItem('state')->set('pending')))->toBeTrue()
+        ->and($atomic->getAndDelete('state', 'missing'))->toBe('stored')
+        ->and($atomic->getAndDelete('state', 'missing'))->toBe('missing')
+        ->and($cache->commit())->toBeTrue()
+        ->and($cache->get('state'))->toBeNull();
+
+    $cache->clear();
+});
