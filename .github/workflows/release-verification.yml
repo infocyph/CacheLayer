@@ -89,6 +89,12 @@ jobs:
       - name: Run Runwire integration smoke
         working-directory: tools/release/runwire-consumer
         run: php -d error_reporting=E_ALL smoke.php
+      - name: Run matched Runwire certification workload
+        working-directory: tools/release/runwire-consumer
+        run: php -d error_reporting=E_ALL certify.php
+      - name: Run persistent-worker Runwire soak
+        working-directory: tools/release/runwire-consumer
+        run: php -d error_reporting=E_ALL soak.php
 
   psr-contracts:
     name: Independent PSR-6 / PSR-16 contracts
