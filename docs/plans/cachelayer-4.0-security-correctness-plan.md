@@ -18,7 +18,8 @@ Draft PR: [#29 — CacheLayer 4.0 security and correctness hardening](https://gi
 | 3 — Durable invalidation protocol | R06, R07 | **Complete** | Implemented and verified on exact commit `3046e91fdc64bd2f1c9e8bd56a6d3dfc96057b7e`; Security & Standards run #240 passed. |
 | 4 — Cache contracts and memoization | R08, R11, R12, R13, R16, R17 | **Complete** | Implemented and verified on exact commit `02078be9e29876fd74d8cbd2fa6947e247cb8bc1`; Security & Standards run #312 passed. |
 | 5 — Counters and backend races | R14 plus race review | **Complete** | Implemented and verified on exact commit `d2f0bbb356690a8acb8d9fd9532822c453f953ee`; Security & Standards run #352 passed. |
-| 6 — Release gates and integration | R19 plus core release acceptance | **Complete** | Exact implementation head `9219b25a56a6c459b6a3c001c36e4b9564fddd2a` passed Security & Standards run #406 and Release Verification run #46. |\n| 7 — Runwire 2.1 integration | Required runtime integration workstream | **In progress** | Maintainer decision: Runwire 2.1 integration is required for 4.0. Complete automatic capability selection, lifecycle/coherence behavior, executable integration evidence, and exact-revision QA before release-ready status is restored. |
+| 6 — Release gates and integration | R19 plus core release acceptance | **Complete** | Exact implementation head `9219b25a56a6c459b6a3c001c36e4b9564fddd2a` passed Security & Standards run #406 and Release Verification run #46. |
+| 7 — Runwire 2.1 integration | Required runtime integration workstream | **In progress** | Maintainer decision: Runwire 2.1 integration is required for 4.0. Complete automatic capability selection, lifecycle/coherence behavior, executable integration evidence, and exact-revision QA before release-ready status is restored. |
 
 ### Batch 1 tracker
 
@@ -367,13 +368,13 @@ Batches 1-6 are complete. Batch 7, Runwire 2.1 integration, is now required and 
 | 7B — Worker-owned background integration | Bounded cluster invalidation polling and Node maintenance inside the host-provided task scope; no worker/loop ownership | **Complete** | Exact head `abae64c585998bc56327ab5792fef39f881ed875` passed Security & Standards #433 and Release Verification #73. Worker-owned cancellation/drain, bounded polling, maintenance cycles, capability fallback, and normal-path behavior are covered. |
 | 7C — Consumer/docs/release integration | Executable example, optional consumer dependency, topology docs, PHP 8.4/8.5 integration matrix | **In progress** | Add executable consumer evidence and operational documentation, then run exact-head Security & Standards + Release Verification. |
 
-## Optional Runwire 2.1 integration workstream
+## Runwire 2.1 integration workstream (required release scope; optional dependency)
 
 ### Scope and dependency decision
 
 The assessment inspected local Runwire tag `2.1` (`e6a954df1ec90aef98daf8248bd02f741f9324e3`). This establishes available APIs and platform requirements, not successful CacheLayer integration or a measured throughput benefit. Worker supervision, structured coroutines, and lifecycle support already existed before 2.1; the principal 2.1 additions concern adaptive HTTP scheduling.
 
-Runwire requires 64-bit PHP 8.4+, matching CacheLayer 4.0's minimum PHP version. If selected, implement the smallest integration needed for automatic capability selection, with an executable example and an isolated integration-test Composer environment using `infocyph/runwire:^2.1`. Do not add Runwire to core `require`; keep it an optional integration. Add a Composer suggestion only when usable integration documentation exists. Introduce a separate optional package or adapter only if tested consumers demonstrate substantial reusable behavior beyond the example; do not introduce a generic runtime abstraction speculatively.
+Runwire requires 64-bit PHP 8.4+, matching CacheLayer 4.0's minimum PHP version. The 4.0 release implements the smallest integration needed for automatic capability selection, with an executable example and an isolated integration-test Composer environment using `infocyph/runwire:^2.1`. Do not add Runwire to core `require`; it remains an optional consumer dependency even though this integration is required 4.0 release scope. Add a Composer suggestion only with usable integration documentation. Introduce a separate optional package or adapter only if tested consumers demonstrate substantial reusable behavior beyond the shipped bridge; do not introduce a generic runtime abstraction speculatively.
 
 The core must remain usable without Runwire installed, including ordinary PHP-FPM execution. No supervisor, listener, timer, connection, or worker may start during autoload or cache construction. A host that already owns its process pool retains that ownership. The 4.0 major-version decision does not change these dependency and runtime boundaries.
 
