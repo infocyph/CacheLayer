@@ -396,3 +396,15 @@ test('redis cluster generation repair fails closed without overwriting unexpecte
     expect($this->cache->get('generation-race'))->toBeNull()
         ->and($this->cluster->get($generation))->toBe('malformed-generation');
 });
+
+
+test('redis cluster atomic consume discards deferred overlays without resurrection', function () {
+    $atomic = $this->cache->atomic();
+    expect($atomic)->not->toBeNull()
+        ->and($this->cache->set('deferred-consume', 'stored'))->toBeTrue()
+        ->and($this->cache->saveDeferred($this->cache->getItem('deferred-consume')->set('pending')))->toBeTrue()
+        ->and($atomic->getAndDelete('deferred-consume', 'missing'))->toBe('stored')
+        ->and($atomic->getAndDelete('deferred-consume', 'missing'))->toBe('missing')
+        ->and($this->cache->commit())->toBeTrue()
+        ->and($this->cache->get('deferred-consume'))->toBeNull();
+});
