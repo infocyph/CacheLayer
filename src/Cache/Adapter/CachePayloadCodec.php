@@ -128,6 +128,12 @@ final readonly class CachePayloadCodec
         return $encoded;
     }
 
+    /** @phpstan-assert-if-true =string $value */
+    private static function isGeneration(mixed $value): bool
+    {
+        return is_string($value) && strlen($value) === 32 && ctype_xdigit($value);
+    }
+
     private function assertNativeValueSupported(mixed $value): void
     {
         if ($value instanceof Closure) {
@@ -281,10 +287,7 @@ final readonly class CachePayloadCodec
             return null;
         }
         $namespaceGeneration = $decoded['namespace'] ?? null;
-        if ($namespaceGeneration !== null
-            && (!is_string($namespaceGeneration)
-                || strlen($namespaceGeneration) !== 32
-                || !ctype_xdigit($namespaceGeneration))) {
+        if ($namespaceGeneration !== null && !self::isGeneration($namespaceGeneration)) {
             return null;
         }
 
@@ -294,9 +297,7 @@ final readonly class CachePayloadCodec
         }
 
         foreach ($tags as $generation) {
-            if (!is_string($generation)
-                || strlen($generation) !== 32
-                || !ctype_xdigit($generation)) {
+            if (!self::isGeneration($generation)) {
                 return null;
             }
         }

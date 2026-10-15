@@ -245,6 +245,19 @@ Runwire keeps ownership of listeners, workers, supervisors, and event loops. `Ru
 
 Concurrent persistent Runwire requests receive request-owned memoizer state. If a concurrent runtime is bound without a shared request scope, memoization helpers bypass the process-global cache rather than risk cross-request leakage. See `docs/runwire.rst` and the executable `examples/runwire-invalidation-worker.php`.
 
+A framework can also pass its runtime for one request/task without a global bind:
+
+```php
+RunwireIntegration::share($request, $scope, function () {
+    // Normal cache and memoization operations use this task's context.
+}, $runtime);
+```
+
+The fourth argument is optional. `runtime()` and capability checks reflect the
+current task while the callback runs; nested sharing and exceptions restore the
+previous context. This borrowing does not bind, release or replace the host's
+global runtime. Concurrent requests receive separate memoizers.
+
 ## Atomic counters and memoization
 
 `AtomicCounters` uses an `AtomicCounterStoreInterface`; Redis/Valkey is the distributed implementation. Counters are never emulated with cache `get()` plus `set()`. They live in a dedicated `cachelayer:counter:<namespace>:` keyspace, so ordinary cache `clear()` does not reset them, and the Lua update returns an exact decimal string before PHP range validation. Atomic counters are separate from `Cache::atomic()`: counters mutate numeric state, while the cache capability provides conditional claim/replace/consume primitives for encoded cache records.

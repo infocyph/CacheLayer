@@ -195,26 +195,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
                 continue;
             }
 
-            $candidate = self::newGeneration();
-
-            try {
-                $this->collection->updateOne(
-                    ['_id' => $this->mapTag($tag)],
-                    [
-                        '$setOnInsert' => [
-                            'ns' => $this->ns,
-                            'kind' => 'metadata',
-                            'tag' => $tag,
-                            'generation' => $candidate,
-                        ],
-                    ],
-                    ['upsert' => true],
-                );
-            } catch (Throwable $failure) {
-                if (!$this->isDuplicateKeyFailure($failure)) {
-                    throw $failure;
-                }
-            }
+            $this->initializeTagGeneration($tag);
         }
 
         $actual = $this->readTagGenerations($tags);
@@ -247,9 +228,10 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         $byId = [];
         foreach ($documents as $document) {
             $row = AdapterValueNormalizer::fromJsonOrArrayLike($document);
-            if (is_array($row) && is_string($row['_id'] ?? null)) {
-                $byId[$row['_id']] = $row;
+            if (!is_string($row['_id'] ?? null)) {
+                continue;
             }
+            $byId[$row['_id']] = $row;
         }
 
         $items = [];
@@ -282,8 +264,8 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         $generations = [];
         foreach ($documents as $document) {
             $row = AdapterValueNormalizer::fromJsonOrArrayLike($document);
-            $tag = is_array($row) ? ($row['tag'] ?? null) : null;
-            $generation = is_array($row) ? self::normalizeGeneration($row['generation'] ?? null) : null;
+            $tag = $row['tag'] ?? null;
+            $generation = self::normalizeGeneration($row['generation'] ?? null);
             if (is_string($tag) && $generation !== null) {
                 $generations[$tag] = $generation;
             }
@@ -406,13 +388,12 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         if (is_string($value)) {
             return $value;
         }
-        if (is_object($value) && is_callable([$value, 'getData'])) {
-            $data = $value->getData();
-
-            return is_string($data) ? $data : null;
+        if (!is_object($value) || !is_callable([$value, 'getData'])) {
+            return null;
         }
+        $data = $value->getData();
 
-        return null;
+        return is_string($data) ? $data : null;
     }
 
     private function binaryValue(string $value): mixed
@@ -422,6 +403,30 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         }
 
         return $value;
+    }
+
+    private function initializeTagGeneration(string $tag): void
+    {
+        $candidate = self::newGeneration();
+
+        try {
+            $this->collection->updateOne(
+                ['_id' => $this->mapTag($tag)],
+                [
+                    '$setOnInsert' => [
+                        'ns' => $this->ns,
+                        'kind' => 'metadata',
+                        'tag' => $tag,
+                        'generation' => $candidate,
+                    ],
+                ],
+                ['upsert' => true],
+            );
+        } catch (Throwable $failure) {
+            if (!$this->isDuplicateKeyFailure($failure)) {
+                throw $failure;
+            }
+        }
     }
 
     private function isDuplicateKeyFailure(Throwable $failure): bool

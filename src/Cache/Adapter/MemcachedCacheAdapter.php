@@ -259,17 +259,15 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         foreach ($keys as $key) {
             $mapped = $this->mapData($key);
             $blob = $stored[$mapped] ?? null;
-            if ($blob === self::ATOMIC_TOMBSTONE) {
+            if (!is_string($blob) || $blob === self::ATOMIC_TOMBSTONE) {
                 $items[$key] = $this->genericMiss($key);
 
                 continue;
             }
-            $record = is_string($blob) ? $this->decodeRecordFromBlob($blob, $key) : null;
+            $record = $this->decodeRecordFromBlob($blob, $key);
             if ($record === null || $record->namespaceGeneration !== $generation) {
                 $items[$key] = $this->genericMiss($key);
-                if (is_string($blob)) {
-                    $stale[] = [$mapped, $blob];
-                }
+                $stale[] = [$mapped, $blob];
 
                 continue;
             }

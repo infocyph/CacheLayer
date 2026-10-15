@@ -56,9 +56,11 @@ if (!function_exists('once')) {
     {
         $memoizer = RunwireIntegration::onceMemoizer();
 
-        return $memoizer === null
-            ? $callback()
-            : $memoizer->once($callback, 1);
+        if ($memoizer === null) {
+            return $callback();
+        }
+
+        return $memoizer->once($callback, 1);
     }
 }
 

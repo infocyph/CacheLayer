@@ -242,3 +242,19 @@ it('flushing an isolated memoizer does not invalidate another memoizer identity 
     expect($first->get($callback))->toBe(1)
         ->and($runs)->toBe(1);
 });
+
+
+it('once() caches null results without repeating callback side effects', function () {
+    $runs = 0;
+    $callback = static function () use (&$runs): mixed {
+        $runs++;
+
+        return null;
+    };
+
+    for ($attempt = 0; $attempt < 3; $attempt++) {
+        expect(once($callback))->toBeNull();
+    }
+
+    expect($runs)->toBe(1);
+});

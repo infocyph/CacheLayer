@@ -296,21 +296,19 @@ LUA;
         $stale = [];
         foreach ($keys as $idx => $k) {
             $v = $rawVals[$idx] ?? null;
-            if ($v !== null && $v !== false) {
-                if (!is_string($v)) {
-                    $items[$k] = new CacheItem($this, $k);
+            if (!is_string($v)) {
+                $items[$k] = new CacheItem($this, $k);
 
-                    continue;
-                }
-
-                $record = $this->decodeRecordFromBlob($v, $k);
-                if ($record !== null) {
-                    $items[$k] = $this->genericItemFromRecord($k, $record);
-
-                    continue;
-                }
-                $stale[] = [$this->map($k), $v];
+                continue;
             }
+
+            $record = $this->decodeRecordFromBlob($v, $k);
+            if ($record !== null) {
+                $items[$k] = $this->genericItemFromRecord($k, $record);
+
+                continue;
+            }
+            $stale[] = [$this->map($k), $v];
             $items[$k] = new CacheItem($this, $k);
         }
 

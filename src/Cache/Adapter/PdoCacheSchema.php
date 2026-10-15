@@ -41,6 +41,21 @@ final class PdoCacheSchema
             self::hardenMysqlIdentityColumns($pdo, $table);
         }
 
+        self::installExpiryIndex($pdo, $table, $driver);
+    }
+
+    private static function hardenMysqlIdentityColumns(PDO $pdo, string $table): void
+    {
+        $pdo->exec(
+            "ALTER TABLE {$table} "
+            . 'MODIFY namespace VARCHAR(191) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, '
+            . 'MODIFY kind VARCHAR(191) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, '
+            . 'MODIFY cache_key VARCHAR(191) CHARACTER SET ascii COLLATE ascii_bin NOT NULL',
+        );
+    }
+
+    private static function installExpiryIndex(PDO $pdo, string $table, string $driver): void
+    {
         $index = $table . '_expires_idx';
 
         if (in_array($driver, ['mysql', 'mariadb'], true)) {
@@ -57,16 +72,6 @@ final class PdoCacheSchema
         }
 
         $pdo->exec("CREATE INDEX IF NOT EXISTS {$index} ON {$table}(namespace, kind, expires)");
-    }
-
-    private static function hardenMysqlIdentityColumns(PDO $pdo, string $table): void
-    {
-        $pdo->exec(
-            "ALTER TABLE {$table} "
-            . 'MODIFY namespace VARCHAR(191) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, '
-            . 'MODIFY kind VARCHAR(191) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, '
-            . 'MODIFY cache_key VARCHAR(191) CHARACTER SET ascii COLLATE ascii_bin NOT NULL',
-        );
     }
 
     private static function mysqlIdentityColumnsAreBinary(PDO $pdo, string $table): bool
