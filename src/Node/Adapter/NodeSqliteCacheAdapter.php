@@ -340,12 +340,12 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
         try {
             $this->connection->beginTransaction();
             $this->ownsTransaction = true;
-            if ($expired !== [] && !$this->deleteItems($expired)) {
+            if (!$this->deleteItems($expired)) {
                 $this->rollBack();
 
                 return false;
             }
-            if ($rows !== [] && !$this->upsertRows($rows)) {
+            if (!$this->upsertRows($rows)) {
                 $this->rollBack();
 
                 return false;

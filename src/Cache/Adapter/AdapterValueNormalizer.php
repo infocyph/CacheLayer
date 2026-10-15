@@ -72,6 +72,15 @@ final class AdapterValueNormalizer
         return $out;
     }
 
+    public static function pdoPayload(mixed $value): ?string
+    {
+        if (is_resource($value)) {
+            $value = stream_get_contents($value);
+        }
+
+        return is_string($value) ? $value : null;
+    }
+
     /**
      * @phpstan-return array<string, mixed>|null
      * @param object $value The value argument.

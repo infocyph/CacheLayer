@@ -544,11 +544,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
             $generations = $this->captureTagGenerations($tags);
             $this->metric('remember_unlocked_compute');
             $value = $resolver();
-            if ($generations !== null && $this->tagGenerationsUnchanged($generations)) {
-                $this->storeResolved($key, $value, $ttl, $generations);
-            } elseif ($tags !== []) {
-                $this->metric('remember_discarded_after_tag_change');
-            }
+            $this->storeRemembered($key, $value, $ttl, $generations, $tags !== []);
 
             return $value;
         }
@@ -573,14 +569,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
 
                 return $value;
             }
-            if ($generations === null || !$this->tagGenerationsUnchanged($generations)) {
-                if ($tags !== []) {
-                    $this->metric('remember_discarded_after_tag_change');
-                }
-
-                return $value;
-            }
-            $this->storeResolved($key, $value, $ttl, $generations);
+            $this->storeRemembered($key, $value, $ttl, $generations, $tags !== []);
 
             return $value;
         } finally {
@@ -856,6 +845,24 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
     private function stampedeLockKey(string $key): string
     {
         return 'cachelayer:remember:' . hash('xxh128', $this->namespace . "\0" . $key);
+    }
+
+    /** @param array<string, string>|null $generations */
+    private function storeRemembered(
+        string $key,
+        mixed $value,
+        ?int $ttl,
+        ?array $generations,
+        bool $tagged,
+    ): void {
+        if ($generations !== null && $this->tagGenerationsUnchanged($generations)) {
+            $this->storeResolved($key, $value, $ttl, $generations);
+
+            return;
+        }
+        if ($tagged) {
+            $this->metric('remember_discarded_after_tag_change');
+        }
     }
 
     /** @param array<string, string> $generations */

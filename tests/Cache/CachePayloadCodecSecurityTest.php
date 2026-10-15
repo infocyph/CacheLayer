@@ -217,3 +217,39 @@ test('accepted value depth round-trips through the complete record envelope', fu
     expect(fn() => $codec->encode($value, null))->toThrow(InvalidArgumentException::class, 'nesting depth')
         ->and(fn() => $cache->set('nested', $value))->toThrow(\Infocyph\CacheLayer\Exceptions\CacheBackendException::class);
 })->with([false, true])->with([false, true])->with([127, 128, 129])->with(['scalar leaf' => ['leaf'], 'empty array leaf' => [[]]]);
+
+
+test('payload codec rejects malformed namespace and tag generations', function (mixed $invalid) {
+    $codec = new CachePayloadCodec();
+    $record = [
+        'format' => 2,
+        'encoding' => 'native',
+        'value' => null,
+        'expires' => null,
+        'tags' => [],
+        'namespace' => null,
+    ];
+
+    expect($codec->decode('cl2:' . serialize(array_replace($record, ['namespace' => $invalid]))))
+        ->toBeNull()
+        ->and($codec->decode('cl2:' . serialize(array_replace($record, ['tags' => ['group' => $invalid]]))))
+        ->toBeNull();
+})->with([
+    'empty' => [''],
+    'short hex' => [str_repeat('a', 31)],
+    'long hex' => [str_repeat('a', 33)],
+    'non-hex' => [str_repeat('z', 32)],
+    'integer' => [123],
+    'array' => [[]],
+]);
+
+test('payload codec preserves valid uppercase generations and null values', function () {
+    $codec = new CachePayloadCodec();
+    $generation = str_repeat('AB', 16);
+    $record = $codec->decode($codec->encode(null, null, ['group' => $generation], $generation));
+
+    expect($record)->not->toBeNull()
+        ->and($record->value)->toBeNull()
+        ->and($record->namespaceGeneration)->toBe($generation)
+        ->and($record->tags)->toBe(['group' => $generation]);
+});

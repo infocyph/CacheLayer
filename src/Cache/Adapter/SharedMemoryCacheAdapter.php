@@ -89,24 +89,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
 
         $mapped = $this->map($key);
 
-        return $this->withExclusiveLock(function () use ($key, $mapped): CacheItemInterface {
-            $store = $this->loadStore();
-            $blob = $store[$mapped] ?? null;
-            if (!is_string($blob)) {
-                return $this->genericMiss($key);
-            }
-
-            $record = $this->decodeRecordFromBlob($blob, $key);
-            unset($store[$mapped]);
-            if (!$this->store($store)) {
-                throw new RuntimeException('Unable to persist shared-memory atomic consume.');
-            }
-            if (!$record instanceof CacheRecord || !$this->recordTagsAreCurrent($record, $store)) {
-                return $this->genericMiss($key);
-            }
-
-            return $this->genericItemFromRecord($key, $record);
-        });
+        return $this->withExclusiveLock(fn(): CacheItemInterface => $this->consumeRecord($key, $mapped));
     }
 
     public function atomicSetIfAbsent(CacheItemInterface $item): bool
@@ -173,14 +156,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
             $mappedKeys[] = $this->map($key);
         }
 
-        return $this->withExclusiveLock(function () use ($mappedKeys): bool {
-            $store = $this->loadStore();
-            foreach ($mappedKeys as $mapped) {
-                unset($store[$mapped]);
-            }
-
-            return $this->store($store);
-        });
+        return $this->withExclusiveLock(fn(): bool => $this->updateStore([], $mappedKeys));
     }
 
     public function getItem(string $key): CacheItem
@@ -208,26 +184,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
     #[\Override]
     public function getTagGenerations(array $tags): array
     {
-        return $this->withExclusiveLock(function () use ($tags): array {
-            $store = $this->loadStore();
-            $generations = [];
-            $changed = false;
-            foreach ($tags as $tag) {
-                $mapped = $this->mapTag($tag);
-                $generation = self::normalizeGeneration($store[$mapped] ?? null);
-                if ($generation === null) {
-                    $generation = self::newGeneration();
-                    $store[$mapped] = $generation;
-                    $changed = true;
-                }
-                $generations[$tag] = $generation;
-            }
-            if ($changed && !$this->store($store)) {
-                throw new RuntimeException('Unable to initialize shared-memory tag generations.');
-            }
-
-            return $generations;
-        });
+        return $this->withExclusiveLock(fn(): array => $this->initializeTagGenerations($tags));
     }
 
     public function hasItem(string $key): bool
@@ -241,20 +198,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
      */
     public function multiFetch(array $keys): array
     {
-        return $this->withSharedLock(function () use ($keys): array {
-            $store = $this->loadStore();
-            $items = [];
-            foreach ($keys as $key) {
-                $mapped = $this->map($key);
-                $blob = $store[$mapped] ?? null;
-                $record = is_string($blob) ? $this->decodeRecordFromBlob($blob, $key) : null;
-                $items[$key] = $record === null
-                    ? $this->genericMiss($key)
-                    : $this->genericItemFromRecord($key, $record);
-            }
-
-            return $items;
-        });
+        return $this->withSharedLock(fn(): array => $this->fetchStoredItems($keys));
     }
 
     /** @param list<string> $tags */
@@ -320,17 +264,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
             $records[$this->map($item->getKey())] = $this->encodeItem($item, $expiration['expiresAt']);
         }
 
-        return $this->withExclusiveLock(function () use ($records, $expired): bool {
-            $store = $this->loadStore();
-            foreach ($expired as $key) {
-                unset($store[$key]);
-            }
-            foreach ($records as $key => $blob) {
-                $store[$key] = $blob;
-            }
-
-            return $this->store($store);
-        });
+        return $this->withExclusiveLock(fn(): bool => $this->updateStore($records, $expired));
     }
 
     /** @param array<string, string> $generations */
@@ -384,6 +318,26 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
             : null;
     }
 
+    private function consumeRecord(string $key, string $mapped): CacheItemInterface
+    {
+        $store = $this->loadStore();
+        $blob = $store[$mapped] ?? null;
+        if (!is_string($blob)) {
+            return $this->genericMiss($key);
+        }
+
+        $record = $this->decodeRecordFromBlob($blob, $key);
+        unset($store[$mapped]);
+        if (!$this->store($store)) {
+            throw new RuntimeException('Unable to persist shared-memory atomic consume.');
+        }
+        if (!$record instanceof CacheRecord || !$this->recordTagsAreCurrent($record, $store)) {
+            return $this->genericMiss($key);
+        }
+
+        return $this->genericItemFromRecord($key, $record);
+    }
+
     private function createTokenFile(): string
     {
         $directory = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR)
@@ -409,6 +363,52 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         }
 
         return $tokenFile;
+    }
+
+    /**
+     * @param list<string> $keys
+     * @return array<string, CacheItem>
+     */
+    private function fetchStoredItems(array $keys): array
+    {
+        $store = $this->loadStore();
+        $items = [];
+        foreach ($keys as $key) {
+            $mapped = $this->map($key);
+            $blob = $store[$mapped] ?? null;
+            $record = is_string($blob) ? $this->decodeRecordFromBlob($blob, $key) : null;
+            $items[$key] = $record === null
+                ? $this->genericMiss($key)
+                : $this->genericItemFromRecord($key, $record);
+        }
+
+        return $items;
+    }
+
+    /**
+     * @param list<string> $tags
+     * @return array<string, string>
+     */
+    private function initializeTagGenerations(array $tags): array
+    {
+        $store = $this->loadStore();
+        $generations = [];
+        $changed = false;
+        foreach ($tags as $tag) {
+            $mapped = $this->mapTag($tag);
+            $generation = self::normalizeGeneration($store[$mapped] ?? null);
+            if ($generation === null) {
+                $generation = self::newGeneration();
+                $store[$mapped] = $generation;
+                $changed = true;
+            }
+            $generations[$tag] = $generation;
+        }
+        if ($changed && !$this->store($store)) {
+            throw new RuntimeException('Unable to initialize shared-memory tag generations.');
+        }
+
+        return $generations;
     }
 
     /**
@@ -500,6 +500,23 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
     private function store(array $store): bool
     {
         return shm_put_var($this->segment, self::VAR_ID, $store);
+    }
+
+    /**
+     * @param array<string, string> $records
+     * @param list<string> $expired
+     */
+    private function updateStore(array $records, array $expired): bool
+    {
+        $store = $this->loadStore();
+        foreach ($expired as $key) {
+            unset($store[$key]);
+        }
+        foreach ($records as $key => $blob) {
+            $store[$key] = $blob;
+        }
+
+        return $this->store($store);
     }
 
     /**

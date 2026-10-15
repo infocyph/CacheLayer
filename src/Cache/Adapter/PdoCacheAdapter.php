@@ -318,21 +318,8 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
                 . "WHERE namespace = ? AND kind = ? AND cache_key IN ({$marks})",
             );
             $statement->execute([$this->namespace, $kind, ...$chunk]);
-            foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
-                if (!is_array($row) || !is_string($row['cache_key'] ?? null)) {
-                    continue;
-                }
-                $payload = $row['payload'] ?? null;
-                if (is_resource($payload)) {
-                    $payload = stream_get_contents($payload);
-                }
-                if (!is_string($payload)) {
-                    continue;
-                }
-                $rows[$row['cache_key']] = [
-                    'payload' => $payload,
-                    'expires' => is_numeric($row['expires'] ?? null) ? (int) $row['expires'] : null,
-                ];
+            foreach ($this->normalizeRows($statement->fetchAll(PDO::FETCH_ASSOC)) as $key => $row) {
+                $rows[$key] = $row;
             }
         }
 
@@ -349,6 +336,30 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         $record = $this->decodeRecordFromBlob($row['payload'], $key);
 
         return $record === null ? null : $this->genericItemFromRecord($key, $record);
+    }
+
+    /**
+     * @param array<mixed> $records
+     * @return array<string, array{payload:string, expires:int|null}>
+     */
+    private function normalizeRows(array $records): array
+    {
+        $rows = [];
+        foreach ($records as $row) {
+            if (!is_array($row) || !is_string($row['cache_key'] ?? null)) {
+                continue;
+            }
+            $payload = AdapterValueNormalizer::pdoPayload($row['payload'] ?? null);
+            if (!is_string($payload)) {
+                continue;
+            }
+            $rows[$row['cache_key']] = [
+                'payload' => $payload,
+                'expires' => is_numeric($row['expires'] ?? null) ? (int) $row['expires'] : null,
+            ];
+        }
+
+        return $rows;
     }
 
     /** @param list<array{0:string, 1:string, 2:string, 3:int|null}> $rows */

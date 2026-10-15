@@ -83,10 +83,7 @@ final class PdoTagGenerationStore
                 if (!is_array($row) || !is_string($row['cache_key'] ?? null)) {
                     continue;
                 }
-                $payload = $row['payload'] ?? null;
-                if (is_resource($payload)) {
-                    $payload = stream_get_contents($payload);
-                }
+                $payload = AdapterValueNormalizer::pdoPayload($row['payload'] ?? null);
                 if (is_string($payload)) {
                     $stored[$row['cache_key']] = $payload;
                 }

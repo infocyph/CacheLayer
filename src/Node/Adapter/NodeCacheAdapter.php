@@ -323,6 +323,19 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         }
     }
 
+    private function copyItemTo(InternalCachePoolInterface $pool, CacheItemInterface $item): CacheItemInterface
+    {
+        $target = $pool->createItem($item->getKey())->set($item->get());
+        if ($item instanceof CacheItem) {
+            $target->expiresAfter($item->ttlSeconds());
+            if ($target instanceof CacheItem) {
+                $target->setTagGenerations($item->getTagGenerations());
+            }
+        }
+
+        return $target;
+    }
+
     private function disableL1(): void
     {
         if (!$this->l1Readable) {
@@ -383,9 +396,10 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
             $item = $l1Items[$key] ?? null;
             if ($item instanceof CacheItemInterface && $item->isHit()) {
                 $results[$key] = $this->nodeItem($item);
-            } else {
-                $misses[] = $key;
+
+                continue;
             }
+            $misses[] = $key;
         }
         $this->metric('l1_batch_hit', count($keys) - count($misses));
         $this->metric('l1_batch_miss', count($misses));
@@ -437,14 +451,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         $targets = [];
         foreach ($items as $item) {
             $key = $item->getKey();
-            $target = $pool->createItem($key)->set($item->get());
-            if ($item instanceof CacheItem) {
-                $target->expiresAfter($item->ttlSeconds());
-                if ($target instanceof CacheItem) {
-                    $target->setTagGenerations($item->getTagGenerations());
-                }
-            }
-            $targets[$key] = $target;
+            $targets[$key] = $this->copyItemTo($pool, $item);
         }
 
         return $this->attempt(fn(): bool => $pool->saveItems($targets), false, $failureMetric);
@@ -455,13 +462,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         CacheItemInterface $item,
         string $failureMetric,
     ): bool {
-        $target = $pool->createItem($item->getKey())->set($item->get());
-        if ($item instanceof CacheItem) {
-            $target->expiresAfter($item->ttlSeconds());
-            if ($target instanceof CacheItem) {
-                $target->setTagGenerations($item->getTagGenerations());
-            }
-        }
+        $target = $this->copyItemTo($pool, $item);
 
         return $this->attempt(fn(): bool => $pool->save($target), false, $failureMetric);
     }

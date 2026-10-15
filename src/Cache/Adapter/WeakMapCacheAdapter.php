@@ -177,8 +177,7 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         $staleScalar = [];
         foreach ($keys as $key) {
             $mapped = $this->map($key);
-            $reference = $this->weakRefs[$mapped] ?? null;
-            $object = $reference instanceof WeakReference ? $reference->get() : null;
+            $object = ($this->weakRefs[$mapped] ?? null)?->get();
             $expiresAt = $this->weakExpires[$mapped] ?? null;
             if (is_object($object) && !CachePayloadCodec::isExpired($expiresAt)) {
                 $items[$key] = new CacheItem(
