@@ -267,3 +267,64 @@ it('flushing one Runwire request does not change another live request memoizer i
 
     expect($result)->toBe([1, 1, 1]);
 });
+
+it('borrows an explicit runtime without global binding and restores nested task contexts', function (): void {
+    $runtime = \Infocyph\Runwire\RuntimeContext::standalone();
+    $request = \Infocyph\Runwire\RequestContext::create($runtime);
+    $nested = \Infocyph\Runwire\RequestContext::create($runtime);
+    $before = \Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration::runtime();
+    try {
+        \Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration::share($request, null, static function () use ($runtime, $request, $nested): void {
+            expect(\Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration::runtime())->toBe($runtime)
+                ->and(\Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration::current()?->request)->toBe($request);
+            expect(fn() => \Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration::share($nested, null, static function (): void {
+                throw new RuntimeException('nested failure');
+            }))->toThrow(RuntimeException::class, 'nested failure');
+            expect(\Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration::current()?->request)->toBe($request);
+        }, $runtime);
+        expect(\Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration::runtime())->toBe($before)
+            ->and(\Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration::current())->toBeNull();
+    } finally {
+        $request->complete();
+        $nested->complete();
+    }
+});
+
+it('keeps explicitly passed request scopes separate across overlapping Fibers', function (): void {
+    $runtime = \Infocyph\Runwire\RuntimeContext::standalone();
+    $one = \Infocyph\Runwire\RequestContext::create($runtime);
+    $two = \Infocyph\Runwire\RequestContext::create($runtime);
+    $work = static fn($request) => \Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration::share($request, null, static function () use ($request): object {
+        $memoizer = \Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration::memoizer();
+        Fiber::suspend($memoizer);
+        expect(\Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration::current()?->request)->toBe($request);
+
+        return $request;
+    }, $runtime);
+    $first = new Fiber(static fn() => $work($one));
+    $second = new Fiber(static fn() => $work($two));
+    try {
+        $firstMemoizer = $first->start();
+        $secondMemoizer = $second->start();
+        expect($firstMemoizer)->not->toBe($secondMemoizer);
+        $second->resume();
+        $first->resume();
+        expect($first->getReturn())->toBe($one)
+            ->and($second->getReturn())->toBe($two)
+            ->and(\Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration::current())->toBeNull();
+    } finally {
+        $one->complete();
+        $two->complete();
+    }
+});
+
+it('bypasses global memoizers for an explicitly passed concurrent runtime without a request', function (): void {
+    $runtime = cacheLayerRunwireContext(true, true);
+    RunwireIntegration::share(null, null, static function () use ($runtime): void {
+        expect(RunwireIntegration::runtime())->toBe($runtime)
+            ->and(RunwireIntegration::supports(RuntimeCapability::RUNWIRE_COROUTINES))->toBeTrue()
+            ->and(RunwireIntegration::memoizer())->toBeNull()
+            ->and(RunwireIntegration::onceMemoizer())->toBeNull();
+    }, $runtime);
+    expect(RunwireIntegration::runtime())->toBeNull();
+});

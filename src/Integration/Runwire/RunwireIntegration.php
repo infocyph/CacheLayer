@@ -85,7 +85,8 @@ final class RunwireIntegration
 
     public static function memoizer(): ?Memoizer
     {
-        $request = self::current()?->request;
+        $context = self::current();
+        $request = $context?->request;
         if ($request !== null) {
             $memoizer = $request->attribute(self::MEMOIZER_ATTRIBUTE);
             if ($memoizer instanceof Memoizer) {
@@ -98,7 +99,8 @@ final class RunwireIntegration
             return $memoizer;
         }
 
-        if (self::$runtime?->persistent === true && self::$runtime->concurrent) {
+        $runtime = $context->runtime ?? self::$runtime;
+        if ($runtime?->persistent === true && $runtime->concurrent) {
             return null;
         }
 
@@ -107,7 +109,8 @@ final class RunwireIntegration
 
     public static function onceMemoizer(): ?OnceMemoizer
     {
-        $request = self::current()?->request;
+        $context = self::current();
+        $request = $context?->request;
         if ($request !== null) {
             $memoizer = $request->attribute(self::ONCE_MEMOIZER_ATTRIBUTE);
             if ($memoizer instanceof OnceMemoizer) {
@@ -120,7 +123,8 @@ final class RunwireIntegration
             return $memoizer;
         }
 
-        if (self::$runtime?->persistent === true && self::$runtime->concurrent) {
+        $runtime = $context->runtime ?? self::$runtime;
+        if ($runtime?->persistent === true && $runtime->concurrent) {
             return null;
         }
 
@@ -140,15 +144,17 @@ final class RunwireIntegration
 
     public static function runtime(): ?RuntimeContext
     {
-        return self::$runtime;
+        return self::current()->runtime ?? self::$runtime;
     }
 
+    /** Borrow an explicit host runtime for this callback without global lifecycle ownership. */
     public static function share(
         ?RequestContext $request,
         ?CoroutineScope $scope,
         callable $callback,
+        ?RuntimeContext $runtime = null,
     ): mixed {
-        $runtime = self::$runtime;
+        $runtime ??= self::runtime();
         if ($runtime === null) {
             return $callback();
         }
@@ -207,7 +213,7 @@ final class RunwireIntegration
 
     public static function supports(RuntimeCapability $capability): bool
     {
-        return self::$runtime?->supports($capability) ?? false;
+        return self::runtime()?->supports($capability) ?? false;
     }
 
     private static function flushGlobalMemoizers(): void
