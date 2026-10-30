@@ -20,6 +20,10 @@ final readonly class RunwireExecutionContext
         if ($request !== null && $request->runtime() !== $runtime) {
             throw new LogicException('Runwire request context is bound to a different runtime.');
         }
+        if ($request?->completed()) {
+            throw new LogicException('Completed request context cannot be shared.');
+        }
+        $request?->cancellation->throwIfCancelled();
     }
 
     public function supports(RuntimeCapability $capability): bool

@@ -17,6 +17,8 @@ Requirements:
 Highlights:
 
 * 128 fixed hash-tag buckets for cross-slot-safe grouped operations
+* expiring bulk writes use per-bucket ``MULTI`` transactions, supported by
+  phpredis RedisCluster without pipeline-mode warnings
 * namespace clear replaces each opaque bucket generation
 * no permanent key index, stale membership, or cluster-wide scan
 * atomic ``setIfAbsent()``, ``compareAndSet()``, and ``getAndDelete()`` through

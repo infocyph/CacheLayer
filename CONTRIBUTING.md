@@ -78,6 +78,24 @@ Run the complete project validation suite before opening a pull request:
 composer ic:ci
 ```
 
+The complete cache suite requires CLI APCu at PHP startup and the integration
+services selected by `.github/workflows/security-standards.yml`. Enable the
+correct setting in the CLI INI file, or add a temporary INI scan directory so
+Composer's PHP subprocesses receive the same setting:
+
+```bash
+mkdir -p /tmp/cachelayer-php-ini
+printf 'apc.enable_cli=1\n' > /tmp/cachelayer-php-ini/apcu.ini
+PHP_INI_SCAN_DIR=:/tmp/cachelayer-php-ini composer ic:ci
+```
+
+The leading colon retains PHP's default INI scan directory. `ini_set()` cannot
+enable CLI APCu after startup, and `php -d` options on the Composer process do
+not carry over to its child PHP processes. PHPForge's
+`composer ic:services:up` command manages its configured local services; export
+the matching service endpoints and credentials before testing. Missing required
+services fail discovery rather than silently reducing the test matrix.
+
 When `composer ic:ci` passes, running the same checks individually is unnecessary.
 
 Use focused commands while developing or when the complete suite cannot run:

@@ -10,7 +10,9 @@ Requirements:
 
 * ``ext-apcu``
 * APCu enabled (``apcu_enabled()``)
-* for CLI usage/tests: ``apcu.enable_cli=1``
+* for CLI usage/tests: start PHP with ``-d apc.enable_cli=1`` or configure
+  ``apc.enable_cli=1`` in the CLI INI file; this setting cannot be enabled with
+  ``ini_set()`` after startup
 
 Highlights:
 

@@ -13,8 +13,8 @@ if (!class_exists(RuntimeContext::class) || !class_exists(RunwireIntegration::cl
 }
 
 $version = InstalledVersions::getPrettyVersion('infocyph/runwire');
-if (!is_string($version) || !str_starts_with(ltrim($version, 'v'), '2.1')) {
-    throw new RuntimeException('The release integration gate requires Runwire 2.1.x.');
+if (!is_string($version) || !str_starts_with(ltrim($version, 'v'), '3.')) {
+    throw new RuntimeException('The release integration gate requires Runwire 3.x.');
 }
 
 putenv('CACHELAYER_EXAMPLE_AUTOLOAD=' . __DIR__ . '/vendor/autoload.php');

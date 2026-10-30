@@ -13,16 +13,16 @@ beforeEach(function () {
 
         public int $mgetCalls = 0;
 
-        public int $pipelineCalls = 0;
+        public int $transactionCalls = 0;
 
         public int $setexCalls = 0;
 
-        public bool $failPipelineCommand = false;
+        public bool $failTransactionCommand = false;
 
-        private bool $pipelined = false;
+        private bool $transactional = false;
 
         /** @var list<bool> */
-        private array $pipelineResults = [];
+        private array $transactionResults = [];
 
         public function del(string|array $keys): int
         {
@@ -146,9 +146,12 @@ beforeEach(function () {
 
         public function multi(int $mode): self
         {
-            $this->pipelineCalls++;
-            $this->pipelined = $mode > 0;
-            $this->pipelineResults = [];
+            if ($mode !== 1) {
+                throw new RuntimeException('Redis Cluster supports MULTI transactions only.');
+            }
+            $this->transactionCalls++;
+            $this->transactional = $mode > 0;
+            $this->transactionResults = [];
 
             return $this;
         }
@@ -168,8 +171,8 @@ beforeEach(function () {
         {
             $this->setexCalls++;
             $this->values[$key] = ['value' => $value, 'expires' => time() + max(1, $ttl)];
-            if ($this->pipelined) {
-                $this->pipelineResults[] = !$this->failPipelineCommand;
+            if ($this->transactional) {
+                $this->transactionResults[] = !$this->failTransactionCommand;
             }
 
             return true;
@@ -178,9 +181,9 @@ beforeEach(function () {
         /** @return list<bool> */
         public function exec(): array
         {
-            $this->pipelined = false;
+            $this->transactional = false;
 
-            return $this->pipelineResults;
+            return $this->transactionResults;
         }
 
         /** @return list<string> */
@@ -235,13 +238,13 @@ test('redis cluster adapter honors ttl', function () {
     expect($this->cache->get('ttl'))->toBeNull();
 });
 
-test('redis cluster adapter rejects a partial expiring pipeline write', function () {
-    $this->cluster->failPipelineCommand = true;
+test('redis cluster adapter rejects a partial expiring transaction write', function () {
+    $this->cluster->failTransactionCommand = true;
 
     expect($this->cache->setMultiple(['first' => 1, 'second' => 2], 60))->toBeFalse();
 });
 
-test('redis cluster groups expiring bulk writes into bounded bucket pipelines', function () {
+test('redis cluster groups expiring bulk writes into bounded bucket transactions', function () {
     $values = [];
     $buckets = [];
     for ($index = 0; $index < 100; $index++) {
@@ -252,7 +255,7 @@ test('redis cluster groups expiring bulk writes into bounded bucket pipelines', 
 
     expect($this->cache->setMultiple($values, 60))->toBeTrue()
         ->and($this->cluster->setexCalls)->toBe(100)
-        ->and($this->cluster->pipelineCalls)->toBe(count($buckets));
+        ->and($this->cluster->transactionCalls)->toBe(count($buckets));
 });
 
 test('redis cluster clear rotates bucket generations without a permanent key index', function () {

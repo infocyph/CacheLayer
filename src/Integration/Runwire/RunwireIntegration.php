@@ -11,7 +11,6 @@ use Infocyph\Runwire\Coroutine\CoroutineScope;
 use Infocyph\Runwire\RequestContext;
 use Infocyph\Runwire\Runtime\Enum\RuntimeCapability;
 use Infocyph\Runwire\RuntimeContext;
-use LogicException;
 use WeakMap;
 
 final class RunwireIntegration
@@ -41,6 +40,7 @@ final class RunwireIntegration
     public static function checkpoint(): void
     {
         $context = self::current();
+        $context?->request?->cancellation->throwIfCancelled();
         if (
             $context?->scope !== null
             && $context->supports(RuntimeCapability::RUNWIRE_COROUTINES)
@@ -154,13 +154,9 @@ final class RunwireIntegration
         callable $callback,
         ?RuntimeContext $runtime = null,
     ): mixed {
-        $runtime ??= self::runtime();
+        $runtime ??= self::runtime() ?? $request?->runtime();
         if ($runtime === null) {
             return $callback();
-        }
-
-        if ($request !== null && $request->runtime() !== $runtime) {
-            throw new LogicException('Runwire request context is bound to a different runtime.');
         }
 
         $context = new RunwireExecutionContext($runtime, $request, $scope);
@@ -172,22 +168,25 @@ final class RunwireIntegration
             try {
                 return $callback();
             } finally {
-                self::$rootContext = $previous;
+                if (self::$rootContext === $context) {
+                    self::$rootContext = $previous;
+                }
             }
         }
 
-        self::$fiberContexts ??= new WeakMap();
-        $hadPrevious = isset(self::$fiberContexts[$fiber]);
-        $previous = $hadPrevious ? self::$fiberContexts[$fiber] : null;
-        self::$fiberContexts[$fiber] = $context;
+        $contexts = self::$fiberContexts ??= new WeakMap();
+        $previous = $contexts[$fiber] ?? null;
+        $contexts[$fiber] = $context;
 
         try {
             return $callback();
         } finally {
-            if ($hadPrevious && $previous instanceof RunwireExecutionContext) {
-                self::$fiberContexts[$fiber] = $previous;
-            } else {
-                unset(self::$fiberContexts[$fiber]);
+            if (self::$fiberContexts === $contexts) {
+                if ($previous instanceof RunwireExecutionContext) {
+                    $contexts[$fiber] = $previous;
+                } else {
+                    unset($contexts[$fiber]);
+                }
             }
         }
     }
@@ -198,6 +197,7 @@ final class RunwireIntegration
             return;
         }
 
+        self::checkpoint();
         $context = self::current();
         if (
             $context?->scope !== null
