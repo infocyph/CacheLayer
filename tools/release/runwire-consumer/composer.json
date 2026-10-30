@@ -6,7 +6,7 @@
         "ext-pdo": "*",
         "ext-pdo_sqlite": "*",
         "infocyph/cachelayer": "4.0.x-dev",
-        "infocyph/runwire": "^2.1"
+        "infocyph/runwire": "^3.0"
     },
     "repositories": [
         {

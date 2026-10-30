@@ -237,9 +237,9 @@ $runtime->consume();
 
 Failed local invalidation stops consumption without advancing the cursor; operators can repair the cause and retry. A poison event can only be skipped explicitly with `skipEventAfterClear()`, which clears the local namespace before advancing. Plain key invalidation cannot fence an in-flight resolver, so mutable read-through data that requires ordering should also use a tag generation. It does not replicate values and is not a distributed lock, session store, or counter system.
 
-## Runwire 2.1 integration
+## Runwire 3.0 integration
 
-CacheLayer 4.0 ships optional Runwire 2.1 integration without making Runwire a core dependency. A framework shares its active `RuntimeContext` at worker/application bootstrap and the current `RequestContext` / `CoroutineScope` at the request or task boundary. CacheLayer then uses relevant capabilities automatically; when Runwire is absent, inactive, or missing a capability, the ordinary CacheLayer path remains in use.
+CacheLayer supports optional Runwire 3.0 integration without making Runwire a core dependency. A framework shares its active `RuntimeContext` at worker/application bootstrap and the current `RequestContext` / `CoroutineScope` at the request or task boundary. CacheLayer then uses relevant capabilities automatically; when Runwire is absent, inactive, or missing a capability, the ordinary CacheLayer path remains in use.
 
 Runwire keeps ownership of listeners, workers, supervisors, and event loops. `RunwireWorkerIntegration` can place bounded Cluster invalidation consumption and Node SQLite maintenance inside a host-provided task/service worker scope; CacheLayer never starts background work merely because Runwire is installed. Synchronous backend calls remain synchronous.
 

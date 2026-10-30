@@ -60,7 +60,7 @@ jobs:
         run: php -d error_reporting=E_ALL smoke.php
 
   runwire-consumer:
-    name: Runwire 2.1 consumer - PHP ${{ matrix.php }} - ${{ matrix.dependencies }}
+    name: Runwire 3.0 consumer - PHP ${{ matrix.php }} - ${{ matrix.dependencies }}
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -75,7 +75,7 @@ jobs:
           tools: composer:v2
           extensions: pdo, pdo_sqlite
           coverage: none
-      - name: Resolve CacheLayer with Runwire 2.1
+      - name: Resolve CacheLayer with Runwire 3.0
         working-directory: tools/release/runwire-consumer
         shell: bash
         run: |

@@ -394,7 +394,7 @@ platform scheduler instead when that is how application jobs are operated.
 Only one maintenance task is needed per local SQLite file; it is safe to use a
 bounded prune limit if overlap cannot be ruled out.
 
-Applications already running Runwire 2.1 may instead use
+Applications already running Runwire 3.0 may instead use
 ``RunwireWorkerIntegration::startNodeMaintenance()`` in a host-owned
 task/service worker. CacheLayer does not create a worker or event loop; see
 :doc:`/runwire` for lifecycle and topology requirements.

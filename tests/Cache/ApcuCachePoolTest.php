@@ -6,8 +6,8 @@ declare(strict_types=1);
  * tests/ApcuCachePoolTest.php
  *
  * Run these only when the APCu extension is loaded **and**
- * enabled in CLI (apcu.enable_cli=1).  Otherwise the whole
- * suite is skipped.
+ * enabled at CLI startup (apc.enable_cli=1).
+ * Discovery fails when this required prerequisite is missing.
  */
 
 use Infocyph\CacheLayer\Cache\Cache;
@@ -15,11 +15,10 @@ use Infocyph\CacheLayer\Cache\CacheOptions;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 
-/* ── skip entirely if APCu unavailable ─────────────────────────────── */
+/* ── require CLI APCu ─────────────────────────────────────────────── */
 if (! extension_loaded('apcu')) {
     throw new RuntimeException('APCu is required for the configured cache test matrix.');
 }
-ini_set('apcu.enable_cli', 1);
 if (! apcu_enabled()) {
     throw new RuntimeException('APCu must be enabled for CLI tests.');
 }

@@ -489,8 +489,8 @@ Supervised long-running worker
    Supervisor, Kubernetes, or your framework queue/worker runtime. It calls
    bounded ``consume()`` loops and polls/sleeps between iterations.
 
-Runwire 2.1 task/service worker
-   When the application already uses Runwire 2.1, bind the active runtime and
+Runwire 3.0 task/service worker
+   When the application already uses Runwire 3.0, bind the active runtime and
    let :doc:`/runwire` place bounded consumption inside the host-owned worker
    scope. Runwire retains worker/event-loop ownership and cancellation/drain.
    If the needed capability is unavailable, keep the explicit ``consume()``

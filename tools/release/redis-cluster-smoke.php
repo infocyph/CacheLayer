@@ -7,6 +7,10 @@ use Infocyph\CacheLayer\Cache\Cache;
 
 require dirname(__DIR__, 2) . '/vendor/autoload.php';
 
+set_error_handler(static function (int $severity, string $message, string $file, int $line): never {
+    throw new ErrorException($message, 0, $severity, $file, $line);
+});
+
 $rawSeeds = getenv('CACHELAYER_REDIS_CLUSTER_SEEDS');
 if (!is_string($rawSeeds) || $rawSeeds === '') {
     throw new RuntimeException('CACHELAYER_REDIS_CLUSTER_SEEDS is required.');

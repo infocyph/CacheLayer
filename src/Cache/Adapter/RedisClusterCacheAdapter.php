@@ -16,7 +16,7 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
 
     private const int BUCKET_COUNT = 128;
 
-    private const int PIPELINE_MODE = 2;
+    private const int TRANSACTION_MODE = 1;
 
     private readonly object $cluster;
 
@@ -368,14 +368,14 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
     /** @param list<array{0:string, 1:int, 2:string}> $records */
     private function saveExpiring(array $records): bool
     {
-        $pipeline = $this->call('multi', self::PIPELINE_MODE);
-        if (!is_object($pipeline)) {
+        $transaction = $this->call('multi', self::TRANSACTION_MODE);
+        if (!is_object($transaction)) {
             return false;
         }
         foreach ($records as [$key, $ttl, $blob]) {
-            $this->callObject($pipeline, 'setex', $key, $ttl, $blob);
+            $this->callObject($transaction, 'setex', $key, $ttl, $blob);
         }
-        $results = $this->callObject($pipeline, 'exec');
+        $results = $this->callObject($transaction, 'exec');
 
         return is_array($results)
             && count($results) === count($records)

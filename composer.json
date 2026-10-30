@@ -41,7 +41,7 @@
     },
     "require-dev": {
         "infocyph/phpforge": "dev-main@dev",
-        "infocyph/runwire": "2.1",
+        "infocyph/runwire": "^3.0",
         "mongodb/mongodb": "*"
     },
     "suggest": {
@@ -56,7 +56,7 @@
         "ext-pdo_sqlite": "For default SQLite usage via Cache::pdo(...) or Cache::sqlite(...)",
         "ext-redis": "For Redis-based caching (persistent, networked)",
         "ext-sysvshm": "For shared-memory caching via SharedMemoryCacheAdapter",
-        "infocyph/runwire": "For optional Runwire 2.1 request/task isolation and worker-owned invalidation/maintenance integration",
+        "infocyph/runwire": "For optional Runwire 3.0 request/task isolation and worker-owned invalidation/maintenance integration",
         "mongodb/mongodb": "For MongoDB caching via MongoDbCacheAdapter"
     },
     "minimum-stability": "stable",
@@ -73,6 +73,26 @@
         "psr-4": {
             "Infocyph\\CacheLayer\\Tests\\": "tests/"
         }
+    },
+    "archive": {
+        "exclude": [
+            "/.agents",
+            "/.aws",
+            "/.codex",
+            "/.idea",
+            "/.phpunit.cache",
+            "/.psalm-cache",
+            "/.vscode",
+            "/benchmarks",
+            "/composer.lock",
+            "/docs",
+            "/examples",
+            "/graphify-out",
+            "/tests",
+            "/tools",
+            "/var",
+            "/vendor"
+        ]
     },
     "config": {
         "allow-plugins": {

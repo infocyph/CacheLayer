@@ -284,7 +284,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
     #[\Override]
     public function storeTagGenerations(array $generations): bool
     {
-        if (!$this->l2->storeTagGenerations($generations)) {
+        if (!$this->attempt(fn(): bool => $this->l2->storeTagGenerations($generations), false, 'l2_failure')) {
             return false;
         }
         if (!$this->l1Readable || !($this->l1 instanceof TagGenerationCacheInterface)) {
@@ -314,6 +314,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         try {
             return $operation();
         } catch (Throwable $failure) {
+            $this->disableL1();
             $this->metric($failureMetric);
             if (!$this->failOpen) {
                 throw $failure;
@@ -343,8 +344,11 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         }
 
         $this->l1Readable = false;
-        if ($this->l1 !== null) {
-            $this->attempt(fn(): bool => $this->l1->clear(), false, 'l1_clear_failure');
+
+        try {
+            $this->l1?->clear();
+        } catch (Throwable) {
+            $this->metric('l1_clear_failure');
         }
     }
 
@@ -448,13 +452,14 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         array $items,
         string $failureMetric,
     ): bool {
-        $targets = [];
-        foreach ($items as $item) {
-            $key = $item->getKey();
-            $targets[$key] = $this->copyItemTo($pool, $item);
-        }
+        return $this->attempt(function () use ($pool, $items): bool {
+            $targets = [];
+            foreach ($items as $item) {
+                $targets[$item->getKey()] = $this->copyItemTo($pool, $item);
+            }
 
-        return $this->attempt(fn(): bool => $pool->saveItems($targets), false, $failureMetric);
+            return $pool->saveItems($targets);
+        }, false, $failureMetric);
     }
 
     private function saveOneInto(
@@ -462,8 +467,6 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         CacheItemInterface $item,
         string $failureMetric,
     ): bool {
-        $target = $this->copyItemTo($pool, $item);
-
-        return $this->attempt(fn(): bool => $pool->save($target), false, $failureMetric);
+        return $this->attempt(fn(): bool => $pool->save($this->copyItemTo($pool, $item)), false, $failureMetric);
     }
 }

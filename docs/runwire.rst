@@ -1,14 +1,14 @@
 =======================
-Runwire 2.1 integration
+Runwire 3.0 integration
 =======================
 
-CacheLayer 4.0 ships an optional integration with Runwire 2.1. Runwire is not a
+CacheLayer supports an optional integration with Runwire 3.0. Runwire is not a
 core dependency: ordinary PHP-FPM, CLI, and other consumers continue to use the
 normal CacheLayer paths without installing it.
 
 Install Runwire only in applications that already use it::
 
-   composer require infocyph/runwire:^2.1
+   composer require infocyph/runwire:^3.0
 
 Ownership contract
 ==================
@@ -63,6 +63,15 @@ The host shares the actual request/task scope around application work:
        fn () => $application->handle($request),
    );
 
+An explicitly supplied request can also provide its runtime when no runtime has
+been bound. Completed requests are rejected before the callback runs; cancelled
+or expired requests propagate Runwire's cancellation exception. Checkpoints and
+positive sleeps check request cancellation even without a coroutine scope.
+
+Release or rebind discards existing execution bindings. A suspended or nested
+callback may unwind afterwards, but its cleanup cannot restore a discarded
+binding or replace the new runtime context.
+
 When a request context is available, memoize(), object remember(), and once()
 use request-owned memoizers. Concurrent requests therefore cannot observe or
 flush each other's memoized state. If a persistent concurrent runtime is bound
@@ -75,8 +84,10 @@ normal process-local behavior.
 Cooperative waits
 =================
 
-Existing bounded polling waits can use the shared CoroutineScope when the
-active runtime exposes RUNWIRE_COROUTINES. CacheLayer does not wrap synchronous
+Explicit ``RunwireIntegration::sleep()`` calls use the shared CoroutineScope when
+the active runtime exposes RUNWIRE_COROUTINES. The built-in File, PDO, Redis and
+Memcached lock providers still poll with blocking ``usleep()`` calls. CacheLayer
+does not wrap synchronous
 PDO, filesystem, Redis, MongoDB, Memcached, Scylla, or other native client calls
 and does not claim that those calls become asynchronous.
 
@@ -179,7 +190,7 @@ storage format depends on Runwire.
 HTTP scheduling
 ===============
 
-Runwire 2.1 adaptive HTTP scheduling is a host-level concern. CacheLayer does
+Runwire 3.0 adaptive HTTP scheduling is a host-level concern. CacheLayer does
 not select FIXED, LATENCY, THROUGHPUT, or AUTO and does not attribute HTTP
 throughput changes to cache storage. Keep Runwire's certified host defaults
 unless the application measures and chooses another policy.

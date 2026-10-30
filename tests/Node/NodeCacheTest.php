@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Infocyph\CacheLayer\Cache\Adapter\AbstractCacheAdapter;
 use Infocyph\CacheLayer\Cache\Adapter\ArrayCacheAdapter;
+use Infocyph\CacheLayer\Cache\Adapter\ApcuCacheAdapter;
 use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Cache\CacheOptions;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
@@ -17,6 +18,7 @@ use Infocyph\CacheLayer\Node\Exception\NodeCacheConfigurationException;
 use Infocyph\CacheLayer\Node\Maintenance\NodeCachePruner;
 use Infocyph\CacheLayer\Node\NodeCache;
 use Infocyph\CacheLayer\Node\NodeCacheConfig;
+use Infocyph\CacheLayer\Tests\Cache\Support\FaultingFileCacheAdapter;
 use Psr\Cache\CacheItemInterface;
 
 beforeEach(function () {
@@ -29,6 +31,147 @@ beforeEach(function () {
         lockDirectory: $this->nodeCacheDirectory . '/locks',
     );
 });
+
+test('node fences L1 after a mutation fails under either failure policy', function (string $operation, bool $failOpen, bool $throws) {
+    $l1 = new FaultingFileCacheAdapter('node.failure', $this->nodeCacheDirectory . '/l1');
+    $l2 = new NodeSqliteCacheAdapter(NodeSqliteConnection::create($this->nodeConfig), 'node.failure');
+    $adapter = new NodeCacheAdapter($l1, $l2, $failOpen);
+    $cache = new Cache($adapter, options: new CacheOptions(failOpen: $failOpen));
+    $cache->set('key', 'old', 300);
+    $l1->failure = $operation;
+    $l1->throws = $throws;
+
+    $mutate = match ($operation) {
+        'save' => fn() => $cache->set('key', 'new', 300),
+        'saveItems' => fn() => $cache->setMultiple(['key' => 'new'], 300),
+        'deleteItem' => fn() => $cache->delete('key'),
+        'deleteItems' => fn() => $cache->deleteMultiple(['key']),
+        'clear' => fn() => $cache->clear(),
+    };
+
+    if ($throws && !$failOpen) {
+        expect($mutate)->toThrow(RuntimeException::class);
+    } else {
+        expect($mutate())->toBeFalse();
+    }
+
+    expect($adapter->isAuthoritative())->toBeTrue()
+        ->and($cache->get('key'))->toBe($l2->getItem('key')->get());
+})->with(['save', 'saveItems', 'deleteItem', 'deleteItems', 'clear'])
+    ->with([false, true])->with([false, true]);
+
+test('node preserves the mutation failure when L1 cleanup also throws', function () {
+    $l1 = new class('node.cleanup', $this->nodeCacheDirectory . '/l1') extends \Infocyph\CacheLayer\Cache\Adapter\FileCacheAdapter {
+        public bool $fault = false;
+
+        public function save(CacheItemInterface $item): bool
+        {
+            if ($this->fault) {
+                throw new RuntimeException('original write failure');
+            }
+
+            return parent::save($item);
+        }
+
+        public function clear(): bool
+        {
+            if ($this->fault) {
+                throw new RuntimeException('cleanup failure');
+            }
+
+            return parent::clear();
+        }
+    };
+    $l2 = new NodeSqliteCacheAdapter(NodeSqliteConnection::create($this->nodeConfig), 'node.cleanup');
+    $adapter = new NodeCacheAdapter($l1, $l2, false);
+    $item = $adapter->createItem('key')->set('old');
+    $adapter->save($item);
+    $l1->fault = true;
+
+    expect(fn() => $adapter->save($item->set('new')))->toThrow(RuntimeException::class, 'original write failure')
+        ->and($adapter->getItem('key')->get())->toBe('new');
+});
+
+test('node fences failed single and bulk promotions under either failure policy', function (bool $bulk, bool $failOpen, bool $throws) {
+    $l1 = new FaultingFileCacheAdapter('node.promotion', $this->nodeCacheDirectory . '/l1');
+    $l2 = new NodeSqliteCacheAdapter(NodeSqliteConnection::create($this->nodeConfig), 'node.promotion');
+    $adapter = new NodeCacheAdapter($l1, $l2, $failOpen);
+    $cache = new Cache($adapter, options: new CacheOptions(failOpen: $failOpen));
+    $cache->set('key', 'value');
+    $l1->clear();
+    $l1->failure = $bulk ? 'saveItems' : 'save';
+    $l1->throws = $throws;
+    $read = $bulk ? fn() => $cache->getMultiple(['key']) : fn() => $cache->get('key');
+
+    if ($throws && !$failOpen) {
+        expect($read)->toThrow(RuntimeException::class);
+    } else {
+        expect($read())->toBe($bulk ? ['key' => 'value'] : 'value');
+    }
+
+    expect($adapter->isAuthoritative())->toBeTrue()
+        ->and($cache->get('key'))->toBe('value');
+})->with([false, true])->with([false, true])->with([false, true]);
+
+test('node fences L1 when copying a committed value into L1 throws', function (bool $bulk) {
+    $l1 = new class('node.copy', $this->nodeCacheDirectory . '/l1') extends \Infocyph\CacheLayer\Cache\Adapter\FileCacheAdapter {
+        public bool $fault = false;
+
+        public function createItem(string $key): CacheItemInterface
+        {
+            if ($this->fault) {
+                throw new RuntimeException('copy failure');
+            }
+
+            return parent::createItem($key);
+        }
+    };
+    $l2 = new NodeSqliteCacheAdapter(NodeSqliteConnection::create($this->nodeConfig), 'node.copy');
+    $adapter = new NodeCacheAdapter($l1, $l2, false);
+    $cache = new Cache($adapter, options: new CacheOptions(failOpen: false));
+    $cache->set('key', 'old');
+    $l1->fault = true;
+
+    expect(fn() => $bulk ? $cache->setMultiple(['key' => 'new']) : $cache->set('key', 'new'))
+        ->toThrow(RuntimeException::class)
+        ->and($cache->get('key'))->toBe('new');
+})->with([false, true]);
+
+test('node fences L1 when a tag metadata mutation throws', function (string $operation) {
+    $l1 = new class('node.tags.' . uniqid()) extends ApcuCacheAdapter {
+        public ?string $failure = null;
+
+        public function rotateTagGenerations(array $tags): bool
+        {
+            if ($this->failure === 'rotate') {
+                throw new RuntimeException('tag rotation failure');
+            }
+
+            return parent::rotateTagGenerations($tags);
+        }
+
+        public function storeTagGenerations(array $generations): bool
+        {
+            if ($this->failure === 'store') {
+                throw new RuntimeException('tag storage failure');
+            }
+
+            return parent::storeTagGenerations($generations);
+        }
+    };
+    $l2 = new NodeSqliteCacheAdapter(NodeSqliteConnection::create($this->nodeConfig), 'node.tags');
+    $adapter = new NodeCacheAdapter($l1, $l2, false);
+    $cache = new Cache($adapter, options: new CacheOptions(failOpen: false));
+    $cache->setTagged('key', 'old', ['group']);
+    $l1->failure = $operation;
+
+    expect(fn() => $operation === 'rotate'
+        ? $cache->invalidateTag('group')
+        : $adapter->storeTagGenerations(['group' => bin2hex(random_bytes(16))]))
+        ->toThrow(RuntimeException::class)
+        ->and($adapter->isAuthoritative())->toBeTrue()
+        ->and($cache->get('key'))->toBeNull();
+})->with(['rotate', 'store']);
 
 afterEach(function () {
     if (!is_dir($this->nodeCacheDirectory)) {
