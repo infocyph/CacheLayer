@@ -74,26 +74,6 @@
             "Infocyph\\CacheLayer\\Tests\\": "tests/"
         }
     },
-    "archive": {
-        "exclude": [
-            "/.agents",
-            "/.aws",
-            "/.codex",
-            "/.idea",
-            "/.phpunit.cache",
-            "/.psalm-cache",
-            "/.vscode",
-            "/benchmarks",
-            "/composer.lock",
-            "/docs",
-            "/examples",
-            "/graphify-out",
-            "/tests",
-            "/tools",
-            "/var",
-            "/vendor"
-        ]
-    },
     "config": {
         "allow-plugins": {
             "ergebnis/composer-normalize": true,
