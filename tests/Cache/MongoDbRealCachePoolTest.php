@@ -15,12 +15,10 @@ if (!class_exists(MongoDB\Client::class)) {
     throw new RuntimeException('mongodb/mongodb is required for the configured MongoDB integration matrix.');
 }
 
-$mongoRealFixture = new class {
-    public \MongoDB\Client $mongoClient;
+$mongoRealFixture = new class(Cache::nullStore()) {
+    public ?\MongoDB\Collection $mongoCollection = null;
 
-    public \MongoDB\Collection $mongoCollection;
-
-    public Cache $mongoCache;
+    public function __construct(public Cache $mongoCache) {}
 };
 
 beforeEach(function () use ($mongoDsn, $mongoDatabase, $mongoRealFixture): void {
@@ -28,7 +26,6 @@ beforeEach(function () use ($mongoDsn, $mongoDatabase, $mongoRealFixture): void 
     $client->selectDatabase($mongoDatabase)->command(['ping' => 1]);
 
     $collectionName = 'cachelayer_real_' . getmypid() . '_' . bin2hex(random_bytes(4));
-    $mongoRealFixture->mongoClient = $client;
     $mongoRealFixture->mongoCollection = $client->selectCollection($mongoDatabase, $collectionName);
     $mongoRealFixture->mongoCache = new Cache(new MongoDbCacheAdapter($mongoRealFixture->mongoCollection, 'mongo-real'));
 });
@@ -60,7 +57,8 @@ test('real MongoDB atomic claim has exactly one process winner', function () use
         throw new RuntimeException('pcntl is required for real MongoDB atomic contention coverage.');
     }
 
-    $collectionName = $mongoRealFixture->mongoCollection->getCollectionName();
+    $collection = $mongoRealFixture->mongoCollection ?? throw new RuntimeException('MongoDB fixture setup did not run.');
+    $collectionName = $collection->getCollectionName();
     $children = [];
     for ($worker = 0; $worker < 8; ++$worker) {
         $pid = pcntl_fork();
