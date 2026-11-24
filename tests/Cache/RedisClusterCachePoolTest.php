@@ -211,3 +211,15 @@ test('Redis cluster double exposes failed native transaction results', function 
     expect($double->exec())->toBe([true, false])
         ->and($double->transactionCalls)->toBe(1);
 });
+
+test('Redis cluster script double executes every atomic operation with strict generation and value checks', function (): void {
+    $double = new RedisClusterDouble();
+    $double->set('generation', '1');
+
+    expect($double->eval('cachelayer:atomic-set-if-absent', ['generation', 'key', '1', 'first', '30', '0'], 2))->toBe(1)
+        ->and($double->eval('cachelayer:atomic-set-if-absent', ['generation', 'key', '1', 'other', '30', '0'], 2))->toBe(0)
+        ->and($double->eval('cachelayer:atomic-compare-and-set', ['generation', 'key', '0', 'first', 'second', '30'], 2))->toBe(-1)
+        ->and($double->eval('cachelayer:atomic-compare-and-set', ['generation', 'key', '1', 'first', 'second', '30'], 2))->toBe(1)
+        ->and($double->eval('cachelayer:atomic-get-and-delete', ['generation', 'key'], 2))->toBe(['1', 'second'])
+        ->and($double->get('key'))->toBeFalse();
+});

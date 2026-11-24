@@ -74,18 +74,6 @@ final class CacheFixture
         return $code;
     }
 
-    public static function redisMock(): \Redis&\PHPUnit\Framework\MockObject\MockObject
-    {
-        $factory = new class('native redis fixture') extends \PHPUnit\Framework\TestCase {
-            public function createRedis(): \Redis&\PHPUnit\Framework\MockObject\MockObject
-            {
-                return $this->createMock(\Redis::class);
-            }
-        };
-
-        return $factory->createRedis();
-    }
-
     public static function environment(string $name): ?string
     {
         $value = getenv($name);

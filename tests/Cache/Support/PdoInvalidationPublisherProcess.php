@@ -17,8 +17,20 @@ function publisherArgument(mixed $value): string
     return $value;
 }
 
+/**
+ * @param resource $stream
+ * @throws RuntimeException
+ */
+function writePublisherState(mixed $stream, string $value): void
+{
+    if (!rewind($stream) || !ftruncate($stream, 0)
+        || fwrite($stream, $value) !== strlen($value) || !fflush($stream)) {
+        throw new RuntimeException('Unable to write publisher state.');
+    }
+}
+
 $arguments = $_SERVER['argv'] ?? [];
-if (!is_array($arguments) || count($arguments) !== 11) {
+if (PHP_SAPI !== 'cli' || count($arguments) !== 9) {
     throw new RuntimeException('Invalid concurrent invalidation publisher arguments.');
 }
 
@@ -27,27 +39,38 @@ $user = publisherArgument($arguments[2] ?? null);
 $password = publisherArgument($arguments[3] ?? null);
 $cluster = publisherArgument($arguments[4] ?? null);
 $identifier = publisherArgument($arguments[5] ?? null);
-$stateFile = publisherArgument($arguments[6] ?? null);
-$resultFile = publisherArgument($arguments[7] ?? null);
-$commit = publisherArgument($arguments[8] ?? null);
-$holdMicros = publisherArgument($arguments[9] ?? null);
-$origin = publisherArgument($arguments[10] ?? null);
-
-$connection = new PDO($dsn, $user, $password, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
-$transport = new PdoInvalidationTransport($connection, initializeSchema: false);
-$connection->beginTransaction();
-file_put_contents($stateFile, 'started');
-$id = $transport->publishWithinTransaction(
-    $connection,
-    InvalidationEvent::key($cluster, 'application', $identifier, $origin),
-);
-file_put_contents($stateFile, 'acquired');
-
-$holdMicros = (int) $holdMicros;
-if ($holdMicros > 0) {
-    usleep($holdMicros);
+$commit = publisherArgument($arguments[6] ?? null);
+$hold = publisherArgument($arguments[7] ?? null);
+$origin = publisherArgument($arguments[8] ?? null);
+if (!in_array($hold, ['0', '150000'], true) || !in_array($commit, ['0', '1'], true)) {
+    throw new RuntimeException('Invalid publisher control arguments.');
 }
-if ($commit === '1') {
-    $connection->commit();
-    file_put_contents($resultFile, $id);
+
+$state = fopen('php://fd/3', 'r+');
+$result = fopen('php://fd/4', 'r+');
+if ($state === false || $result === false) {
+    throw new RuntimeException('Publisher requires parent-owned state and result descriptors.');
+}
+
+try {
+    $connection = new PDO($dsn, $user, $password, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+    $transport = new PdoInvalidationTransport($connection, initializeSchema: false);
+    $connection->beginTransaction();
+    writePublisherState($state, 'started');
+    $id = $transport->publishWithinTransaction(
+        $connection,
+        InvalidationEvent::key($cluster, 'application', $identifier, $origin),
+    );
+    writePublisherState($state, 'acquired');
+
+    if ($hold === '150000') {
+        usleep(150_000);
+    }
+    if ($commit === '1') {
+        $connection->commit();
+        writePublisherState($result, $id);
+    }
+} finally {
+    fclose($state);
+    fclose($result);
 }

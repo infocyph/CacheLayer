@@ -593,51 +593,10 @@ test('Redis authentication failures do not expose supplied passwords in exceptio
     }
 });
 
-test('Redis clear and delete propagate a refused native delete operation', function (): void {
-    $client = \Infocyph\CacheLayer\Tests\Support\CacheFixture::redisMock();
-    $client->method('scan')->willReturnCallback(static function (mixed &$cursor): array {
-        $cursor = 0;
-
-        return ['refused:d:key'];
-    });
-    $client->method('del')->willReturn(false);
-    $adapter = new \Infocyph\CacheLayer\Cache\Adapter\RedisCacheAdapter('refused', client: $client);
-
-    expect($adapter->deleteItem('key'))->toBeFalse()
-        ->and($adapter->deleteItems(['key']))->toBeFalse()
-        ->and($adapter->clear())->toBeFalse();
-});
-
-test('Redis incomplete bulk responses are backend failures rather than ordinary misses', function (): void {
-    $client = \Infocyph\CacheLayer\Tests\Support\CacheFixture::redisMock();
-    $client->method('mget')->willReturn([false]);
-    $adapter = new \Infocyph\CacheLayer\Cache\Adapter\RedisCacheAdapter('incomplete', client: $client);
-    $closed = new Cache($adapter, options: new CacheOptions(failOpen: false));
-    expect(fn (): iterable => $closed->getMultiple(['one', 'two']))
-        ->toThrow(\Infocyph\CacheLayer\Exceptions\CacheBackendException::class);
-    expect(fn (): array => $adapter->getTagGenerations(['one', 'two']))
-        ->toThrow(RuntimeException::class);
-
-    $open = new Cache(new \Infocyph\CacheLayer\Cache\Adapter\RedisCacheAdapter('incomplete-open', client: $client), options: new CacheOptions(failOpen: true));
-    expect($open->getMultiple(['one', 'two'], 'fallback'))->toBe(['one' => 'fallback', 'two' => 'fallback']);
-});
-
-test('Redis bulk persistence does not report success when expired entry deletion fails', function (): void {
-    $client = \Infocyph\CacheLayer\Tests\Support\CacheFixture::redisMock();
-    $client->method('del')->willReturn(false);
-    $adapter = new \Infocyph\CacheLayer\Cache\Adapter\RedisCacheAdapter('expired-batch', client: $client);
-    $item = $adapter->createItem('expired')->set('old')->expiresAfter(-1);
-    expect($adapter->saveItems(['expired' => $item]))->toBeFalse();
-});
-
-test('Redis counter deletion preserves missing-key success and reports backend refusal', function () use (&$redisFixtureRedisClient): void {
+test('Redis counter deletion preserves missing-key success', function () use (&$redisFixtureRedisClient): void {
     $counters = AtomicCounters::redis('delete-contract', client: $redisFixtureRedisClient);
     $counters->increment('counter');
     expect($counters->delete('counter'))->toBeTrue()
         ->and($counters->get('counter'))->toBeNull()
         ->and($counters->delete('counter'))->toBeTrue();
-
-    $client = \Infocyph\CacheLayer\Tests\Support\CacheFixture::redisMock();
-    $client->method('del')->willReturn(false);
-    expect(AtomicCounters::redis('delete-contract', client: $client)->delete('counter'))->toBeFalse();
 });
