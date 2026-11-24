@@ -76,7 +76,7 @@ Release verification
 
 The 4.0 release gate covers:
 
-* PHP 8.4 and 8.5 with stable and lowest supported dependency resolution;
+* PHP 8.4, 8.5 and 8.6 with stable and lowest supported dependency resolution;
 * Linux and Windows core smoke tests plus clean no-dev consumer installs;
 * independent PSR-6 and PSR-16 contract consumers;
 * documentation builds with warnings treated as errors;
