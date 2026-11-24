@@ -11,7 +11,10 @@ if (!class_exists(RuntimeContext::class) || !class_exists(RunwireIntegration::cl
 }
 
 $version = InstalledVersions::getPrettyVersion('infocyph/runwire');
-if (!is_string($version) || !str_starts_with(ltrim($version, 'v'), '3.') || version_compare(ltrim($version, 'v'), '3.1.0', '<')) {
+$normalizedVersion = InstalledVersions::getVersion('infocyph/runwire');
+if (!is_string($version) || !is_string($normalizedVersion)
+    || version_compare($normalizedVersion, '3.1.0.0', '<')
+    || version_compare($normalizedVersion, '4.0.0.0', '>=')) {
     throw new RuntimeException('The release integration gate requires Runwire 3.1 or newer within the 3.x series.');
 }
 
