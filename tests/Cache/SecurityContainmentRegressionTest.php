@@ -50,7 +50,7 @@ test('node SQLite cache preserves caller-owned transactions', function () {
     expect(fn() => $adapter->saveMany([$item]))
         ->toThrow(NodeCacheStorageException::class)
         ->and($pdo->inTransaction())->toBeTrue()
-        ->and((int) $pdo->query('SELECT COUNT(*) FROM business_rows')->fetchColumn())->toBe(1);
+        ->and(\Infocyph\CacheLayer\Tests\Support\CacheFixture::countRows($pdo, 'SELECT COUNT(*) FROM business_rows'))->toBe(1);
 
     $pdo->rollBack();
 });
@@ -282,6 +282,9 @@ test('file atomic consumption reports deletion failure instead of returning the 
             RecursiveIteratorIterator::CHILD_FIRST,
         );
         foreach ($files as $file) {
+            if (!$file instanceof \SplFileInfo) {
+                throw new \UnexpectedValueException('Unexpected filesystem iterator entry.');
+            }
             $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
         }
         rmdir($base);

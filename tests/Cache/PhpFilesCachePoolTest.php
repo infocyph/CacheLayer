@@ -20,6 +20,9 @@ afterEach(function () use (&$phpfilesFixtureCacheDir): void {
     $it = new RecursiveDirectoryIterator($phpfilesFixtureCacheDir, FilesystemIterator::SKIP_DOTS);
     $rim = new RecursiveIteratorIterator($it, RecursiveIteratorIterator::CHILD_FIRST);
     foreach ($rim as $file) {
+        if (!$file instanceof \SplFileInfo) {
+            throw new \UnexpectedValueException('Unexpected filesystem iterator entry.');
+        }
         $path = $file->getRealPath();
         if ($path === false || ! file_exists($path)) {
             continue;

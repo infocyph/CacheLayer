@@ -30,6 +30,9 @@ afterEach(function () use (&$maintenanceFixtureDirectory): void {
         RecursiveIteratorIterator::CHILD_FIRST,
     );
     foreach ($files as $file) {
+        if (!$file instanceof \SplFileInfo) {
+            throw new \UnexpectedValueException('Unexpected filesystem iterator entry.');
+        }
         $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
     }
     rmdir($maintenanceFixtureDirectory);
@@ -53,7 +56,8 @@ it('runs one bounded prune checkpoint and optimize maintenance unit', function (
     );
 
     expect($maintenance->cycle(pruneLimit: 1, checkpoint: true, optimize: true))->toBe(1)
-        ->and((int) $connection->query(
+        ->and(\Infocyph\CacheLayer\Tests\Support\CacheFixture::countRows(
+            $connection,
             "SELECT COUNT(*) FROM cachelayer_node_entries WHERE cache_key = 'expired'",
-        )->fetchColumn())->toBe(0);
+        ))->toBe(0);
 });

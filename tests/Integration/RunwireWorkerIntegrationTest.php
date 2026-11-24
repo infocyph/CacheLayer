@@ -52,7 +52,11 @@ function cacheLayerWorkerRuntimeContext(): RuntimeContext
 /** @return array{WorkerContext, resource} */
 function cacheLayerBackgroundWorkerContext(): array
 {
-    [$readyParent, $readyChild] = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
+    $readyPair = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
+    if ($readyPair === false) {
+        throw new RuntimeException('Unable to create worker readiness socket pair.');
+    }
+    [$readyParent, $readyChild] = $readyPair;
     $pid = getmypid();
 
     return [
@@ -276,9 +280,10 @@ it('runs bounded node maintenance inside the host-owned Runwire worker scope', f
     });
     $loop->run();
 
-    expect((int) $connection->query(
+    expect(\Infocyph\CacheLayer\Tests\Support\CacheFixture::countRows(
+        $connection,
         "SELECT COUNT(*) FROM cachelayer_node_entries WHERE cache_key = 'expired-runwire'",
-    )->fetchColumn())->toBe(0)
+    ))->toBe(0)
         ->and($task?->state())->toBe(TaskState::CANCELLED)
         ->and($worker->backgroundDrainExpired())->toBeFalse();
 
@@ -399,11 +404,15 @@ it('does not take worker or loop ownership for unsupported worker topology', fun
     $runtime = cacheLayerWorkerRuntimeContext();
     RunwireIntegration::bind($runtime);
 
-    [$readyParent, $readyChild] = stream_socket_pair(
+    $readyPair = stream_socket_pair(
         STREAM_PF_UNIX,
         STREAM_SOCK_STREAM,
         STREAM_IPPROTO_IP,
     );
+    if ($readyPair === false) {
+        throw new RuntimeException('Unable to create worker readiness socket pair.');
+    }
+    [$readyParent, $readyChild] = $readyPair;
     $pid = getmypid();
     $worker = new WorkerContext(
         group: 'cachelayer-http',

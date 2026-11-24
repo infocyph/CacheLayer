@@ -37,7 +37,10 @@ afterEach(function () use (&$fileFixtureCacheDir): void {
     $rim = new RecursiveIteratorIterator($it, RecursiveIteratorIterator::CHILD_FIRST);
 
     foreach ($rim as $file) {
-        $file->isDir() ? rmdir($file->getRealPath()) : unlink($file->getRealPath());
+        if (!$file instanceof \SplFileInfo) {
+            throw new \UnexpectedValueException('Unexpected filesystem iterator entry.');
+        }
+        $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
     }
     rmdir($fileFixtureCacheDir);
 });

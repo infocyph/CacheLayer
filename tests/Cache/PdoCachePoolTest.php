@@ -88,5 +88,5 @@ test('PDO bounded pruning removes only expired data for the selected namespace',
     expect($adapter->pruneExpired(1))->toBe(1)
         ->and($adapter->pruneExpired(1))->toBe(1)
         ->and($adapter->pruneExpired(1))->toBe(0)
-        ->and($pdo->query('SELECT COUNT(*) FROM cachelayer_entries')->fetchColumn())->toBe(3);
+        ->and(\Infocyph\CacheLayer\Tests\Support\CacheFixture::countRows($pdo, 'SELECT COUNT(*) FROM cachelayer_entries'))->toBe(3);
 });

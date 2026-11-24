@@ -52,11 +52,12 @@ test('node fences L1 after a mutation fails under either failure policy', functi
     $l1->throws = $throws;
 
     $mutate = match ($operation) {
-        'save' => fn() => $cache->set('key', 'new', 300),
-        'saveItems' => fn() => $cache->setMultiple(['key' => 'new'], 300),
-        'deleteItem' => fn() => $cache->delete('key'),
-        'deleteItems' => fn() => $cache->deleteMultiple(['key']),
-        'clear' => fn() => $cache->clear(),
+        'save' => fn(): bool => $cache->set('key', 'new', 300),
+        'saveItems' => fn(): bool => $cache->setMultiple(['key' => 'new'], 300),
+        'deleteItem' => fn(): bool => $cache->delete('key'),
+        'deleteItems' => fn(): bool => $cache->deleteMultiple(['key']),
+        'clear' => fn(): bool => $cache->clear(),
+        default => throw new \InvalidArgumentException('Unknown test mutation operation.'),
     };
 
     if ($throws && !$failOpen) {
@@ -198,6 +199,9 @@ afterEach(function () use (&$nodeFixtureDirectory): void {
         RecursiveIteratorIterator::CHILD_FIRST,
     );
     foreach ($files as $file) {
+        if (!$file instanceof \SplFileInfo) {
+            throw new \UnexpectedValueException('Unexpected filesystem iterator entry.');
+        }
         $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
     }
     rmdir($nodeFixtureDirectory);
@@ -463,11 +467,11 @@ test('expired rows remain outside the read path until bounded pruning', function
     $statement->execute([$nodeFixtureConfig->namespace, 'stale', 'invalid-payload', time() - 1]);
 
     expect($adapter->getItem('stale')->isHit())->toBeFalse()
-        ->and((int) $connection->query("SELECT COUNT(*) FROM cachelayer_node_entries WHERE cache_key = 'stale'")->fetchColumn())
+        ->and(\Infocyph\CacheLayer\Tests\Support\CacheFixture::countRows($connection, "SELECT COUNT(*) FROM cachelayer_node_entries WHERE cache_key = 'stale'"))
         ->toBe(1)
         ->and((new NodeCachePruner($connection, $nodeFixtureConfig->namespace))->pruneExpired(1))
         ->toBe(1)
-        ->and((int) $connection->query("SELECT COUNT(*) FROM cachelayer_node_entries WHERE cache_key = 'stale'")->fetchColumn())
+        ->and(\Infocyph\CacheLayer\Tests\Support\CacheFixture::countRows($connection, "SELECT COUNT(*) FROM cachelayer_node_entries WHERE cache_key = 'stale'"))
         ->toBe(0);
 });
 

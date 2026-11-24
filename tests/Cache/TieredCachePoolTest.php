@@ -129,6 +129,9 @@ test('tiered L1 remains fenced after unrelated successful writes until full clea
     $l2 = new ArrayCacheAdapter('fenced-l2');
     $cache = Cache::tiered([$l1, $l2]);
     $adapter = (new ReflectionClass($cache))->getProperty('adapter')->getValue($cache);
+    if (!$adapter instanceof \Infocyph\CacheLayer\Cache\Adapter\TieredCacheAdapter) {
+        throw new \RuntimeException('Expected a tiered cache adapter.');
+    }
 
     expect($cache->set('x', 'old'))->toBeTrue();
     $l2->save($l2->getItem('x')->set('new'));
@@ -158,11 +161,12 @@ test('tier mutation failures fence reads until a complete clear', function (stri
     $l1->throws = $throws;
 
     $mutate = match ($operation) {
-        'clear' => fn() => $cache->clear(),
-        'save' => fn() => $cache->set('unrelated', 'value'),
-        'saveItems' => fn() => $cache->setMultiple(['unrelated' => 'value']),
-        'deleteItem' => fn() => $cache->delete('unrelated'),
-        'deleteItems' => fn() => $cache->deleteMultiple(['unrelated']),
+        'clear' => fn(): bool => $cache->clear(),
+        'save' => fn(): bool => $cache->set('unrelated', 'value'),
+        'saveItems' => fn(): bool => $cache->setMultiple(['unrelated' => 'value']),
+        'deleteItem' => fn(): bool => $cache->delete('unrelated'),
+        'deleteItems' => fn(): bool => $cache->deleteMultiple(['unrelated']),
+        default => throw new \InvalidArgumentException('Unknown test mutation operation.'),
     };
 
     try {
@@ -184,6 +188,9 @@ test('tier mutation failures fence reads until a complete clear', function (stri
         $l1->clear();
         $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
         foreach ($files as $file) {
+            if (!$file instanceof \SplFileInfo) {
+                throw new \UnexpectedValueException('Unexpected filesystem iterator entry.');
+            }
             $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
         }
         rmdir($directory);
@@ -221,6 +228,9 @@ test('skipped writes and failed promotions keep every upper tier fenced', functi
         $l1->clear();
         $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
         foreach ($files as $file) {
+            if (!$file instanceof \SplFileInfo) {
+                throw new \UnexpectedValueException('Unexpected filesystem iterator entry.');
+            }
             $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
         }
         rmdir($directory);

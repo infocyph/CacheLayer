@@ -76,10 +76,6 @@ test('scylladb groups bulk reads and writes by configured bucket', function () u
 function scylladbAlternatorIntegrationContext(): ?array
 {
     $endpoint = getenv('IC_SCYLLADB_ENDPOINT') ?: getenv('CACHELAYER_SCYLLADB_ENDPOINT') ?: 'http://127.0.0.1:8000';
-    if (!is_string($endpoint) || $endpoint === '') {
-        return null;
-    }
-
     $base = rtrim($endpoint, '/');
     $context = stream_context_create([
         'http' => [
@@ -96,9 +92,10 @@ function scylladbAlternatorIntegrationContext(): ?array
     return ['endpoint' => $base];
 }
 
+/** @param resource $context */
 function scylladbHttpGet(string $url, mixed $context): ?string
 {
-    $previous = set_error_handler(static fn (): bool => true);
+    set_error_handler(static fn (): bool => true);
 
     try {
         $result = file_get_contents($url, false, $context);

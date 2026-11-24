@@ -26,9 +26,14 @@ test('shared memory adapter uses private filesystem and segment permissions', fu
     $reflection = new ReflectionClass($adapter);
     $tokenFile = $reflection->getProperty('tokenFile')->getValue($adapter);
 
-    expect($tokenFile)->toBeString()
-        ->and(is_file($tokenFile))->toBeTrue()
-        ->and(fileperms($tokenFile) & 0x0002)->toBe(0);
+    if (!is_string($tokenFile) || !is_file($tokenFile)) {
+        throw new RuntimeException('Expected a shared-memory token file.');
+    }
+    $permissions = fileperms($tokenFile);
+    if ($permissions === false) {
+        throw new RuntimeException('Unable to read token file permissions.');
+    }
+    expect($permissions & 0x0002)->toBe(0);
 
     $adapter->clear();
 });
@@ -156,7 +161,10 @@ test('shared memory atomic claim has one winner under process contention', funct
     }
 
     foreach ($children as $pid) {
-        pcntl_waitpid($pid, $status);
+        $status = 0;
+        if (pcntl_waitpid($pid, $status) !== $pid || !pcntl_wifexited($status)) {
+            throw new RuntimeException('Shared-memory contender did not exit normally.');
+        }
         expect(pcntl_wexitstatus($status))->toBe(0);
     }
 
