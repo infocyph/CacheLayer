@@ -31,6 +31,7 @@ it('isolates cache entries by caller context', function () {
 
     $caller = new class
     {
+        /** @throws LogicException */
         public function one(int &$counter): mixed
         {
             return OnceMemoizer::instance()->once(function () use (&$counter): int {
@@ -38,6 +39,7 @@ it('isolates cache entries by caller context', function () {
             });
         }
 
+        /** @throws LogicException */
         public function two(int &$counter): mixed
         {
             return OnceMemoizer::instance()->once(function () use (&$counter): int {
