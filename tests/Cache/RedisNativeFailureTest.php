@@ -15,6 +15,11 @@ use RuntimeException;
 
 final class RedisNativeFailureTest extends TestCase
 {
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws RuntimeException
+     */
     public function testClearAndDeleteReportNativeRefusal(): void
     {
         $client = $this->createMock(Redis::class);
@@ -31,6 +36,13 @@ final class RedisNativeFailureTest extends TestCase
             ->and($adapter->clear())->toBeFalse();
     }
 
+    /**
+     * @throws CacheBackendException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \LogicException
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws RuntimeException
+     */
     public function testIncompleteBulkResponsesAreBackendFailures(): void
     {
         $client = $this->createMock(Redis::class);
@@ -46,6 +58,11 @@ final class RedisNativeFailureTest extends TestCase
         expect($open->getMultiple(['one', 'two'], 'fallback'))->toBe(['one' => 'fallback', 'two' => 'fallback']);
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws RuntimeException
+     */
     public function testExpiredEntryDeletionFailurePreventsSuccessfulPersistence(): void
     {
         $client = $this->createMock(Redis::class);
@@ -55,6 +72,9 @@ final class RedisNativeFailureTest extends TestCase
         expect($adapter->saveItems(['expired' => $item]))->toBeFalse();
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Counter\Exception\AtomicCounterException
+     */
     public function testCounterDeleteReportsNativeRefusal(): void
     {
         $client = $this->createMock(Redis::class);
@@ -62,6 +82,11 @@ final class RedisNativeFailureTest extends TestCase
         self::assertFalse(AtomicCounters::redis('delete-contract', client: $client)->delete('counter'));
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws RuntimeException
+     */
     public function testPipelineStartFailurePreventsSuccessfulPersistence(): void
     {
         $client = $this->createMock(Redis::class);

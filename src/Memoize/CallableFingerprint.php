@@ -20,23 +20,37 @@ final class CallableFingerprint
     /** @var WeakMap<object, string>|null */
     private static ?WeakMap $objects = null;
 
+    /** @throws \LogicException */
     public static function callable(callable $callable): string
     {
-        if (is_array($callable)) {
-            $target = is_object($callable[0])
-                ? self::objectIdentity($callable[0])
-                : 'class:' . $callable[0];
-
-            return 'array:' . $target . '::' . $callable[1];
-        }
         if ($callable instanceof Closure) {
             return self::closure($callable);
+        }
+        if (is_object($callable)) {
+            return 'invokable:' . self::objectIdentity($callable);
         }
         if (is_string($callable)) {
             return 'string:' . $callable;
         }
 
-        return 'invokable:' . self::objectIdentity($callable);
+        return self::methodFingerprint($callable);
+    }
+
+    /**
+     * @throws \LogicException
+     */
+    private static function methodFingerprint(mixed $method): string
+    {
+        if (!is_array($method) || !isset($method[0], $method[1])
+            || (!is_object($method[0]) && !is_string($method[0])) || !is_string($method[1])) {
+            throw new \LogicException('Invalid callable method representation.');
+        }
+
+        $target = is_object($method[0])
+            ? self::objectIdentity($method[0])
+            : 'class:' . $method[0];
+
+        return 'array:' . $target . '::' . $method[1];
     }
 
     public static function flush(): void

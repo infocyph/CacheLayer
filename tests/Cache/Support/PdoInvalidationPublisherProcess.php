@@ -29,10 +29,23 @@ function writePublisherState(mixed $stream, string $value): void
     }
 }
 
-$arguments = $_SERVER['argv'] ?? [];
-if (PHP_SAPI !== 'cli' || count($arguments) !== 9) {
-    throw new RuntimeException('Invalid concurrent invalidation publisher arguments.');
+/**
+ * @return list<mixed>
+ * @throws RuntimeException
+ */
+function publisherArguments(mixed $arguments): array
+{
+    if (!is_array($arguments) || !array_is_list($arguments) || count($arguments) !== 9) {
+        throw new RuntimeException('Invalid concurrent invalidation publisher arguments.');
+    }
+
+    return $arguments;
 }
+
+if (PHP_SAPI !== 'cli') {
+    throw new RuntimeException('Invalid concurrent invalidation publisher invocation.');
+}
+$arguments = publisherArguments($_SERVER['argv'] ?? null);
 
 $dsn = publisherArgument($arguments[1] ?? null);
 $user = publisherArgument($arguments[2] ?? null);
