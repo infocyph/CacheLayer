@@ -17,14 +17,15 @@ interface InternalCachePoolInterface extends CacheItemPoolInterface
     public function createItem(string $key): CacheItemInterface;
 
     /**
-     * @param list<string> $keys
+     * @param array<array-key, string> $keys
      * @return iterable<string, CacheItemInterface>
      */
+    #[\Override]
     public function getItems(array $keys = []): iterable;
 
     /**
      * @param list<string> $tags
-     * @return array<string, string>
+     * @return array<int|string, string>
      */
     public function getTagGenerations(array $tags): array;
 

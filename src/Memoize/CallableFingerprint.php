@@ -20,27 +20,20 @@ final class CallableFingerprint
     /** @var WeakMap<object, string>|null */
     private static ?WeakMap $objects = null;
 
+    /** @throws \LogicException */
     public static function callable(callable $callable): string
     {
         if ($callable instanceof Closure) {
             return self::closure($callable);
         }
-        if (is_string($callable)) {
-            return 'string:' . $callable;
-        }
-        if (is_array($callable)) {
-            $target = is_object($callable[0])
-                ? self::objectIdentity($callable[0])
-                : 'class:' . $callable[0];
-
-            return 'array:' . $target . '::' . $callable[1];
-        }
-
         if (is_object($callable)) {
             return 'invokable:' . self::objectIdentity($callable);
         }
+        if (is_string($callable)) {
+            return 'string:' . $callable;
+        }
 
-        throw new \LogicException('Unsupported callable form.');
+        return self::methodFingerprint($callable);
     }
 
     public static function flush(): void
@@ -56,6 +49,9 @@ final class CallableFingerprint
         return self::$objects[$object] ??= $object::class . '#' . ++self::$nextObjectId;
     }
 
+    /**
+     * @throws \InvalidArgumentException
+     */
     public static function value(mixed $value): mixed
     {
         BoundedValueTraversal::assertSafe($value);
@@ -65,24 +61,46 @@ final class CallableFingerprint
 
     private static function closure(Closure $closure): string
     {
-        self::$closures ??= new WeakMap();
-        if (isset(self::$closures[$closure])) {
-            return self::$closures[$closure];
+        $closures = self::$closures ??= new WeakMap();
+        $cached = $closures[$closure] ?? null;
+        if (is_string($cached)) {
+            return $cached;
         }
 
         $reflection = new ReflectionFunction($closure);
         $bound = $reflection->getClosureThis();
         $scope = $reflection->getClosureScopeClass();
+        $file = $reflection->getFileName();
         $identity = [
             'instance' => self::objectIdentity($closure),
-            'file' => $reflection->getFileName() ?: 'internal',
+            'file' => $file === false ? 'internal' : $file,
             'start' => $reflection->getStartLine(),
             'end' => $reflection->getEndLine(),
             'bound' => $bound === null ? null : self::objectIdentity($bound),
             'scope' => $scope?->getName(),
         ];
 
-        return self::$closures[$closure] = 'closure:' . hash('xxh128', serialize($identity));
+        $fingerprint = 'closure:' . hash('xxh128', serialize($identity));
+        $closures[$closure] = $fingerprint;
+
+        return $fingerprint;
+    }
+
+    /**
+     * @throws \LogicException
+     */
+    private static function methodFingerprint(mixed $method): string
+    {
+        if (!is_array($method) || !isset($method[0], $method[1])
+            || (!is_object($method[0]) && !is_string($method[0])) || !is_string($method[1])) {
+            throw new \LogicException('Invalid callable method representation.');
+        }
+
+        $target = is_object($method[0])
+            ? self::objectIdentity($method[0])
+            : 'class:' . $method[0];
+
+        return 'array:' . $target . '::' . $method[1];
     }
 
     private static function normalizeValue(mixed $value): mixed

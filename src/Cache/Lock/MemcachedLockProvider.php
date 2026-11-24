@@ -14,6 +14,9 @@ final readonly class MemcachedLockProvider implements LockProviderInterface
 
     private int $retrySleepMicros;
 
+    /**
+     * @throws RuntimeException
+     */
     public function __construct(
         private \Memcached $memcached,
         private string $prefix = 'cachelayer:lock:',
@@ -25,6 +28,11 @@ final readonly class MemcachedLockProvider implements LockProviderInterface
         $this->retrySleepMicros = self::normalizeRetrySleepMicros($retrySleepMicros);
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     */
+    #[\Override]
     public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): ?LockHandle
     {
         $ttlSeconds = MemcachedExpiration::fromRelative(self::leaseSeconds($leaseSeconds));
@@ -38,6 +46,11 @@ final readonly class MemcachedLockProvider implements LockProviderInterface
         );
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     */
+    #[\Override]
     public function refresh(?LockHandle $handle, float $leaseSeconds): bool
     {
         if (!$handle instanceof LockHandle) {
@@ -63,6 +76,7 @@ final readonly class MemcachedLockProvider implements LockProviderInterface
         return $this->memcached->cas((float) $casToken, $handle->key, $handle->token, $ttlSeconds);
     }
 
+    #[\Override]
     public function release(?LockHandle $handle): void
     {
         $this->releaseWithGuard($handle, function (LockHandle $lock): void {

@@ -9,6 +9,7 @@ use Psr\Cache\CacheItemInterface;
 
 final class NullCacheAdapter extends AbstractCacheAdapter
 {
+    #[\Override]
     public function clear(): bool
     {
         $this->deferred = [];
@@ -16,6 +17,7 @@ final class NullCacheAdapter extends AbstractCacheAdapter
         return true;
     }
 
+    #[\Override]
     public function deleteItem(string $key): bool
     {
         $this->discardDeferredKey($key);
@@ -26,22 +28,26 @@ final class NullCacheAdapter extends AbstractCacheAdapter
 
     /**
      * @param array $keys The keys argument.
-     * @phpstan-param list<string> $keys
+     * @phpstan-param array<array-key, string> $keys
      */
+    #[\Override]
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
-        unset($keys);
 
         return true;
     }
 
+    #[\Override]
     public function getItem(string $key): CacheItem
     {
         return $this->genericMiss($key);
     }
 
-    /** @param list<string> $tags */
+    /**
+     * @param list<string> $tags
+     * @return array<int|string, string>
+     */
     #[\Override]
     public function getTagGenerations(array $tags): array
     {
@@ -53,6 +59,7 @@ final class NullCacheAdapter extends AbstractCacheAdapter
         return $generations;
     }
 
+    #[\Override]
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
@@ -62,7 +69,9 @@ final class NullCacheAdapter extends AbstractCacheAdapter
      * @param array $keys The keys argument.
      * @phpstan-param list<string> $keys
      * @phpstan-return array<string, CacheItem>
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
+    #[\Override]
     public function multiFetch(array $keys): array
     {
         $items = [];
@@ -82,12 +91,20 @@ final class NullCacheAdapter extends AbstractCacheAdapter
         return true;
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
+    #[\Override]
     public function save(CacheItemInterface $item): bool
     {
         return $this->supportsItem($item);
     }
 
-    /** @param array<string, CacheItemInterface> $items */
+    /**
+     * @param array<string, CacheItemInterface> $items
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
+    #[\Override]
     public function saveItems(array $items): bool
     {
         return $this->supportsItems($items);

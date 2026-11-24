@@ -12,19 +12,24 @@ use Infocyph\CacheLayer\Node\Connection\NodeSqliteConnection;
 use Infocyph\CacheLayer\Node\NodeCacheConfig;
 use PhpBench\Attributes as Bench;
 
+/** @api PHPBench discovers this benchmark entry point through attributes. */
 #[Bench\Iterations(5)]
 #[Bench\Revs(1)]
 final class NodeCacheBench
 {
-    private Cache $cache;
+    private ?Cache $cache = null;
 
-    private string $directory;
+    private string $directory = '';
 
     /** @var list<string> */
     private array $keys = [];
 
-    private string $sqliteFile;
+    private string $sqliteFile = '';
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \LogicException
+     */
     public function tearDown(): void
     {
         $this->cache = Cache::memory('node-bench-released');
@@ -38,20 +43,41 @@ final class NodeCacheBench
         }
     }
 
+    /**
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \LogicException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
+     */
     #[Bench\BeforeMethods('setUpFullHit')]
     #[Bench\AfterMethods('tearDown')]
     public function benchNodeL1FullHit(): int
     {
-        return count($this->cache->getMultiple($this->keys));
+        $cache = $this->cache ?? throw new \LogicException('Benchmark setup did not run.');
+
+        return iterator_count($cache->getMultiple($this->keys));
     }
 
+    /**
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \LogicException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
+     */
     #[Bench\BeforeMethods('setUpMixedHit')]
     #[Bench\AfterMethods('tearDown')]
     public function benchNodeMixedL1SqliteHit(): int
     {
-        return count($this->cache->getMultiple($this->keys));
+        $cache = $this->cache ?? throw new \LogicException('Benchmark setup did not run.');
+
+        return iterator_count($cache->getMultiple($this->keys));
     }
 
+    /**
+     * @throws \RuntimeException
+     * @throws \Infocyph\CacheLayer\Node\Exception\NodeCacheConfigurationException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \LogicException
+     */
     public function setUpFullHit(): void
     {
         [$this->cache, $l1] = $this->createNodeCache();
@@ -59,17 +85,29 @@ final class NodeCacheBench
         $this->seed();
     }
 
+    /**
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \RuntimeException
+     * @throws \Infocyph\CacheLayer\Node\Exception\NodeCacheConfigurationException
+     * @throws \LogicException
+     */
     public function setUpMixedHit(): void
     {
         [$this->cache, $l1] = $this->createNodeCache();
         $this->seed();
         $l1->deleteItems(array_values(array_filter(
             $this->keys,
-            static fn(string $key): bool => ((int) substr($key, strrpos($key, '.') + 1)) % 2 !== 0,
+            static fn(string $key): bool => ((int) substr($key, strlen('node.'))) % 2 !== 0,
         )));
     }
 
-    /** @return array{Cache, ArrayCacheAdapter} */
+    /**
+     * @return array{Cache, ArrayCacheAdapter}
+     * @throws \RuntimeException
+     * @throws \Infocyph\CacheLayer\Node\Exception\NodeCacheConfigurationException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \LogicException
+     */
     private function createNodeCache(): array
     {
         $this->directory = sys_get_temp_dir() . '/cachelayer-node-bench-' . uniqid();
@@ -85,6 +123,11 @@ final class NodeCacheBench
         return [new Cache(new NodeCacheAdapter($l1, $l2, false)), $l1];
     }
 
+    /**
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \LogicException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
+     */
     private function seed(): void
     {
         $values = [];
@@ -94,6 +137,7 @@ final class NodeCacheBench
             $this->keys[] = $key;
             $values[$key] = $index;
         }
-        $this->cache->setMultiple($values, 60);
+        $cache = $this->cache ?? throw new \LogicException('Benchmark setup did not run.');
+        $cache->setMultiple($values, 60);
     }
 }

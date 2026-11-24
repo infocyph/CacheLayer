@@ -24,6 +24,9 @@ LUA;
 
     private string $namespace;
 
+    /**
+     * @throws AtomicCounterException
+     */
     public function __construct(
         private \Redis $client,
         string $namespace = 'default',
@@ -39,6 +42,10 @@ LUA;
         }
     }
 
+    /**
+     * @throws AtomicCounterException
+     */
+    #[\Override]
     public function decrement(string $key, int $by = 1, ?int $ttlSeconds = null): AtomicCounterValue
     {
         if ($by < 1) {
@@ -48,25 +55,28 @@ LUA;
         return $this->change($key, -$by, $ttlSeconds);
     }
 
+    /**
+     * @throws AtomicCounterException
+     */
+    #[\Override]
     public function delete(string $key): bool
     {
-        return $this->client->del($this->map($key)) !== false;
+        return self::deleteSucceeded($this->client->del($this->map($key)));
     }
 
+    /**
+     * @throws AtomicCounterException
+     */
+    #[\Override]
     public function get(string $key): ?int
     {
-        $value = $this->client->get($this->map($key));
-        if ($value === false || $value === null) {
-            return null;
-        }
-
-        if (!is_string($value)) {
-            throw new AtomicCounterException('Atomic counter contains a non-integer value.');
-        }
-
-        return $this->parseInteger($value);
+        return $this->readCounter($this->client->get($this->map($key)));
     }
 
+    /**
+     * @throws AtomicCounterException
+     */
+    #[\Override]
     public function increment(string $key, int $by = 1, ?int $ttlSeconds = null): AtomicCounterValue
     {
         if ($by < 1) {
@@ -76,6 +86,14 @@ LUA;
         return $this->change($key, $by, $ttlSeconds);
     }
 
+    private static function deleteSucceeded(mixed $result): bool
+    {
+        return is_int($result) && $result >= 0;
+    }
+
+    /**
+     * @throws AtomicCounterException
+     */
     private function change(string $key, int $by, ?int $ttlSeconds): AtomicCounterValue
     {
         $ttl = $this->normalizeTtl($ttlSeconds);
@@ -102,6 +120,9 @@ LUA;
         return new AtomicCounterValue($this->parseInteger($result[0]), $initialized);
     }
 
+    /**
+     * @throws AtomicCounterException
+     */
     private function map(string $key): string
     {
         try {
@@ -113,6 +134,9 @@ LUA;
         return self::COUNTER_PREFIX . $this->namespace . ':' . $key;
     }
 
+    /**
+     * @throws AtomicCounterException
+     */
     private function normalizeTtl(?int $ttlSeconds): int
     {
         if ($ttlSeconds === null) {
@@ -126,6 +150,9 @@ LUA;
         return $ttlSeconds;
     }
 
+    /**
+     * @throws AtomicCounterException
+     */
     private function parseInteger(string $value): int
     {
         if (preg_match('/^-?\d+$/D', $value) !== 1) {
@@ -142,5 +169,18 @@ LUA;
         }
 
         return (int) (($negative && $digits !== '0' ? '-' : '') . $digits);
+    }
+
+    /** @throws AtomicCounterException */
+    private function readCounter(mixed $value): ?int
+    {
+        if ($value === false || $value === null) {
+            return null;
+        }
+        if (!is_string($value)) {
+            throw new AtomicCounterException('Atomic counter contains a non-integer value.');
+        }
+
+        return $this->parseInteger($value);
     }
 }

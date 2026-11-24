@@ -32,6 +32,10 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
 
     private readonly string $table;
 
+    /**
+     * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     public function __construct(
         string $namespace = 'default',
         #[\SensitiveParameter]
@@ -71,6 +75,10 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         }
     }
 
+    /**
+     * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     public static function defaultSqliteFileForNamespace(string $namespace): string
     {
         $directory = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR)
@@ -90,6 +98,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         return $directory . DIRECTORY_SEPARATOR . 'cache_' . CacheInput::namespace($namespace) . '.sqlite';
     }
 
+    #[\Override]
     public function clear(): bool
     {
         $statement = $this->pdo->prepare("DELETE FROM {$this->table} WHERE namespace = ?");
@@ -99,6 +108,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         return $cleared;
     }
 
+    #[\Override]
     public function deleteItem(string $key): bool
     {
         $this->discardDeferredKey($key);
@@ -110,10 +120,12 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         return $statement->execute([$this->namespace, self::KIND_DATA, $key]);
     }
 
-    /** @param list<string> $keys */
+    /** @param array<array-key, string> $keys */
+    #[\Override]
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
+        $keys = array_values($keys);
 
         return $this->deleteByKind(self::KIND_DATA, $keys);
     }
@@ -123,6 +135,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         return $this->pdo;
     }
 
+    #[\Override]
     public function getItem(string $key): CacheItem
     {
         $rows = $this->fetchRows(self::KIND_DATA, [$key]);
@@ -138,7 +151,8 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
 
     /**
      * @param list<string> $tags
-     * @return array<string, string>
+     * @return array<int|string, string>
+     * @throws RuntimeException
      */
     #[\Override]
     public function getTagGenerations(array $tags): array
@@ -152,6 +166,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         );
     }
 
+    #[\Override]
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
@@ -161,6 +176,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
      * @param list<string> $keys
      * @return array<string, CacheItem>
      */
+    #[\Override]
     public function multiFetch(array $keys): array
     {
         $rows = $this->fetchRows(self::KIND_DATA, $keys);
@@ -174,6 +190,9 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         return $items;
     }
 
+    /**
+     * @throws RuntimeException
+     */
     public function pruneExpired(int $limit = 1000): int
     {
         if ($limit < 1) {
@@ -207,6 +226,12 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         return $this->upsertRows($rows);
     }
 
+    /**
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws RuntimeException
+     */
+    #[\Override]
     public function save(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
@@ -225,7 +250,13 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         ]]);
     }
 
-    /** @param array<string, CacheItemInterface> $items */
+    /**
+     * @param array<string, CacheItemInterface> $items
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws RuntimeException
+     */
+    #[\Override]
     public function saveItems(array $items): bool
     {
         $rows = [];
@@ -251,6 +282,9 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         return $this->deleteByKind(self::KIND_DATA, $expired) && $this->upsertRows($rows);
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private static function assertSqliteTarget(string $dsn): void
     {
         if (!str_starts_with($dsn, 'sqlite:')) {
@@ -362,7 +396,10 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         return $rows;
     }
 
-    /** @param list<array{0:string, 1:string, 2:string, 3:int|null}> $rows */
+    /**
+     * @param list<array{0:string, 1:string, 2:string, 3:int|null}> $rows
+     * @throws PDOException
+     */
     private function upsertChunk(array $rows): bool
     {
         if (!in_array($this->driver, ['pgsql', 'sqlite', 'mysql', 'mariadb'], true)) {
@@ -385,7 +422,10 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         )->execute($parameters);
     }
 
-    /** @param list<array{0:string, 1:string, 2:string, 3:int|null}> $rows */
+    /**
+     * @param list<array{0:string, 1:string, 2:string, 3:int|null}> $rows
+     * @throws PDOException
+     */
     private function upsertGenericRows(array $rows): bool
     {
         $this->pdo->beginTransaction();

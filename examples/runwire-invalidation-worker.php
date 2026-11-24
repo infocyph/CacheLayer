@@ -16,11 +16,9 @@ use Infocyph\Runwire\RuntimeContext;
 use Infocyph\Runwire\Supervisor\Enum\WorkerRole;
 use Infocyph\Runwire\Supervisor\WorkerContext;
 
-$autoload = getenv('CACHELAYER_EXAMPLE_AUTOLOAD');
-if (!is_string($autoload) || $autoload === '') {
-    $autoload = dirname(__DIR__) . '/vendor/autoload.php';
+if (!class_exists(ClusterCache::class)) {
+    require dirname(__DIR__) . '/vendor/autoload.php';
 }
-require $autoload;
 
 $base = sys_get_temp_dir() . '/cachelayer-runwire-example-' . bin2hex(random_bytes(6));
 $readyParent = null;
@@ -79,11 +77,15 @@ try {
     );
     RunwireIntegration::bind($runtime);
 
-    [$readyParent, $readyChild] = stream_socket_pair(
+    $readyPair = stream_socket_pair(
         STREAM_PF_UNIX,
         STREAM_SOCK_STREAM,
         STREAM_IPPROTO_IP,
     );
+    if ($readyPair === false) {
+        throw new RuntimeException('Unable to create Runwire readiness socket pair.');
+    }
+    [$readyParent, $readyChild] = $readyPair;
     $pid = getmypid();
     $worker = new WorkerContext(
         group: 'cachelayer-example',
@@ -134,6 +136,9 @@ try {
             RecursiveIteratorIterator::CHILD_FIRST,
         );
         foreach ($files as $file) {
+            if (!$file instanceof SplFileInfo) {
+                throw new RuntimeException('Unexpected filesystem iterator entry.');
+            }
             $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
         }
         rmdir($base);

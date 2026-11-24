@@ -19,6 +19,9 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
 {
     private string $driver;
 
+    /**
+     * @throws ClusterTransportException
+     */
     public function __construct(
         private PDO $connection,
         bool $allowSqliteForTesting = false,
@@ -31,6 +34,11 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
         }
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Cluster\Exception\ClusterCacheException
+     * @throws ClusterTransportException
+     */
+    #[\Override]
     public function consumeAfter(string $cluster, ?string $cursor, int $limit): InvalidationBatch
     {
         if ($limit < 1) {
@@ -60,6 +68,10 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
         return new InvalidationBatch($events);
     }
 
+    /**
+     * @throws ClusterTransportException
+     */
+    #[\Override]
     public function countAfter(string $cluster, ?string $cursor): int
     {
         try {
@@ -82,6 +94,10 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
         return is_numeric($count) ? (int) $count : 0;
     }
 
+    /**
+     * @throws ClusterTransportException
+     */
+    #[\Override]
     public function isCursorBefore(string $cursor, string $oldestAvailableId): bool
     {
         $cursor = $this->eventId($cursor);
@@ -92,11 +108,19 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
             : strlen($cursor) < strlen($oldestAvailableId);
     }
 
+    /**
+     * @throws ClusterTransportException
+     */
+    #[\Override]
     public function newestAvailableId(string $cluster): ?string
     {
         return $this->eventBoundary($cluster, 'MAX');
     }
 
+    /**
+     * @throws ClusterTransportException
+     */
+    #[\Override]
     public function oldestAvailableId(string $cluster): ?string
     {
         try {
@@ -113,6 +137,9 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
         return is_int($id) || (is_string($id) && ctype_digit($id)) ? (string) $id : null;
     }
 
+    /**
+     * @throws ClusterTransportException
+     */
     public function pruneBefore(int $retentionBoundary, int $limit = 5_000): int
     {
         if ($limit < 1) {
@@ -131,6 +158,10 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
         return $statement->rowCount();
     }
 
+    /**
+     * @throws ClusterTransportException
+     */
+    #[\Override]
     public function publish(InvalidationEvent $event): string
     {
         $ownsTransaction = !$this->connection->inTransaction();
@@ -162,6 +193,10 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
         }
     }
 
+    /**
+     * @throws ClusterTransportException
+     */
+    #[\Override]
     public function publishWithinTransaction(PDO $connection, InvalidationEvent $event): string
     {
         if ($connection !== $this->connection || !$connection->inTransaction()) {
@@ -185,6 +220,9 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
             . ' ORDER BY event_id ASC LIMIT :limit';
     }
 
+    /**
+     * @throws ClusterTransportException
+     */
     private function eventBoundary(string $cluster, string $aggregate): ?string
     {
         try {
@@ -204,6 +242,8 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
     /**
      * @param array $row The row argument.
      * @phpstan-param array<string, mixed> $row
+     * @throws ClusterTransportException
+     * @throws \Infocyph\CacheLayer\Cluster\Exception\ClusterCacheException
      */
     private function eventFromRow(array $row): InvalidationEvent
     {
@@ -234,6 +274,9 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
         );
     }
 
+    /**
+     * @throws ClusterTransportException
+     */
     private function eventId(string $id): string
     {
         if (!ctype_digit($id)) {
@@ -245,9 +288,12 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
         return $normalized === '' ? '0' : $normalized;
     }
 
+    /**
+     * @throws ClusterTransportException
+     */
     private function eventIdFromValue(mixed $value): string
     {
-        if (is_int($value)) {
+        if (is_int($value) && $value >= 0) {
             return (string) $value;
         }
 
@@ -258,6 +304,9 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
         throw new ClusterTransportException('Invalid invalidation event ID returned by PDO transport.');
     }
 
+    /**
+     * @throws ClusterTransportException
+     */
     private function insert(PDO $connection, InvalidationEvent $event): string
     {
         try {
@@ -279,13 +328,17 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
             throw new ClusterTransportException('Unable to publish an invalidation event.', 0, $exception);
         }
 
-        if (!is_string($id) || $id === '') {
-            throw new ClusterTransportException('PDO invalidation transport did not return an event ID.');
+        $id = $this->eventIdFromValue($id);
+        if ($this->eventId($id) === '0') {
+            throw new ClusterTransportException('PDO invalidation transport did not return a positive event ID.');
         }
 
         return $id;
     }
 
+    /**
+     * @throws ClusterTransportException
+     */
     private function lockCluster(PDO $connection, string $cluster): void
     {
         try {
@@ -332,6 +385,9 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
         return 'DELETE FROM ' . PdoInvalidationSchema::EVENT_TABLE . ' WHERE event_id IN (' . $selection . ')';
     }
 
+    /**
+     * @throws ClusterTransportException
+     */
     private function publishLocked(PDO $connection, InvalidationEvent $event): string
     {
         $this->lockCluster($connection, $event->cluster);

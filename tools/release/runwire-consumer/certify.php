@@ -15,8 +15,6 @@ use Infocyph\Runwire\Runtime\Enum\RuntimeDriver;
 use Infocyph\Runwire\RuntimeCapabilities;
 use Infocyph\Runwire\RuntimeContext;
 
-require __DIR__ . '/vendor/autoload.php';
-
 const ITERATIONS = 4_000;
 const WARMUP = 250;
 const MIN_RPM_RATIO = 0.50;
@@ -28,9 +26,15 @@ const MAX_MEMORY_DELTA_BYTES = 8_388_608;
 function percentile(array $samples, float $percentile): float
 {
     sort($samples, SORT_NUMERIC);
-    $index = (int) floor((count($samples) - 1) * $percentile);
+    $index = (int) floor((float) (count($samples) - 1) * $percentile);
 
-    return (float) ($samples[$index] ?? 0.0);
+    return $samples[$index] ?? 0.0;
+}
+
+/** @return array<array-key, mixed> */
+function normalizeUsage(mixed $usage): array
+{
+    return is_array($usage) ? $usage : [];
 }
 
 /** @param array<array-key, mixed> $usage */
@@ -53,6 +57,12 @@ function cpuMicros(array $start, array $end): int
         + usageValue($end, 'ru_stime.tv_usec') - usageValue($start, 'ru_stime.tv_usec');
 }
 
+/**
+ * @throws Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+ * @throws Infocyph\CacheLayer\Exceptions\CacheBackendException
+ * @throws RuntimeException
+ * @throws Psr\Cache\InvalidArgumentException
+ */
 function runCacheOperation(Cache $cache, int $index): void
 {
     $tenant = $index % 32;
@@ -102,6 +112,10 @@ function metricTotal(array $metrics, string $metric): int
     return $total;
 }
 
+/**
+ * @throws InvalidArgumentException
+ * @throws LogicException
+ */
 function executeCacheRequest(
     RuntimeContext $runtime,
     Cache $cache,
@@ -128,7 +142,13 @@ function executeCacheRequest(
     }
 }
 
-/** @return array<string, int|float> */
+/**
+ * @return array<string, int|float>
+ * @throws Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+ * @throws RuntimeException
+ * @throws LogicException
+ * @throws InvalidArgumentException
+ */
 function workload(RuntimeContext $runtime, bool $integrated): array
 {
     $cache = Cache::memory($integrated ? 'runwire-on' : 'runwire-off');
@@ -148,10 +168,7 @@ function workload(RuntimeContext $runtime, bool $integrated): array
     $latencies = [];
     $errors = 0;
     $startMemory = memory_get_usage(true);
-    $startCpu = getrusage();
-    if ($startCpu === false) {
-        $startCpu = [];
-    }
+    $startCpu = normalizeUsage(getrusage());
     $start = hrtime(true);
 
     for ($iteration = 0; $iteration < ITERATIONS; ++$iteration) {
@@ -163,10 +180,7 @@ function workload(RuntimeContext $runtime, bool $integrated): array
     }
 
     $elapsed = (hrtime(true) - $start) / 1_000_000_000;
-    $endCpu = getrusage();
-    if ($endCpu === false) {
-        $endCpu = [];
-    }
+    $endCpu = normalizeUsage(getrusage());
     $metrics = $cache->exportMetrics();
     $cpuMicros = cpuMicros($startCpu, $endCpu);
 
@@ -176,7 +190,7 @@ function workload(RuntimeContext $runtime, bool $integrated): array
     gc_collect_cycles();
 
     return [
-        'rpm' => ITERATIONS / max($elapsed, 0.000001) * 60,
+        'rpm' => (float) ITERATIONS / max((float) $elapsed, 0.000001) * 60.0,
         'p50_ms' => percentile($latencies, 0.50),
         'p95_ms' => percentile($latencies, 0.95),
         'p99_ms' => percentile($latencies, 0.99),
@@ -189,7 +203,17 @@ function workload(RuntimeContext $runtime, bool $integrated): array
     ];
 }
 
-/** @return array<string, int|float> */
+/**
+ * @return array<string, int|float>
+ * @throws Infocyph\CacheLayer\Node\Exception\NodeCacheConfigurationException
+ * @throws Infocyph\CacheLayer\Cluster\Exception\ClusterTransportException
+ * @throws Infocyph\CacheLayer\Cluster\Exception\ClusterConfigurationException
+ * @throws RuntimeException
+ * @throws Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+ * @throws Infocyph\CacheLayer\Cluster\Exception\ClusterCacheException
+ * @throws Throwable
+ * @throws Infocyph\CacheLayer\Node\Exception\NodeCacheStorageException
+ */
 function invalidationAndMaintenance(): array
 {
     $base = sys_get_temp_dir() . '/cachelayer-runwire-cert-' . bin2hex(random_bytes(6));
@@ -268,7 +292,7 @@ $baseline = workload($runtime, false);
 $integrated = workload($runtime, true);
 $operational = invalidationAndMaintenance();
 
-$ratio = $integrated['rpm'] / max((float) $baseline['rpm'], 0.000001);
+$ratio = (float) $integrated['rpm'] / max((float) $baseline['rpm'], 0.000001);
 $p99Budget = ((float) $baseline['p99_ms'] * MAX_P99_MULTIPLIER) + MAX_EXTRA_P99_MS;
 
 $report = [

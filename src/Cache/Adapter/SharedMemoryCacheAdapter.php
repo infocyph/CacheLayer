@@ -27,6 +27,10 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
 
     private readonly string $tokenFile;
 
+    /**
+     * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     public function __construct(
         string $namespace = 'default',
         int $segmentSize = 16_777_216,
@@ -41,19 +45,28 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         $this->lockHandle = $this->openLockHandle();
 
         $this->withExclusiveLock(function (): void {
-            if (!shm_has_var($this->segment, self::VAR_ID)) {
-                shm_put_var($this->segment, self::VAR_ID, [self::OWNER_KEY => $this->ownerIdentity()]);
+            if (!shm_has_var($this->segment, self::VAR_ID)
+                && !$this->store([self::OWNER_KEY => $this->ownerIdentity()])) {
+                throw new RuntimeException('Unable to initialize the shared-memory cache');
             }
             $this->loadStore();
         });
     }
 
+    #[\Override]
     public function __destruct()
     {
-        fclose($this->lockHandle);
-        shm_detach($this->segment);
+        parent::__destruct();
+        $handle = $this->lockHandle;
+        fclose($handle);
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws RuntimeException
+     */
+    #[\Override]
     public function atomicCompareAndSet(
         string $key,
         mixed $expected,
@@ -83,6 +96,11 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         });
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws RuntimeException
+     */
+    #[\Override]
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
         $this->discardDeferredKey($key);
@@ -92,6 +110,12 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         return $this->withExclusiveLock(fn(): CacheItemInterface => $this->consumeRecord($key, $mapped));
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws RuntimeException
+     */
+    #[\Override]
     public function atomicSetIfAbsent(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
@@ -118,6 +142,10 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         });
     }
 
+    /**
+     * @throws RuntimeException
+     */
+    #[\Override]
     public function clear(): bool
     {
         $this->deferred = [];
@@ -131,6 +159,11 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         );
     }
 
+    /**
+     * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
+    #[\Override]
     public function deleteItem(string $key): bool
     {
         $this->discardDeferredKey($key);
@@ -146,8 +179,11 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
 
     /**
      * @param array $keys The keys argument.
-     * @phpstan-param list<string> $keys
+     * @phpstan-param array<array-key, string> $keys
+     * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
+    #[\Override]
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
@@ -159,6 +195,11 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         return $this->withExclusiveLock(fn(): bool => $this->updateStore([], $mappedKeys));
     }
 
+    /**
+     * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
+    #[\Override]
     public function getItem(string $key): CacheItem
     {
         $mapped = $this->map($key);
@@ -179,7 +220,8 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
 
     /**
      * @param list<string> $tags
-     * @return array<string, string>
+     * @return array<int|string, string>
+     * @throws RuntimeException
      */
     #[\Override]
     public function getTagGenerations(array $tags): array
@@ -187,6 +229,11 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         return $this->withExclusiveLock(fn(): array => $this->initializeTagGenerations($tags));
     }
 
+    /**
+     * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
+    #[\Override]
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
@@ -195,13 +242,19 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
     /**
      * @param list<string> $keys
      * @return array<string, CacheItem>
+     * @throws RuntimeException
      */
+    #[\Override]
     public function multiFetch(array $keys): array
     {
         return $this->withSharedLock(fn(): array => $this->fetchStoredItems($keys));
     }
 
-    /** @param list<string> $tags */
+    /**
+     * @param list<string> $tags
+     * @return array<int|string, string>
+     * @throws RuntimeException
+     */
     #[\Override]
     public function readTagGenerations(array $tags): array
     {
@@ -219,7 +272,10 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         });
     }
 
-    /** @param list<string> $tags */
+    /**
+     * @param list<string> $tags
+     * @throws RuntimeException
+     */
     #[\Override]
     public function rotateTagGenerations(array $tags): bool
     {
@@ -231,6 +287,10 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         return $this->storeTagGenerations($generations);
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
+    #[\Override]
     public function save(CacheItemInterface $item): bool
     {
         return $this->saveEncoded($item, function (CacheItemInterface $saveItem, array $expires): bool {
@@ -246,7 +306,13 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         });
     }
 
-    /** @param array<string, CacheItemInterface> $items */
+    /**
+     * @param array<string, CacheItemInterface> $items
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws RuntimeException
+     */
+    #[\Override]
     public function saveItems(array $items): bool
     {
         $records = [];
@@ -267,7 +333,10 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         return $this->withExclusiveLock(fn(): bool => $this->updateStore($records, $expired));
     }
 
-    /** @param array<string, string> $generations */
+    /**
+     * @param array<int|string, string> $generations
+     * @throws RuntimeException
+     */
     #[\Override]
     public function storeTagGenerations(array $generations): bool
     {
@@ -285,6 +354,9 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         });
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function attachSegment(int $segmentSize): \SysvSharedMemory
     {
         if (!function_exists('ftok')) {
@@ -318,6 +390,10 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
             : null;
     }
 
+    /**
+     * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     private function consumeRecord(string $key, string $mapped): CacheItemInterface
     {
         $store = $this->loadStore();
@@ -338,6 +414,9 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         return $this->genericItemFromRecord($key, $record);
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function createTokenFile(): string
     {
         $directory = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR)
@@ -368,6 +447,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
     /**
      * @param list<string> $keys
      * @return array<string, CacheItem>
+     * @throws RuntimeException
      */
     private function fetchStoredItems(array $keys): array
     {
@@ -387,7 +467,8 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
 
     /**
      * @param list<string> $tags
-     * @return array<string, string>
+     * @return array<int|string, string>
+     * @throws RuntimeException
      */
     private function initializeTagGenerations(array $tags): array
     {
@@ -413,6 +494,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
 
     /**
      * @phpstan-return array<string, string>
+     * @throws RuntimeException
      */
     private function loadStore(): array
     {
@@ -449,7 +531,10 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         return $this->ns . ':m:tag:' . $tag;
     }
 
-    /** @phpstan-return resource */
+    /**
+     * @phpstan-return resource
+     * @throws RuntimeException
+     */
     private function openLockHandle(): mixed
     {
         $this->assertPathNotSymlink($this->tokenFile, 'Shared-memory token file');
@@ -457,8 +542,6 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         if (is_resource($lockHandle)) {
             return $lockHandle;
         }
-
-        shm_detach($this->segment);
 
         throw new RuntimeException('Unable to open the shared-memory lock file');
     }
@@ -468,6 +551,9 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         return hash('xxh128', self::class . "\0" . $this->ns . "\0" . $this->tokenFile);
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function prepareDirectory(string $directory): void
     {
         $this->assertPathNotSymlink($directory, 'Shared-memory cache directory');
@@ -505,6 +591,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
     /**
      * @param array<string, string> $records
      * @param list<string> $expired
+     * @throws RuntimeException
      */
     private function updateStore(array $records, array $expired): bool
     {
@@ -524,6 +611,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
      * @param callable $operation The operation to run while locked.
      * @phpstan-param callable(): T $operation
      * @phpstan-return T
+     * @throws RuntimeException
      */
     private function withExclusiveLock(callable $operation): mixed
     {
@@ -536,6 +624,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
      * @param callable $callback The operation to run while locked.
      * @phpstan-param callable(): T $callback
      * @phpstan-return T
+     * @throws RuntimeException
      */
     private function withLock(int $operation, callable $callback): mixed
     {
@@ -558,6 +647,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
      * @param callable $operation The operation to run while locked.
      * @phpstan-param callable(): T $operation
      * @phpstan-return T
+     * @throws RuntimeException
      */
     private function withSharedLock(callable $operation): mixed
     {

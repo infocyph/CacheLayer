@@ -17,10 +17,10 @@ use RuntimeException;
 
 final class ArchitectureHardeningTest extends AbstractCacheAdapter
 {
-    /** @var array<string, array{value:mixed,expires:int|null,tags:array<string,string>}> */
+    /** @var array<string, array{value:mixed,expires:int|null,tags:array<int|string,string>}> */
     private array $records = [];
 
-    /** @var array<string, string> */
+    /** @var array<int|string, string> */
     private array $generations = [];
 
     public int $deleteBatches = 0;
@@ -35,6 +35,7 @@ final class ArchitectureHardeningTest extends AbstractCacheAdapter
 
     public bool $throwOnTagRead = false;
 
+    #[\Override]
     public function clear(): bool
     {
         $this->records = [];
@@ -43,11 +44,13 @@ final class ArchitectureHardeningTest extends AbstractCacheAdapter
         return true;
     }
 
+    #[\Override]
     public function deleteItem(string $key): bool
     {
         return $this->deleteItems([$key]);
     }
 
+    #[\Override]
     public function deleteItems(array $keys): bool
     {
         $this->deleteBatches++;
@@ -58,17 +61,32 @@ final class ArchitectureHardeningTest extends AbstractCacheAdapter
         return true;
     }
 
+    /**
+     * @throws RuntimeException
+     * @throws CacheInvalidArgumentException
+     */
+    #[\Override]
     public function getItem(string $key): CacheItem
     {
         return $this->multiFetch([$key])[$key];
     }
 
+    /**
+     * @throws RuntimeException
+     * @throws CacheInvalidArgumentException
+     */
+    #[\Override]
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
     }
 
-    /** @return array<string, CacheItem> */
+    /**
+     * @return array<string, CacheItem>
+     * @throws RuntimeException
+     * @throws CacheInvalidArgumentException
+     */
+    #[\Override]
     public function multiFetch(array $keys): array
     {
         $this->readBatches++;
@@ -91,18 +109,22 @@ final class ArchitectureHardeningTest extends AbstractCacheAdapter
         return $items;
     }
 
+    /** @throws CacheInvalidArgumentException */
+    #[\Override]
     public function save(CacheItemInterface $item): bool
     {
         return $this->saveItems([$item->getKey() => $item]);
     }
 
+    /**
+     * @throws CacheInvalidArgumentException
+     */
+    #[\Override]
     public function saveItems(array $items): bool
     {
         $this->saveBatches++;
-        foreach ($items as $item) {
-            if (!$this->supportsItem($item)) {
-                return false;
-            }
+        if (!$this->supportsItems($items)) {
+            return false;
         }
         foreach ($items as $item) {
             $ttl = $item instanceof CacheItem ? $item->ttlSeconds() : null;
@@ -121,6 +143,10 @@ final class ArchitectureHardeningTest extends AbstractCacheAdapter
         return true;
     }
 
+    /**
+     * @throws RuntimeException
+     */
+    #[\Override]
     public function getTagGenerations(array $tags): array
     {
         $this->tagFetchBatches++;
@@ -135,6 +161,7 @@ final class ArchitectureHardeningTest extends AbstractCacheAdapter
         return $generations;
     }
 
+    #[\Override]
     public function rotateTagGenerations(array $tags): bool
     {
         foreach ($tags as $tag) {
@@ -216,19 +243,19 @@ test('cache items can only be persisted by their exact owning pool', function ()
 test('invalid argument failures satisfy both PSR cache contracts', function () {
     $exception = new CacheInvalidArgumentException('invalid');
 
-    expect($exception)->toBeInstanceOf(\Psr\Cache\InvalidArgumentException::class)
-        ->and($exception)->toBeInstanceOf(\Psr\SimpleCache\InvalidArgumentException::class);
+    expect((new \ReflectionClass($exception))->implementsInterface(\Psr\Cache\InvalidArgumentException::class))->toBeTrue()
+        ->and((new \ReflectionClass($exception))->implementsInterface(\Psr\SimpleCache\InvalidArgumentException::class))->toBeTrue();
 });
 
 test('namespaces are strictly validated instead of normalized', function () {
     expect(fn() => Cache::memory('tenant/a'))->toThrow(CacheInvalidArgumentException::class)
         ->and(fn() => Cache::memory('tenant:a'))->toThrow(CacheInvalidArgumentException::class)
         ->and(fn() => Cache::memory(str_repeat('n', 65)))->toThrow(CacheInvalidArgumentException::class)
-        ->and(Cache::memory('tenant-a.v1'))->toBeInstanceOf(Cache::class);
+        ->and(Cache::memory('tenant-a.v1')->set('valid', true))->toBeTrue();
 });
 
 test('cache options do not load process environment state', function () {
-    expect(method_exists(CacheOptions::class, 'fromEnvironment'))->toBeFalse();
+    expect((new \ReflectionClass(CacheOptions::class))->hasMethod('fromEnvironment'))->toBeFalse();
 });
 
 test('missing tag metadata cannot resurrect a tagged record', function () {
@@ -263,7 +290,7 @@ test('runtime failures are fail-open by default and optionally propagate', funct
     $closedAdapter = new ArchitectureHardeningTest();
     $closed = new Cache($closedAdapter, options: new CacheOptions(failOpen: false));
     $closedAdapter->throwOnRead = true;
-    expect(fn() => $closed->get('key'))->toThrow(CacheBackendException::class);
+    expect(fn(): mixed => $closed->get('key'))->toThrow(CacheBackendException::class);
 });
 
 test('authentication state capabilities expose effective cache policy', function () {
@@ -299,8 +326,8 @@ test('non-authoritative caches cannot expose an authentication state lock', func
 test('fail-closed backend failures satisfy both PSR cache exception contracts', function () {
     $exception = new CacheBackendException('failed');
 
-    expect($exception)->toBeInstanceOf(\Psr\Cache\CacheException::class)
-        ->and($exception)->toBeInstanceOf(\Psr\SimpleCache\CacheException::class);
+    expect((new \ReflectionClass($exception))->implementsInterface(\Psr\Cache\CacheException::class))->toBeTrue()
+        ->and((new \ReflectionClass($exception))->implementsInterface(\Psr\SimpleCache\CacheException::class))->toBeTrue();
 });
 
 test('tag metadata failures cannot expose or create tagged values', function () {

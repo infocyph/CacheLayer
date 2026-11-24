@@ -8,6 +8,7 @@ use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 
 final readonly class CacheOptions
 {
+    /** @throws CacheInvalidArgumentException */
     public function __construct(
         #[\SensitiveParameter]
         public ?string $integrityKey = null,
@@ -31,5 +32,4 @@ final readonly class CacheOptions
             throw new CacheInvalidArgumentException('The compression level must be between 1 and 9.');
         }
     }
-
 }

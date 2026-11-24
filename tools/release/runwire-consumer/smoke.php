@@ -6,18 +6,18 @@ use Composer\InstalledVersions;
 use Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration;
 use Infocyph\Runwire\RuntimeContext;
 
-require __DIR__ . '/vendor/autoload.php';
-
 if (!class_exists(RuntimeContext::class) || !class_exists(RunwireIntegration::class)) {
     throw new RuntimeException('Runwire and CacheLayer integration classes must both be installed.');
 }
 
 $version = InstalledVersions::getPrettyVersion('infocyph/runwire');
-if (!is_string($version) || !str_starts_with(ltrim($version, 'v'), '3.')) {
-    throw new RuntimeException('The release integration gate requires Runwire 3.x.');
+$normalizedVersion = InstalledVersions::getVersion('infocyph/runwire');
+if (!is_string($version) || !is_string($normalizedVersion)
+    || version_compare($normalizedVersion, '3.1.0.0', '<')
+    || version_compare($normalizedVersion, '4.0.0.0', '>=')) {
+    throw new RuntimeException('The release integration gate requires Runwire 3.1 or newer within the 3.x series.');
 }
 
-putenv('CACHELAYER_EXAMPLE_AUTOLOAD=' . __DIR__ . '/vendor/autoload.php');
 require dirname(__DIR__, 3) . '/examples/runwire-invalidation-worker.php';
 
 $extensions = array_values(array_filter(

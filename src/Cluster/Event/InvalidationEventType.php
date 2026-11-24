@@ -8,7 +8,7 @@ enum InvalidationEventType: string
 {
     case Key = 'key';
 
-    case Namespace = 'namespace';
+    case NamespaceClear = 'namespace';
 
     case Tag = 'tag';
 }

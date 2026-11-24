@@ -16,6 +16,12 @@ use Infocyph\CacheLayer\Node\Maintenance\NodeCachePruner;
 
 final class NodeCache
 {
+    /**
+     * @throws \Infocyph\CacheLayer\Node\Exception\NodeCacheConfigurationException
+     * @throws \RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \LogicException
+     */
     public static function create(NodeCacheConfig $config): Cache
     {
         $connection = NodeSqliteConnection::create($config);
@@ -37,6 +43,11 @@ final class NodeCache
         );
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Node\Exception\NodeCacheConfigurationException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \Infocyph\CacheLayer\Node\Exception\NodeCacheStorageException
+     */
     public static function maintenance(NodeCacheConfig $config): NodeCacheMaintenance
     {
         $connection = NodeSqliteConnection::create($config);
@@ -48,6 +59,10 @@ final class NodeCache
         );
     }
 
+    /**
+     * @throws \RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     private static function createApcuAdapter(
         NodeCacheConfig $config,
         string $storageIdentity,
@@ -61,7 +76,8 @@ final class NodeCache
 
     private static function storageIdentity(NodeCacheConfig $config): string
     {
-        $path = realpath($config->sqliteFile) ?: $config->sqliteFile;
+        $resolved = realpath($config->sqliteFile);
+        $path = $resolved === false ? $config->sqliteFile : $resolved;
 
         return 'node.' . hash('xxh128', $path . "\0" . $config->namespace);
     }

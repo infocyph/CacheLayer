@@ -4,11 +4,17 @@ declare(strict_types=1);
 
 namespace Infocyph\CacheLayer\Cache\Adapter;
 
+use Closure;
+use DirectoryIterator;
 use Infocyph\CacheLayer\Support\FilesystemTrust;
 use RuntimeException;
+use UnexpectedValueException;
 
 trait SecuresFilesystemDirectories
 {
+    /**
+     * @throws RuntimeException
+     */
     protected function assertPathNotSymlink(string $path, string $label): void
     {
         if (FilesystemTrust::containsSymlink($path)) {
@@ -16,6 +22,9 @@ trait SecuresFilesystemDirectories
         }
     }
 
+    /**
+     * @throws RuntimeException
+     */
     protected function assertSecureDirectory(string $path, string $label): void
     {
         $this->assertPathNotSymlink($path, $label);
@@ -32,6 +41,9 @@ trait SecuresFilesystemDirectories
         }
     }
 
+    /**
+     * @throws RuntimeException
+     */
     protected function atomicReplace(string $path, string $contents): bool
     {
         $this->assertPathNotSymlink($path . '.lock', 'Cache metadata lock file');
@@ -70,5 +82,28 @@ trait SecuresFilesystemDirectories
         } finally {
             restore_error_handler();
         }
+    }
+
+    /** @param (Closure(string): void)|null $beforeDelete */
+    private function clearDirectoryFiles(string $directory, string $suffix, ?Closure $beforeDelete = null): bool
+    {
+        try {
+            $files = new DirectoryIterator($directory);
+        } catch (UnexpectedValueException) {
+            return false;
+        }
+
+        $ok = true;
+        foreach ($files as $file) {
+            if (!$file->isFile() || !str_ends_with($file->getFilename(), $suffix)) {
+                continue;
+            }
+
+            $path = $file->getPathname();
+            $beforeDelete?->__invoke($path);
+            $ok = $this->deleteFile($path) && $ok;
+        }
+
+        return $ok;
     }
 }

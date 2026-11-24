@@ -30,6 +30,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
      *
      * @throws RuntimeException If the APCu extension is not enabled.
      * @param string $namespace A namespace prefix to avoid key collisions.
+     * @throws CacheInvalidArgumentException
      */
     public function __construct(string $namespace = 'default')
     {
@@ -39,6 +40,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
         $this->ns = CacheInput::namespace($namespace);
     }
 
+    #[\Override]
     public function clear(): bool
     {
         foreach ($this->listKeys() as $apcuKey) {
@@ -49,6 +51,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
         return true;
     }
 
+    #[\Override]
     public function deleteItem(string $key): bool
     {
         $this->discardDeferredKey($key);
@@ -62,11 +65,13 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
 
     /**
      * @param array $keys The keys argument.
-     * @phpstan-param list<string> $keys
+     * @phpstan-param array<array-key, string> $keys
      */
+    #[\Override]
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
+        $keys = array_values($keys);
         if ($keys === []) {
             return true;
         }
@@ -74,6 +79,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
         return apcu_delete(array_map($this->map(...), $keys)) === [];
     }
 
+    #[\Override]
     public function getItem(string $key): CacheItem
     {
         $apcuKey = $this->map($key);
@@ -91,7 +97,11 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
         return $this->genericMiss($key);
     }
 
-    /** @param list<string> $tags */
+    /**
+     * @param list<string> $tags
+     * @return array<int|string, string>
+     * @throws RuntimeException
+     */
     #[\Override]
     public function getTagGenerations(array $tags): array
     {
@@ -116,6 +126,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
         return $generations;
     }
 
+    #[\Override]
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
@@ -125,7 +136,9 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
      * @param array $keys The keys argument.
      * @phpstan-param list<string> $keys
      * @phpstan-return array<string, CacheItem>
+     * @throws CacheInvalidArgumentException
      */
+    #[\Override]
     public function multiFetch(array $keys): array
     {
         if ($keys === []) {
@@ -150,7 +163,10 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
         return $items;
     }
 
-    /** @param list<string> $tags */
+    /**
+     * @param list<string> $tags
+     * @return array<int|string, string>
+     */
     #[\Override]
     public function readTagGenerations(array $tags): array
     {
@@ -180,6 +196,12 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
         return $generations === [] || apcu_store($generations) === [];
     }
 
+    /**
+     * @throws CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws RuntimeException
+     */
+    #[\Override]
     public function save(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
@@ -198,7 +220,13 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
         return apcu_store($this->map($item->getKey()), $blob, $ttl ?? 0);
     }
 
-    /** @param array<string, CacheItemInterface> $items */
+    /**
+     * @param array<string, CacheItemInterface> $items
+     * @throws CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws RuntimeException
+     */
+    #[\Override]
     public function saveItems(array $items): bool
     {
         if (!$this->supportsItems($items)) {
@@ -224,11 +252,11 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
 
         return array_all(
             $groups,
-            static fn(array $records, int|string $ttl): bool => apcu_store($records, null, (int) $ttl) === [],
+            static fn(array $records, int $ttl): bool => apcu_store($records, null, $ttl) === [],
         );
     }
 
-    /** @param array<string, string> $generations */
+    /** @param array<int|string, string> $generations */
     #[\Override]
     public function storeTagGenerations(array $generations): bool
     {
@@ -250,6 +278,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
      * @param array $raw The raw argument.
      * @phpstan-param array<string, CacheItem> $items
      * @phpstan-param array<mixed> $raw
+     * @throws CacheInvalidArgumentException
      */
     private function appendFetchedHit(array &$items, string $key, array $raw): bool
     {
@@ -268,6 +297,9 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
         return false;
     }
 
+    /**
+     * @throws CacheInvalidArgumentException
+     */
     private function hitItemFromBlob(string $key, string $blob): ?CacheItem
     {
         $record = $this->decodeRecordFromBlob($blob, $key);
@@ -288,8 +320,8 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
             APC_ITER_KEY,
         );
         $out = [];
-        foreach ($iter as $k => $unused) {
-            $out[] = $k;
+        for ($iter->rewind(); $iter->valid(); $iter->next()) {
+            $out[] = $iter->key();
         }
 
         return $out;

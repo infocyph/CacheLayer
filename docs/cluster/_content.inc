@@ -435,6 +435,8 @@ Each application node needs a consumer. ``consume()`` performs these steps:
 1. Check whether the node's stored cursor is older than retained events.
 2. If it is, clear the local namespace and reset the cursor safely.
 3. Fetch up to the requested number of events after the current cursor.
+   Reject oversized batches, events from another cluster and non-increasing IDs
+   before applying the offending event or advancing its cursor.
 4. Ignore events emitted by this same node (they were already applied locally).
 5. Apply matching-namespace events from other nodes.
 6. Advance the local SQLite cursor only after successful application (or after

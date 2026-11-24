@@ -2,31 +2,42 @@
 
 declare(strict_types=1);
 
+namespace Infocyph\CacheLayer\Tests\Cache;
+
 use Infocyph\CacheLayer\Cache\Adapter\ArrayCacheAdapter;
+use FilesystemIterator;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
+use ReflectionClass;
+use ReflectionProperty;
 use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 
-beforeEach(function () {
-    $this->l1 = new ArrayCacheAdapter('l1');
-    $this->l2 = new ArrayCacheAdapter('l2');
-    $this->cache = Cache::tiered([$this->l1, $this->l2]);
+$tieredFixtureCache = Cache::nullStore();
+$tieredFixtureL1 = new ArrayCacheAdapter('tier-fixture-placeholder-l1');
+$tieredFixtureL2 = new ArrayCacheAdapter('tier-fixture-placeholder-l2');
+
+beforeEach(function () use (&$tieredFixtureCache, &$tieredFixtureL1, &$tieredFixtureL2): void {
+    $tieredFixtureL1 = new ArrayCacheAdapter('l1');
+    $tieredFixtureL2 = new ArrayCacheAdapter('l2');
+    $tieredFixtureCache = Cache::tiered([$tieredFixtureL1, $tieredFixtureL2]);
 });
 
-test('tiered adapter writes through all pools', function () {
-    $this->cache->set('k', 'value');
+test('tiered adapter writes through all pools', function () use (&$tieredFixtureCache, &$tieredFixtureL1, &$tieredFixtureL2): void {
+    $tieredFixtureCache->set('k', 'value');
 
-    expect($this->l1->getItem('k')->isHit())->toBeTrue()
-        ->and($this->l2->getItem('k')->isHit())->toBeTrue();
+    expect($tieredFixtureL1->getItem('k')->isHit())->toBeTrue()
+        ->and($tieredFixtureL2->getItem('k')->isHit())->toBeTrue();
 });
 
-test('tiered adapter promotes value from lower tier to upper tier', function () {
-    $item = $this->l2->getItem('promote');
+test('tiered adapter promotes value from lower tier to upper tier', function () use (&$tieredFixtureCache, &$tieredFixtureL1, &$tieredFixtureL2): void {
+    $item = $tieredFixtureL2->getItem('promote');
     $item->set('from-l2')->save();
 
-    expect($this->l1->getItem('promote')->isHit())->toBeFalse();
+    expect($tieredFixtureL1->getItem('promote')->isHit())->toBeFalse();
 
-    expect($this->cache->get('promote'))->toBe('from-l2')
-        ->and($this->l1->getItem('promote')->isHit())->toBeTrue();
+    expect($tieredFixtureCache->get('promote'))->toBe('from-l2')
+        ->and($tieredFixtureL1->getItem('promote')->isHit())->toBeTrue();
 });
 
 test('tiered cache supports descriptor array tiers', function () {
@@ -118,6 +129,9 @@ test('tiered L1 remains fenced after unrelated successful writes until full clea
     $l2 = new ArrayCacheAdapter('fenced-l2');
     $cache = Cache::tiered([$l1, $l2]);
     $adapter = (new ReflectionClass($cache))->getProperty('adapter')->getValue($cache);
+    if (!$adapter instanceof \Infocyph\CacheLayer\Cache\Adapter\TieredCacheAdapter) {
+        throw new \RuntimeException('Expected a tiered cache adapter.');
+    }
 
     expect($cache->set('x', 'old'))->toBeTrue();
     $l2->save($l2->getItem('x')->set('new'));
@@ -147,11 +161,12 @@ test('tier mutation failures fence reads until a complete clear', function (stri
     $l1->throws = $throws;
 
     $mutate = match ($operation) {
-        'clear' => fn() => $cache->clear(),
-        'save' => fn() => $cache->set('unrelated', 'value'),
-        'saveItems' => fn() => $cache->setMultiple(['unrelated' => 'value']),
-        'deleteItem' => fn() => $cache->delete('unrelated'),
-        'deleteItems' => fn() => $cache->deleteMultiple(['unrelated']),
+        'clear' => fn(): bool => $cache->clear(),
+        'save' => fn(): bool => $cache->set('unrelated', 'value'),
+        'saveItems' => fn(): bool => $cache->setMultiple(['unrelated' => 'value']),
+        'deleteItem' => fn(): bool => $cache->delete('unrelated'),
+        'deleteItems' => fn(): bool => $cache->deleteMultiple(['unrelated']),
+        default => throw new \InvalidArgumentException('Unknown test mutation operation.'),
     };
 
     try {
@@ -173,6 +188,9 @@ test('tier mutation failures fence reads until a complete clear', function (stri
         $l1->clear();
         $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
         foreach ($files as $file) {
+            if (!$file instanceof \SplFileInfo) {
+                throw new \UnexpectedValueException('Unexpected filesystem iterator entry.');
+            }
             $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
         }
         rmdir($directory);
@@ -210,8 +228,22 @@ test('skipped writes and failed promotions keep every upper tier fenced', functi
         $l1->clear();
         $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
         foreach ($files as $file) {
+            if (!$file instanceof \SplFileInfo) {
+                throw new \UnexpectedValueException('Unexpected filesystem iterator entry.');
+            }
             $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
         }
         rmdir($directory);
     }
 })->with(['skip', 'promote'])->with([false, true])->with([false, true]);
+
+test('tier descriptors reject invalid namespace and timeout values before opening a backend', function (): void {
+    foreach ([42, false, null, []] as $namespace) {
+        expect(fn() => Cache::tiered([['driver' => 'memory', 'namespace' => $namespace]]))
+            ->toThrow(\Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException::class);
+    }
+    foreach ([NAN, INF, -1.0] as $timeout) {
+        expect(fn() => Cache::tiered([['driver' => 'redis_cluster', 'timeout' => $timeout]]))
+            ->toThrow(\Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException::class);
+    }
+});

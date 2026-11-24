@@ -37,6 +37,9 @@ final class RunwireIntegration
         self::$runtime = $runtime;
     }
 
+    /**
+     * @throws \Infocyph\Runwire\Exception\CancelledException
+     */
     public static function checkpoint(): void
     {
         $context = self::current();
@@ -83,6 +86,10 @@ final class RunwireIntegration
         }
     }
 
+    /**
+     * @throws \LogicException
+     * @throws \OverflowException
+     */
     public static function memoizer(): ?Memoizer
     {
         $context = self::current();
@@ -107,6 +114,10 @@ final class RunwireIntegration
         return Memoizer::instance();
     }
 
+    /**
+     * @throws \LogicException
+     * @throws \OverflowException
+     */
     public static function onceMemoizer(): ?OnceMemoizer
     {
         $context = self::current();
@@ -147,7 +158,14 @@ final class RunwireIntegration
         return self::current()->runtime ?? self::$runtime;
     }
 
-    /** Borrow an explicit host runtime for this callback without global lifecycle ownership. */
+    /**
+     * Borrow an explicit host runtime for this callback without global lifecycle ownership.
+     * @template T
+     * @param callable(): T $callback
+     * @return T
+     * @throws \LogicException
+     * @throws \Infocyph\Runwire\Exception\CancelledException
+     */
     public static function share(
         ?RequestContext $request,
         ?CoroutineScope $scope,
@@ -191,6 +209,11 @@ final class RunwireIntegration
         }
     }
 
+    /**
+     * @throws \InvalidArgumentException
+     * @throws \LogicException
+     * @throws \Throwable
+     */
     public static function sleep(float $seconds): void
     {
         if ($seconds <= 0.0) {
@@ -208,7 +231,7 @@ final class RunwireIntegration
             return;
         }
 
-        usleep((int) min(PHP_INT_MAX, ceil($seconds * 1_000_000)));
+        usleep((int) min(PHP_INT_MAX, ceil($seconds * 1_000_000.0)));
     }
 
     public static function supports(RuntimeCapability $capability): bool

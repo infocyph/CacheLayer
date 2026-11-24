@@ -7,6 +7,7 @@ namespace Infocyph\CacheLayer\Cache\Adapter;
 use Closure;
 use DateTimeImmutable;
 use DateTimeInterface;
+use Infocyph\CacheLayer\Cache\CacheInput;
 use Infocyph\CacheLayer\Cache\CacheOptions;
 use Infocyph\CacheLayer\Cache\CacheRecord;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
@@ -27,16 +28,25 @@ final readonly class CachePayloadCodec
 
     private const string SIGNATURE_PURPOSE = 'cache-record:v3';
 
-    public function __construct(private CacheOptions $options = new CacheOptions()) {}
+    private CacheOptions $options;
 
-    /** @return array{ttl:int|null,expiresAt:int|null} */
+    /** @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException */
+    public function __construct(?CacheOptions $options = null)
+    {
+        $this->options = $options ?? new CacheOptions();
+    }
+
+    /**
+     * @return array{ttl:int|null,expiresAt:int|null}
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     public static function expirationFromItem(CacheItemInterface $item): array
     {
-        $ttl = $item instanceof CacheItem ? $item->ttlSeconds() : null;
+        $expiresAt = $item instanceof CacheItem ? $item->expirationTimestamp() : null;
 
         return [
-            'ttl' => $ttl,
-            'expiresAt' => $ttl === null ? null : time() + $ttl,
+            'ttl' => $expiresAt === null ? null : CacheInput::relativeTtl($expiresAt, time()),
+            'expiresAt' => $expiresAt,
         ];
     }
 
@@ -88,6 +98,8 @@ final readonly class CachePayloadCodec
 
     /**
      * @param array<int|string, string> $tags
+     * @throws InvalidArgumentException
+     * @throws RuntimeException
      */
     public function encode(
         mixed $value,
@@ -134,6 +146,9 @@ final readonly class CachePayloadCodec
         return is_string($value) && strlen($value) === 32 && ctype_xdigit($value);
     }
 
+    /**
+     * @throws InvalidArgumentException
+     */
     private function assertNativeValueSupported(mixed $value): void
     {
         if ($value instanceof Closure) {
@@ -153,6 +168,9 @@ final readonly class CachePayloadCodec
         }
     }
 
+    /**
+     * @throws InvalidArgumentException
+     */
     private function attachSignature(
         string $payload,
         ?string $storageIdentity,
@@ -220,7 +238,10 @@ final readonly class CachePayloadCodec
         return ['valid' => true, 'value' => $value];
     }
 
-    /** @return array{0:'closure'|'native', 1:mixed} */
+    /**
+     * @return array{0:'closure'|'native', 1:mixed}
+     * @throws InvalidArgumentException
+     */
     private function encodeValue(mixed $value): array
     {
         if ($value instanceof Closure) {

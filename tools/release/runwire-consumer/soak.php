@@ -14,8 +14,6 @@ use Infocyph\Runwire\Runtime\RequestExecutionPolicy;
 use Infocyph\Runwire\RuntimeCapabilities;
 use Infocyph\Runwire\RuntimeContext;
 
-require __DIR__ . '/vendor/autoload.php';
-
 const SEQUENTIAL_REQUESTS = 2_048;
 const CONCURRENT_REQUESTS = 256;
 const MAX_MEMORY_GROWTH_BYTES = 8_388_608;
@@ -58,16 +56,18 @@ for ($index = 0; $index < SEQUENTIAL_REQUESTS; ++$index) {
             try {
                 new CoroutineRuntime()->runRequest(
                     $request,
-                    static function (CoroutineScope $scope) use ($request): void {
-                        RunwireIntegration::share(
-                            $request,
-                            $scope,
-                            static function (): void {
-                                RunwireIntegration::checkpoint();
-                            },
-                        );
-                    },
+                    static fn(CoroutineScope $scope): bool => RunwireIntegration::share(
+                        $request,
+                        $scope,
+                        static function (): bool {
+                            RunwireIntegration::checkpoint();
+
+                            return true;
+                        },
+                    ),
                 );
+
+                throw new RuntimeException('Expired request unexpectedly completed during soak.');
             } catch (CancelledException) {
                 ++$deadlines;
             }
@@ -79,17 +79,19 @@ for ($index = 0; $index < SEQUENTIAL_REQUESTS; ++$index) {
             try {
                 new CoroutineRuntime()->runRequest(
                     $request,
-                    static function (CoroutineScope $scope) use ($request): void {
-                        RunwireIntegration::share(
-                            $request,
-                            $scope,
-                            static function () use ($request): void {
-                                $request->cancel(CancellationReason::HOST_CANCELLED);
-                                RunwireIntegration::checkpoint();
-                            },
-                        );
-                    },
+                    static fn(CoroutineScope $scope): bool => RunwireIntegration::share(
+                        $request,
+                        $scope,
+                        static function () use ($request): bool {
+                            $request->cancel(CancellationReason::HOST_CANCELLED);
+                            RunwireIntegration::checkpoint();
+
+                            return true;
+                        },
+                    ),
                 );
+
+                throw new RuntimeException('Cancelled request unexpectedly completed during soak.');
             } catch (CancelledException) {
                 ++$cancellations;
             }
@@ -106,7 +108,7 @@ for ($index = 0; $index < SEQUENTIAL_REQUESTS; ++$index) {
         RunwireIntegration::share(
             $request,
             null,
-            static function () use ($cache, $index, &$validated): void {
+            static function () use ($cache, $index, &$validated): bool {
                 $tenant = $index % 64;
                 $key = 'tenant-' . $tenant . '-request-' . $index;
 
@@ -121,6 +123,8 @@ for ($index = 0; $index < SEQUENTIAL_REQUESTS; ++$index) {
                 }
 
                 ++$validated;
+
+                return true;
             },
         );
     } catch (Throwable $exception) {
@@ -135,12 +139,12 @@ for ($index = 0; $index < SEQUENTIAL_REQUESTS; ++$index) {
 }
 
 $coroutines = new CoroutineRuntime();
-$coroutines->run(
+$completedTasks = $coroutines->run(
     static function (CoroutineScope $scope) use (
         $runtime,
         $cache,
         &$validated,
-    ): void {
+    ): int {
         $tasks = [];
         for ($index = 0; $index < CONCURRENT_REQUESTS; ++$index) {
             $tasks[] = $scope->spawn(
@@ -150,11 +154,11 @@ $coroutines->run(
                     $cache,
                     $index,
                     &$validated,
-                ): void {
+                ): bool {
                     $request = RequestContext::create($runtime);
 
                     try {
-                        RunwireIntegration::share(
+                        return RunwireIntegration::share(
                             $request,
                             $scope,
                             static function () use (
@@ -162,7 +166,7 @@ $coroutines->run(
                                 $cache,
                                 $index,
                                 &$validated,
-                            ): void {
+                            ): bool {
                                 $tenant = $index % 16;
                                 $key = 'concurrent-' . $tenant . '-' . $index;
                                 $memo = memoize(static fn(int $value): int => $value * 2, [$index]);
@@ -177,6 +181,8 @@ $coroutines->run(
                                 }
 
                                 ++$validated;
+
+                                return true;
                             },
                         );
                     } finally {
@@ -188,9 +194,15 @@ $coroutines->run(
             );
         }
 
+        $completed = 0;
         foreach ($tasks as $task) {
-            $task->await();
+            if ($task->await() !== true) {
+                throw new RuntimeException('Concurrent soak task did not validate its request.');
+            }
+            ++$completed;
         }
+
+        return $completed;
     },
 );
 
@@ -214,7 +226,8 @@ $report = [
 fwrite(STDOUT, json_encode($report, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR) . PHP_EOL);
 
 if (
-    $validated < 2_000
+    $completedTasks !== CONCURRENT_REQUESTS
+    || $validated < 2_000
     || $cancellations < 1
     || $deadlines < 1
     || $memoryGrowth > MAX_MEMORY_GROWTH_BYTES

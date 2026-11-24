@@ -15,6 +15,7 @@ final class CacheItem implements CacheItemInterface
 {
     /**
      * @param array<int|string, string> $tags
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
     public function __construct(
         private readonly InternalCachePoolInterface $pool,
@@ -32,18 +33,30 @@ final class CacheItem implements CacheItemInterface
         return $this->pool === $pool;
     }
 
+    /** @internal */
+    public function expirationTimestamp(): ?int
+    {
+        return $this->expiration?->getTimestamp();
+    }
+
+    /** @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException */
+    #[\Override]
     public function expiresAfter(int|DateInterval|null $time): static
     {
+        if ($time === null) {
+            $this->expiration = null;
+
+            return $this;
+        }
         $now = new DateTimeImmutable();
-        $this->expiration = match (true) {
-            is_int($time) => $now->modify(sprintf('%+d seconds', $time)),
-            $time instanceof DateInterval => $now->add($time),
-            default => null,
-        };
+        $this->expiration = is_int($time)
+            ? $now->setTimestamp(CacheInput::expiryTimestamp($time, $now->getTimestamp()))
+            : $now->add($time);
 
         return $this;
     }
 
+    #[\Override]
     public function expiresAt(?DateTimeInterface $expiration): static
     {
         $this->expiration = $expiration;
@@ -51,11 +64,13 @@ final class CacheItem implements CacheItemInterface
         return $this;
     }
 
+    #[\Override]
     public function get(): mixed
     {
         return $this->value;
     }
 
+    #[\Override]
     public function getKey(): string
     {
         return $this->key;
@@ -67,6 +82,7 @@ final class CacheItem implements CacheItemInterface
         return $this->tags;
     }
 
+    #[\Override]
     public function isHit(): bool
     {
         return $this->hit
@@ -87,6 +103,7 @@ final class CacheItem implements CacheItemInterface
         return $this;
     }
 
+    #[\Override]
     public function set(mixed $value): static
     {
         $this->value = $value;
@@ -104,10 +121,11 @@ final class CacheItem implements CacheItemInterface
         return $this;
     }
 
+    /** @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException */
     public function ttlSeconds(): ?int
     {
-        return $this->expiration === null
-            ? null
-            : $this->expiration->getTimestamp() - time();
+        $expiresAt = $this->expirationTimestamp();
+
+        return $expiresAt === null ? null : CacheInput::relativeTtl($expiresAt, time());
     }
 }

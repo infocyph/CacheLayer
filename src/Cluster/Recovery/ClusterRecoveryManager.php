@@ -18,6 +18,10 @@ final readonly class ClusterRecoveryManager
         private string $cluster,
     ) {}
 
+    /**
+     * @throws ClusterCacheException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
+     */
     public function recoverIfRequired(): bool
     {
         if ($this->cursorStore->requiresRecovery()) {
@@ -58,6 +62,10 @@ final readonly class ClusterRecoveryManager
         return false;
     }
 
+    /**
+     * @throws ClusterCacheException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
+     */
     private function clearLocalCache(): void
     {
         if (!$this->cache->clear()) {

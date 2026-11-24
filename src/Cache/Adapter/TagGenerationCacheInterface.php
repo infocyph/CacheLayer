@@ -9,10 +9,10 @@ interface TagGenerationCacheInterface
 {
     /**
      * @param list<string> $tags
-     * @return array<string, string>
+     * @return array<int|string, string>
      */
     public function readTagGenerations(array $tags): array;
 
-    /** @param array<string, string> $generations */
+    /** @param array<int|string, string> $generations */
     public function storeTagGenerations(array $generations): bool;
 }

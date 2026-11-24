@@ -26,11 +26,20 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
     /** @var array<string, array<int|string, string>> */
     private array $weakTags = [];
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     public function __construct(string $namespace = 'default')
     {
         $this->ns = CacheInput::namespace($namespace);
     }
 
+    /**
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws \RuntimeException
+     */
+    #[\Override]
     public function atomicCompareAndSet(
         string $key,
         mixed $expected,
@@ -53,6 +62,10 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return $this->persistItem($replacement, $expiration);
     }
 
+    /**
+     * @throws \Psr\Cache\InvalidArgumentException
+     */
+    #[\Override]
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
         $this->discardDeferredKey($key);
@@ -67,6 +80,12 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return $current;
     }
 
+    /**
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws \RuntimeException
+     */
+    #[\Override]
     public function atomicSetIfAbsent(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
@@ -85,6 +104,7 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return $this->persistItem($item, $expiration);
     }
 
+    #[\Override]
     public function clear(): bool
     {
         $this->scalarStore = [];
@@ -97,6 +117,7 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return true;
     }
 
+    #[\Override]
     public function deleteItem(string $key): bool
     {
         $this->discardDeferredKey($key);
@@ -110,18 +131,20 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
 
     /**
      * @param array $keys The keys argument.
-     * @phpstan-param list<string> $keys
+     * @phpstan-param array<array-key, string> $keys
      */
+    #[\Override]
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
         foreach ($keys as $key) {
-            $this->deleteItem((string) $key);
+            $this->deleteItem($key);
         }
 
         return true;
     }
 
+    #[\Override]
     public function getItem(string $key): CacheItem
     {
         $this->pruneCollected();
@@ -161,6 +184,7 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         );
     }
 
+    #[\Override]
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
@@ -169,7 +193,9 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
     /**
      * @param list<string> $keys
      * @return array<string, CacheItem>
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
+    #[\Override]
     public function multiFetch(array $keys): array
     {
         $this->pruneCollected();
@@ -207,12 +233,22 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return $items;
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
+    #[\Override]
     public function save(CacheItemInterface $item): bool
     {
         return $this->saveEncoded($item, $this->persistItem(...));
     }
 
-    /** @param array<string, CacheItemInterface> $items */
+    /**
+     * @param array<string, CacheItemInterface> $items
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws \RuntimeException
+     */
+    #[\Override]
     public function saveItems(array $items): bool
     {
         if (!$this->supportsItems($items)) {
@@ -240,7 +276,11 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return $this->ns . ':d:' . $key;
     }
 
-    /** @param array{ttl:int|null, expiresAt:int|null} $expires */
+    /**
+     * @param array{ttl:int|null, expiresAt:int|null} $expires
+     * @throws \InvalidArgumentException
+     * @throws \RuntimeException
+     */
     private function persistItem(CacheItemInterface $item, array $expires): bool
     {
         $mapped = $this->map($item->getKey());

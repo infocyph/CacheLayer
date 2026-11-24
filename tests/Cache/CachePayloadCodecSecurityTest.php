@@ -2,7 +2,13 @@
 
 declare(strict_types=1);
 
+namespace Infocyph\CacheLayer\Tests\Cache;
+
 use Infocyph\CacheLayer\Cache\Adapter\CachePayloadCodec;
+use Closure;
+use InvalidArgumentException;
+use ReflectionProperty;
+use stdClass;
 use Infocyph\CacheLayer\Cache\Adapter\ArrayCacheAdapter;
 use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Cache\CacheOptions;
@@ -48,6 +54,9 @@ test('cache treats a corrupted signed record as a miss and deletes it', function
 
     $store = new ReflectionProperty($adapter, 'store');
     $records = $store->getValue($adapter);
+    if (!is_array($records) || !is_string($records['signed-cleanup:d:record'] ?? null)) {
+        throw new \RuntimeException('Expected a signed cache record.');
+    }
     $records['signed-cleanup:d:record'] .= 'tampered';
     $store->setValue($adapter, $records);
 
@@ -93,15 +102,21 @@ test('payload codec delegates only top-level closures to special serialization',
     $blob = $codec->encode(static fn(int $value): int => $value + 1, null);
     $closure = $codec->decode($blob)?->value;
     $resource = fopen('php://memory', 'r+');
-
-    expect($closure)->toBeInstanceOf(Closure::class)
-        ->and($closure(4))->toBe(5)
-        ->and(fn() => $codec->encode(['nested' => static fn(): int => 1], null))
-        ->toThrow(InvalidArgumentException::class)
-        ->and(fn() => $codec->encode($resource, null))
-        ->toThrow(InvalidArgumentException::class);
-
-    fclose($resource);
+    if ($resource === false) {
+        throw new \RuntimeException('Unable to open memory stream for the codec test.');
+    }
+    try {
+        if (!$closure instanceof Closure) {
+            throw new \RuntimeException('The codec did not restore the closure.');
+        }
+        expect($closure(4))->toBe(5)
+            ->and(fn(): string => $codec->encode(['nested' => static fn(): int => 1], null))
+            ->toThrow(InvalidArgumentException::class)
+            ->and(fn(): string => $codec->encode($resource, null))
+            ->toThrow(InvalidArgumentException::class);
+    } finally {
+        fclose($resource);
+    }
 });
 
 test('payload codec can disable closure serialization per cache instance', function () {
@@ -248,8 +263,10 @@ test('payload codec preserves valid uppercase generations and null values', func
     $generation = str_repeat('AB', 16);
     $record = $codec->decode($codec->encode(null, null, ['group' => $generation], $generation));
 
-    expect($record)->not->toBeNull()
-        ->and($record->value)->toBeNull()
+    if ($record === null) {
+        throw new \RuntimeException('Expected the codec to restore the valid record.');
+    }
+    expect($record->value)->toBeNull()
         ->and($record->namespaceGeneration)->toBe($generation)
         ->and($record->tags)->toBe(['group' => $generation]);
 });

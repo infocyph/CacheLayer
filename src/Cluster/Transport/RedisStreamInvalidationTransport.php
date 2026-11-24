@@ -11,6 +11,9 @@ use Infocyph\CacheLayer\Cluster\Exception\ClusterTransportException;
 
 final readonly class RedisStreamInvalidationTransport implements InvalidationTransportInterface
 {
+    /**
+     * @throws ClusterTransportException
+     */
     public function __construct(
         private \Redis $client,
         private string $prefix = 'cachelayer:invalidation:',
@@ -24,6 +27,11 @@ final readonly class RedisStreamInvalidationTransport implements InvalidationTra
         }
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Cluster\Exception\ClusterCacheException
+     * @throws ClusterTransportException
+     */
+    #[\Override]
     public function consumeAfter(string $cluster, ?string $cursor, int $limit): InvalidationBatch
     {
         if ($limit < 1) {
@@ -56,21 +64,37 @@ final readonly class RedisStreamInvalidationTransport implements InvalidationTra
         return new InvalidationBatch($events);
     }
 
+    /**
+     * @throws ClusterTransportException
+     */
+    #[\Override]
     public function isCursorBefore(string $cursor, string $oldestAvailableId): bool
     {
         return $this->compareIds($cursor, $oldestAvailableId) < 0;
     }
 
+    /**
+     * @throws ClusterTransportException
+     */
+    #[\Override]
     public function newestAvailableId(string $cluster): ?string
     {
         return $this->boundary($cluster, true);
     }
 
+    /**
+     * @throws ClusterTransportException
+     */
+    #[\Override]
     public function oldestAvailableId(string $cluster): ?string
     {
         return $this->boundary($cluster, false);
     }
 
+    /**
+     * @throws ClusterTransportException
+     */
+    #[\Override]
     public function publish(InvalidationEvent $event): string
     {
         try {
@@ -100,6 +124,9 @@ final readonly class RedisStreamInvalidationTransport implements InvalidationTra
         return $id;
     }
 
+    /**
+     * @throws ClusterTransportException
+     */
     private function boundary(string $cluster, bool $newest): ?string
     {
         try {
@@ -122,12 +149,16 @@ final readonly class RedisStreamInvalidationTransport implements InvalidationTra
     /**
      * @param array $fields The normalized stream fields.
      * @phpstan-param array<string, mixed> $fields
+     * @throws ClusterTransportException
      */
     private function clusterFromStreamEvent(array $fields): string
     {
         return $this->field($fields, 'cluster');
     }
 
+    /**
+     * @throws ClusterTransportException
+     */
     private function compareIds(string $left, string $right): int
     {
         [$leftMilliseconds, $leftSequence] = $this->idParts($left);
@@ -149,6 +180,8 @@ final readonly class RedisStreamInvalidationTransport implements InvalidationTra
      * @param string $id The ID argument.
      * @param array $fields The fields argument.
      * @phpstan-param array<mixed, mixed> $fields
+     * @throws ClusterTransportException
+     * @throws \Infocyph\CacheLayer\Cluster\Exception\ClusterCacheException
      */
     private function eventFromFields(string $id, array $fields): InvalidationEvent
     {
@@ -183,6 +216,7 @@ final readonly class RedisStreamInvalidationTransport implements InvalidationTra
      * @param array $fields The normalized stream fields.
      * @param string $name The required field name.
      * @phpstan-param array<string, mixed> $fields
+     * @throws ClusterTransportException
      */
     private function field(array $fields, string $name): string
     {
@@ -197,6 +231,7 @@ final readonly class RedisStreamInvalidationTransport implements InvalidationTra
      * @param string $id The ID argument.
      * @return array The ID parts.
      * @phpstan-return array{string, string}
+     * @throws ClusterTransportException
      */
     private function idParts(string $id): array
     {
@@ -211,6 +246,9 @@ final readonly class RedisStreamInvalidationTransport implements InvalidationTra
         ];
     }
 
+    /**
+     * @throws ClusterTransportException
+     */
     private function stream(string $cluster): string
     {
         if ($cluster === '') {

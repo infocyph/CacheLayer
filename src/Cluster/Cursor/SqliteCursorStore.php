@@ -25,6 +25,10 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
 
     private string $transportIdentity;
 
+    /**
+     * @throws \Infocyph\CacheLayer\Cluster\Exception\ClusterConfigurationException
+     * @throws ClusterCacheException
+     */
     public function __construct(
         string $sqliteFile,
         string $cluster,
@@ -43,6 +47,10 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
         $this->createSchemaIfMissing();
     }
 
+    /**
+     * @throws ClusterCacheException
+     */
+    #[\Override]
     public function advance(string $eventId): void
     {
         if ($eventId === '') {
@@ -52,6 +60,10 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
         $this->write($eventId);
     }
 
+    /**
+     * @throws ClusterCacheException
+     */
+    #[\Override]
     public function current(): ?string
     {
         $cursor = $this->read(
@@ -64,16 +76,28 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
         return is_string($cursor) && $cursor !== '' ? $cursor : null;
     }
 
+    /**
+     * @throws ClusterCacheException
+     */
+    #[\Override]
     public function requiresRecovery(): bool
     {
         return !$this->scopeExists();
     }
 
+    /**
+     * @throws ClusterCacheException
+     */
+    #[\Override]
     public function reset(?string $eventId): void
     {
         $this->write($eventId);
     }
 
+    /**
+     * @throws ClusterCacheException
+     */
+    #[\Override]
     public function updatedAt(): ?int
     {
         $updatedAt = $this->read(
@@ -88,6 +112,9 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
             : null;
     }
 
+    /**
+     * @throws ClusterCacheException
+     */
     private function createSchemaIfMissing(): void
     {
         try {
@@ -102,6 +129,9 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
         }
     }
 
+    /**
+     * @throws ClusterCacheException
+     */
     private function read(string $sql, string $failureMessage): mixed
     {
         try {
@@ -116,6 +146,7 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
 
     /**
      * @param array<string, string> $parameters
+     * @throws ClusterCacheException
      */
     private function rowExists(string $sql, array $parameters, string $failureMessage): bool
     {
@@ -129,6 +160,9 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
         }
     }
 
+    /**
+     * @throws ClusterCacheException
+     */
     private function scopeExists(): bool
     {
         return $this->rowExists(
@@ -151,6 +185,9 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
         ];
     }
 
+    /**
+     * @throws ClusterCacheException
+     */
     private function write(?string $eventId): void
     {
         try {

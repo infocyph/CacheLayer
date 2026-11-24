@@ -9,36 +9,38 @@ use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Psr\Cache\CacheItemInterface;
 
-beforeEach(function () {
-    $this->cache = Cache::memory('array-tests');
+$arrayFixtureCache = Cache::nullStore();
+
+beforeEach(function () use (&$arrayFixtureCache): void {
+    $arrayFixtureCache = Cache::memory('array-tests');
 });
 
-test('array adapter supports basic set/get/delete', function () {
-    expect($this->cache->set('alpha', 1))->toBeTrue()
-        ->and($this->cache->get('alpha'))->toBe(1)
-        ->and($this->cache->delete('alpha'))->toBeTrue()
-        ->and($this->cache->get('alpha'))->toBeNull();
+test('array adapter supports basic set/get/delete', function () use (&$arrayFixtureCache): void {
+    expect($arrayFixtureCache->set('alpha', 1))->toBeTrue()
+        ->and($arrayFixtureCache->get('alpha'))->toBe(1)
+        ->and($arrayFixtureCache->delete('alpha'))->toBeTrue()
+        ->and($arrayFixtureCache->get('alpha'))->toBeNull();
 });
 
-test('array adapter getItem returns the shared CacheItem', function () {
-    $item = $this->cache->getItem('x');
+test('array adapter getItem returns the shared CacheItem', function () use (&$arrayFixtureCache): void {
+    $item = $arrayFixtureCache->getItem('x');
 
     expect($item)->toBeInstanceOf(CacheItem::class)
         ->and($item->isHit())->toBeFalse();
 });
 
-test('array adapter honors ttl', function () {
-    $this->cache->set('ttl', 'v', 1);
+test('array adapter honors ttl', function () use (&$arrayFixtureCache): void {
+    $arrayFixtureCache->set('ttl', 'v', 1);
     usleep(2_000_000);
 
-    expect($this->cache->get('ttl'))->toBeNull();
+    expect($arrayFixtureCache->get('ttl'))->toBeNull();
 });
 
-test('array adapter supports getItems', function () {
-    $this->cache->set('a', 'A');
-    $this->cache->set('b', 'B');
+test('array adapter supports getItems', function () use (&$arrayFixtureCache): void {
+    $arrayFixtureCache->set('a', 'A');
+    $arrayFixtureCache->set('b', 'B');
 
-    $items = $this->cache->getItems(['a', 'b', 'c']);
+    $items = iterator_to_array($arrayFixtureCache->getItems(['a', 'b', 'c']));
 
     expect($items['a']->isHit())->toBeTrue()
         ->and($items['a']->get())->toBe('A')
@@ -46,21 +48,24 @@ test('array adapter supports getItems', function () {
         ->and($items['c']->isHit())->toBeFalse();
 });
 
-test('deferred commit uses one bulk persistence call and retains failures', function () {
+test('deferred commit uses one bulk persistence call and retains failures', function (): void {
     $adapter = new class extends AbstractCacheAdapter
     {
         public int $bulkCalls = 0;
 
+        #[\Override]
         public function clear(): bool
         {
             return true;
         }
 
+        #[\Override]
         public function deleteItem(string $key): bool
         {
             return $key !== "\0";
         }
 
+        #[\Override]
         public function deleteItems(array $keys): bool
         {
             foreach ($keys as $key) {
@@ -72,22 +77,29 @@ test('deferred commit uses one bulk persistence call and retains failures', func
             return true;
         }
 
+        #[\Override]
         public function getItem(string $key): CacheItem
         {
             return new CacheItem($this, $key);
         }
 
-        /** @return array<string, CacheItem> */
+        /**
+         * @return array<string, CacheItem>
+         * @throws CacheInvalidArgumentException
+         */
+        #[\Override]
         public function multiFetch(array $keys): array
         {
             return array_fill_keys($keys, new CacheItem($this, 'unused'));
         }
 
+        #[\Override]
         public function hasItem(string $key): bool
         {
             return $key === "\0";
         }
 
+        #[\Override]
         public function save(CacheItemInterface $item): bool
         {
             unset($item);
@@ -95,6 +107,7 @@ test('deferred commit uses one bulk persistence call and retains failures', func
             return true;
         }
 
+        #[\Override]
         public function saveItems(array $items): bool
         {
             unset($items);
@@ -116,14 +129,14 @@ test('deferred commit uses one bulk persistence call and retains failures', func
 });
 
 
-test('deferred state obeys PSR ordering and snapshot semantics', function () {
+test('deferred state obeys PSR ordering and snapshot semantics', function (): void {
     $cache = Cache::memory('deferred-contract');
     $cache->set('overwrite', 'stored');
     $queued = $cache->getItem('overwrite')->set('queued');
     expect($cache->saveDeferred($queued))->toBeTrue()
         ->and($cache->get('overwrite'))->toBe('queued')
         ->and($cache->hasItem('overwrite'))->toBeTrue()
-        ->and($cache->getItems(['overwrite'])['overwrite']->get())->toBe('queued');
+        ->and(iterator_to_array($cache->getItems(['overwrite']))['overwrite']->get())->toBe('queued');
 
     $queued->set('mutated-after-queue');
     expect($cache->get('overwrite'))->toBe('queued');
@@ -145,7 +158,7 @@ test('deferred state obeys PSR ordering and snapshot semantics', function () {
         ->and($cache->get('clear'))->toBeNull();
 });
 
-test('deferred null and expired values retain hit and expiry semantics', function () {
+test('deferred null and expired values retain hit and expiry semantics', function (): void {
     $cache = Cache::memory('deferred-values');
 
     $null = $cache->getItem('null')->set(null);
@@ -161,7 +174,7 @@ test('deferred null and expired values retain hit and expiry semantics', functio
         ->and($cache->get('expired'))->toBeNull();
 });
 
-test('direct PSR pool rejects invalid keys and missing deletes succeed', function () {
+test('direct PSR pool rejects invalid keys and missing deletes succeed', function (): void {
     $pool = new ArrayCacheAdapter('direct-contract');
     $pool->save($pool->getItem('valid')->set('value'));
 

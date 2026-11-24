@@ -13,17 +13,26 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
 {
     private readonly string $ns;
 
-    /** @var array<string, string> */
+    /** @var array<int|string, string> */
     private array $metadata = [];
 
     /** @var array<string, string> */
     private array $store = [];
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     public function __construct(string $namespace = 'default')
     {
         $this->ns = CacheInput::namespace($namespace);
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws \RuntimeException
+     */
+    #[\Override]
     public function atomicCompareAndSet(
         string $key,
         mixed $expected,
@@ -49,6 +58,10 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
         return true;
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
+    #[\Override]
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
         $this->discardDeferredKey($key);
@@ -64,6 +77,12 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
         return $this->genericItemFromRecord($key, $record);
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws \RuntimeException
+     */
+    #[\Override]
     public function atomicSetIfAbsent(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
@@ -85,6 +104,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
         return true;
     }
 
+    #[\Override]
     public function clear(): bool
     {
         $this->store = [];
@@ -94,6 +114,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
         return true;
     }
 
+    #[\Override]
     public function deleteItem(string $key): bool
     {
         $this->discardDeferredKey($key);
@@ -104,8 +125,9 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
 
     /**
      * @param array $keys The keys argument.
-     * @phpstan-param list<string> $keys
+     * @phpstan-param array<array-key, string> $keys
      */
+    #[\Override]
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
@@ -116,6 +138,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
         return true;
     }
 
+    #[\Override]
     public function getItem(string $key): CacheItem
     {
         $mapped = $this->map($key);
@@ -132,7 +155,10 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
         );
     }
 
-    /** @param list<string> $tags */
+    /**
+     * @param list<string> $tags
+     * @return array<int|string, string>
+     */
     #[\Override]
     public function getTagGenerations(array $tags): array
     {
@@ -144,6 +170,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
         return $generations;
     }
 
+    #[\Override]
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
@@ -153,7 +180,9 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
      * @param array $keys The keys argument.
      * @phpstan-param list<string> $keys
      * @phpstan-return array<string, CacheItem>
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
+    #[\Override]
     public function multiFetch(array $keys): array
     {
         $items = [];
@@ -174,7 +203,10 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
         return $items;
     }
 
-    /** @param list<string> $tags */
+    /**
+     * @param list<string> $tags
+     * @return array<int|string, string>
+     */
     #[\Override]
     public function readTagGenerations(array $tags): array
     {
@@ -192,6 +224,10 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
         return true;
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
+    #[\Override]
     public function save(CacheItemInterface $item): bool
     {
         return $this->saveEncoded($item, function (CacheItemInterface $saveItem, array $expires): bool {
@@ -201,14 +237,19 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
         });
     }
 
-    /** @param array<string, CacheItemInterface> $items */
+    /**
+     * @param array<string, CacheItemInterface> $items
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws \RuntimeException
+     */
+    #[\Override]
     public function saveItems(array $items): bool
     {
         if (!$this->supportsItems($items)) {
             return false;
         }
 
-        $now = time();
         foreach ($items as $item) {
             $expiration = CachePayloadCodec::expirationFromItem($item);
             if ($expiration['ttl'] !== null && $expiration['ttl'] <= 0) {
@@ -216,14 +257,13 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
 
                 continue;
             }
-            $expiresAt = $expiration['ttl'] === null ? null : $now + $expiration['ttl'];
-            $this->store[$this->map($item->getKey())] = $this->encodeItem($item, $expiresAt);
+            $this->store[$this->map($item->getKey())] = $this->encodeItem($item, $expiration['expiresAt']);
         }
 
         return true;
     }
 
-    /** @param array<string, string> $generations */
+    /** @param array<int|string, string> $generations */
     #[\Override]
     public function storeTagGenerations(array $generations): bool
     {

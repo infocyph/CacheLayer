@@ -13,13 +13,17 @@ final class BoundedValueTraversal
 
     private const int MAX_NODES = 65_536;
 
+    /** @throws InvalidArgumentException */
     public static function assertSafe(mixed $value): void
     {
         $nodes = 0;
         self::visit($value, 0, [], $nodes);
     }
 
-    /** @param array<mixed> $value */
+    /**
+     * @param array<mixed> $value
+     * @throws InvalidArgumentException
+     */
     private static function assertDepth(int $depth, array $value): void
     {
         if ($depth >= self::MAX_DEPTH && $value !== []) {
@@ -27,6 +31,7 @@ final class BoundedValueTraversal
         }
     }
 
+    /** @throws InvalidArgumentException */
     private static function assertNodeBudget(int $nodes): void
     {
         if ($nodes > self::MAX_NODES) {
@@ -38,6 +43,7 @@ final class BoundedValueTraversal
      * @param array<mixed> $current
      * @param array<string,true> $references
      * @return array<string,true>
+     * @throws InvalidArgumentException
      */
     private static function childReferences(array $current, int|string $key, array $references): array
     {
@@ -57,6 +63,7 @@ final class BoundedValueTraversal
 
     /**
      * @param array<string,true> $references
+     * @throws InvalidArgumentException
      */
     private static function visit(
         mixed $value,

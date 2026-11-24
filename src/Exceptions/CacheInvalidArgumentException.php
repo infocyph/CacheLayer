@@ -10,5 +10,7 @@ use Psr\SimpleCache\InvalidArgumentException as SimpleCacheInvalidArgumentExcept
 
 /**
  * Thrown when a cache key or argument is invalid.
+ *
+ * @api
  */
 class CacheInvalidArgumentException extends InvalidArgumentException implements PsrInvalidArgumentException, SimpleCacheInvalidArgumentException {}

@@ -10,6 +10,9 @@ use RuntimeException;
 
 final class PdoCacheSchema
 {
+    /**
+     * @throws RuntimeException
+     */
     public static function install(PDO $pdo, string $table = 'cachelayer_entries'): void
     {
         if (preg_match('/^[A-Za-z0-9_]+$/D', $table) !== 1) {
@@ -54,6 +57,9 @@ final class PdoCacheSchema
         );
     }
 
+    /**
+     * @throws PDOException
+     */
     private static function installExpiryIndex(PDO $pdo, string $table, string $driver): void
     {
         $index = $table . '_expires_idx';

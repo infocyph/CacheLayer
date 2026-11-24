@@ -11,6 +11,7 @@ final readonly class InvalidationBatch
     /**
      * @param array $events The events argument.
      * @phpstan-param list<InvalidationEvent> $events
+     * @throws ClusterCacheException
      */
     public function __construct(public array $events)
     {

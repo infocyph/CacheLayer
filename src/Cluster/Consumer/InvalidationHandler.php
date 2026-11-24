@@ -16,6 +16,9 @@ final readonly class InvalidationHandler
         private string $namespace,
     ) {}
 
+    /**
+     * @throws ClusterCacheException
+     */
     public function handle(InvalidationEvent $event): void
     {
         if ($event->namespace !== $this->namespace) {
@@ -24,7 +27,7 @@ final readonly class InvalidationHandler
 
         $handled = match ($event->type) {
             InvalidationEventType::Key => $this->invalidateKey($event),
-            InvalidationEventType::Namespace => $this->cache->clear(),
+            InvalidationEventType::NamespaceClear => $this->cache->clear(),
             InvalidationEventType::Tag => $this->invalidateTag($event),
         };
         if (!$handled) {

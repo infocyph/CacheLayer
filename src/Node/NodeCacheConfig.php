@@ -16,6 +16,7 @@ final readonly class NodeCacheConfig
 
     public CacheOptions $options;
 
+    /** @throws NodeCacheConfigurationException */
     public function __construct(
         public string $sqliteFile,
         string $namespace = 'default',

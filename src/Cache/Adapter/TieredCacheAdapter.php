@@ -16,7 +16,10 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
 {
     private bool $l1Readable = true;
 
-    /** @param list<InternalCachePoolInterface> $pools */
+    /**
+     * @param list<InternalCachePoolInterface> $pools
+     * @throws InvalidArgumentException
+     */
     public function __construct(
         private readonly array $pools,
         private readonly bool $writeToL1 = true,
@@ -49,6 +52,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         }
     }
 
+    #[\Override]
     public function clear(): bool
     {
         return $this->mutate(function (): bool {
@@ -62,6 +66,9 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         }, reconcile: true);
     }
 
+    /**
+     * @throws LogicException
+     */
     #[\Override]
     public function configureOptions(CacheOptions $options): void
     {
@@ -74,6 +81,9 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         }
     }
 
+    /**
+     * @throws LogicException
+     */
     #[\Override]
     public function configureStorageIdentity(string $storageIdentity): void
     {
@@ -86,6 +96,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         }
     }
 
+    #[\Override]
     public function deleteItem(string $key): bool
     {
         $this->discardDeferredKey($key);
@@ -100,7 +111,8 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         });
     }
 
-    /** @param list<string> $keys */
+    /** @param array<array-key, string> $keys */
+    #[\Override]
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
@@ -115,6 +127,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         });
     }
 
+    #[\Override]
     public function getItem(string $key): CacheItem
     {
         $pending = $this->deferredRead($key);
@@ -142,6 +155,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
     /**
      * @param list<string> $tags
      * @return array<int|string, string>
+     * @throws LogicException
      */
     #[\Override]
     public function getTagGenerations(array $tags): array
@@ -153,6 +167,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         throw new LogicException('A tiered cache must retain an authoritative pool.');
     }
 
+    #[\Override]
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
@@ -161,7 +176,9 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
     /**
      * @param list<string> $keys
      * @return array<string, CacheItem>
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
+    #[\Override]
     public function multiFetch(array $keys): array
     {
         $remaining = $keys;
@@ -201,6 +218,10 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         return $incremented;
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
+    #[\Override]
     public function save(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
@@ -220,7 +241,11 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         });
     }
 
-    /** @param array<string, CacheItemInterface> $items */
+    /**
+     * @param array<string, CacheItemInterface> $items
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
+    #[\Override]
     public function saveItems(array $items): bool
     {
         if (!$this->supportsItems($items)) {
@@ -230,13 +255,16 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         return $this->mutate(fn(): bool => $this->writeBatch($items));
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     private function copyItem(CacheItemInterface $source): CacheItem
     {
-        $ttl = $source instanceof CacheItem ? $source->ttlSeconds() : null;
+        $expiresAt = $source instanceof CacheItem ? $source->expirationTimestamp() : null;
         $tags = $source instanceof CacheItem ? $source->getTagGenerations() : [];
 
         return new CacheItem($this, $source->getKey(), $source->get(), true)
-            ->expiresAfter($ttl)
+            ->expiresAt(CachePayloadCodec::toDateTime($expiresAt))
             ->setTagGenerations($tags);
     }
 
@@ -244,6 +272,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
      * @param list<string> $wanted
      * @param array<string, CacheItemInterface> $fetched
      * @return array{array<string, CacheItem>, list<string>}
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
     private function extractHits(array $wanted, array $fetched): array
     {
@@ -261,7 +290,10 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         return [$hits, $misses];
     }
 
-    /** @param list<string> $keys */
+    /**
+     * @param list<string> $keys
+     * @throws \Psr\Cache\InvalidArgumentException
+     */
     private function invalidateSkippedL1(array $keys, bool $written): bool
     {
         if (count($this->pools) === 1) {
@@ -332,7 +364,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
             $key = $item->getKey();
             $target = $pool->createItem($key)->set($item->get());
             if ($target instanceof CacheItem && $item instanceof CacheItem) {
-                $target->expiresAfter($item->ttlSeconds())
+                $target->expiresAt(CachePayloadCodec::toDateTime($item->expirationTimestamp()))
                     ->setTagGenerations($item->getTagGenerations());
             }
             $targets["key:\0" . $key] = $target;
@@ -345,14 +377,17 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
     {
         $target = $pool->createItem($item->getKey())->set($item->get());
         if ($target instanceof CacheItem && $item instanceof CacheItem) {
-            $target->expiresAfter($item->ttlSeconds())
+            $target->expiresAt(CachePayloadCodec::toDateTime($item->expirationTimestamp()))
                 ->setTagGenerations($item->getTagGenerations());
         }
 
         return $pool->save($target);
     }
 
-    /** @param array<string, CacheItemInterface> $items */
+    /**
+     * @param array<string, CacheItemInterface> $items
+     * @throws \Psr\Cache\InvalidArgumentException
+     */
     private function writeBatch(array $items): bool
     {
         $start = $this->writeStart();

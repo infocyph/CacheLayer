@@ -13,13 +13,15 @@ use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 /** @internal */
 final class ClusterInput
 {
+    /** @throws ClusterConfigurationException */
     public static function cluster(string $cluster): string
     {
-        self::boundedName($cluster, 128, 'cluster name', ClusterConfigurationException::class);
+        self::boundedName($cluster, 128, 'cluster name');
 
         return $cluster;
     }
 
+    /** @throws ClusterCacheException */
     public static function eventId(string $eventId): string
     {
         if (strlen($eventId) < 1 || strlen($eventId) > 128 || preg_match('/^[0-9-]+$/D', $eventId) !== 1) {
@@ -29,9 +31,10 @@ final class ClusterInput
         return $eventId;
     }
 
+    /** @throws ClusterCacheException */
     public static function identifier(InvalidationEventType $type, ?string $identifier): ?string
     {
-        if ($type === InvalidationEventType::Namespace) {
+        if ($type === InvalidationEventType::NamespaceClear) {
             if ($identifier !== null) {
                 throw new ClusterCacheException('Namespace invalidation events must not contain an identifier.');
             }
@@ -55,6 +58,7 @@ final class ClusterInput
         return $identifier;
     }
 
+    /** @throws ClusterConfigurationException */
     public static function namespace(string $namespace): string
     {
         try {
@@ -64,27 +68,29 @@ final class ClusterInput
         }
     }
 
+    /** @throws ClusterConfigurationException */
     public static function nodeId(string $nodeId): string
     {
-        self::boundedName($nodeId, 255, 'node ID', ClusterConfigurationException::class);
+        self::boundedName($nodeId, 255, 'node ID');
 
         return $nodeId;
     }
 
+    /** @throws ClusterConfigurationException */
     public static function transportIdentity(string $transportIdentity): string
     {
-        self::boundedName($transportIdentity, 128, 'transport identity', ClusterConfigurationException::class);
+        self::boundedName($transportIdentity, 128, 'transport identity');
 
         return $transportIdentity;
     }
 
-    /** @param class-string<ClusterCacheException> $exceptionClass */
-    private static function boundedName(string $value, int $maximum, string $label, string $exceptionClass): void
+    /** @throws ClusterConfigurationException */
+    private static function boundedName(string $value, int $maximum, string $label): void
     {
         if (strlen($value) < 1
             || strlen($value) > $maximum
             || preg_match('/^[A-Za-z0-9_.-]+$/D', $value) !== 1) {
-            throw new $exceptionClass(sprintf(
+            throw new ClusterConfigurationException(sprintf(
                 'The %s must contain 1-%d characters from A-Z, a-z, 0-9, _, ., and -.',
                 $label,
                 $maximum,

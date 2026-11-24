@@ -16,8 +16,8 @@ test('file locks retain ownership until release and support lease refresh', func
     try {
         $handle = $first->acquire('worker:reports', 0.0, 0.05);
 
-        expect($handle)->not->toBeNull()
-            ->and($handle?->leaseSeconds)->toBe(0.05)
+        $handle ??= throw new RuntimeException('Unable to acquire file lock.');
+        expect($handle->leaseSeconds)->toBe(0.05)
             ->and($first->refresh($handle, 0.05))->toBeTrue();
 
         usleep(75_000);
@@ -30,7 +30,11 @@ test('file locks retain ownership until release and support lease refresh', func
         expect($replacement)->not->toBeNull();
         $second->release($replacement);
     } finally {
-        foreach (glob($directory . '/*.lock') ?: [] as $file) {
+        $files = glob($directory . '/*.lock');
+        if ($files === false) {
+            throw new RuntimeException('Unable to enumerate cache test files.');
+        }
+        foreach ($files as $file) {
             unlink($file);
         }
         if (is_dir($directory)) {
@@ -65,7 +69,11 @@ test('file lock registry keeps identical keys in different directories independe
         $second->release($secondHandle);
     } finally {
         foreach ([$firstDirectory, $secondDirectory] as $directory) {
-            foreach (glob($directory . '/*.lock') ?: [] as $file) {
+            $files = glob($directory . '/*.lock');
+            if ($files === false) {
+                throw new RuntimeException('Unable to enumerate cache test files.');
+            }
+            foreach ($files as $file) {
                 unlink($file);
             }
             if (is_dir($directory)) {
@@ -96,7 +104,11 @@ test('sqlite PDO locks use the shared file-lock fallback', function (): void {
         expect($replacement)->not->toBeNull();
         $second->release($replacement);
     } finally {
-        foreach (glob($directory . '/*.lock') ?: [] as $file) {
+        $files = glob($directory . '/*.lock');
+        if ($files === false) {
+            throw new RuntimeException('Unable to enumerate cache test files.');
+        }
+        foreach ($files as $file) {
             unlink($file);
         }
         if (is_dir($directory)) {
@@ -134,6 +146,7 @@ test('strict PDO locks reject unsupported drivers during construction', function
         {
         }
 
+        #[\Override]
         public function getAttribute(int $attribute): mixed
         {
             unset($attribute);
@@ -153,6 +166,7 @@ test('strict PDO locks allow native drivers without a fallback', function (): vo
             {
             }
 
+            #[\Override]
             public function getAttribute(int $attribute): mixed
             {
                 unset($attribute);
@@ -164,8 +178,7 @@ test('strict PDO locks allow native drivers without a fallback', function (): vo
         $provider = PdoLockProvider::strict($pdo);
         $fallback = (new ReflectionObject($provider))->getProperty('fallback')->getValue($provider);
 
-        expect($provider)->toBeInstanceOf(PdoLockProvider::class)
-            ->and($fallback)->toBeNull();
+        expect($fallback)->toBeNull();
     }
 });
 
@@ -179,6 +192,7 @@ test('PDO lock providers report their native driver capability', function (): vo
 
 test('PDO lock providers accept an explicit non-file fallback', function (): void {
     $fallback = new class implements LockProviderInterface {
+        #[\Override]
         public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): ?LockHandle
         {
             unset($key, $waitSeconds, $leaseSeconds);
@@ -186,6 +200,7 @@ test('PDO lock providers accept an explicit non-file fallback', function (): voi
             return null;
         }
 
+        #[\Override]
         public function refresh(?LockHandle $handle, float $leaseSeconds): bool
         {
             unset($handle, $leaseSeconds);
@@ -193,6 +208,7 @@ test('PDO lock providers accept an explicit non-file fallback', function (): voi
             return false;
         }
 
+        #[\Override]
         public function release(?LockHandle $handle): void
         {
             unset($handle);
@@ -203,6 +219,7 @@ test('PDO lock providers accept an explicit non-file fallback', function (): voi
         {
         }
 
+        #[\Override]
         public function getAttribute(int $attribute): mixed
         {
             unset($attribute);
@@ -211,7 +228,8 @@ test('PDO lock providers accept an explicit non-file fallback', function (): voi
         }
     };
 
-    expect(new PdoLockProvider($pdo, fallback: $fallback))->toBeInstanceOf(PdoLockProvider::class);
+    $provider = new PdoLockProvider($pdo, fallback: $fallback);
+    expect((new ReflectionObject($provider))->getProperty('fallback')->getValue($provider))->toBe($fallback);
 });
 
 test('MySQL PDO locks use the native lock path', function (): void {
@@ -220,6 +238,7 @@ test('MySQL PDO locks use the native lock path', function (): void {
         {
         }
 
+        #[\Override]
         public function getAttribute(int $attribute): mixed
         {
             unset($attribute);
@@ -227,14 +246,17 @@ test('MySQL PDO locks use the native lock path', function (): void {
             return 'mysql';
         }
 
-        public function prepare(string $query, array $options = []): PDOStatement|false
+        /** @param array<int,mixed> $options */
+        #[\Override]
+        public function prepare(string $query, array $options = []): PDOStatement
         {
             unset($query, $options);
 
             return $this->successfulStatement();
         }
 
-        public function query(string $query, ?int $fetchMode = null, mixed ...$fetchModeArgs): PDOStatement|false
+        #[\Override]
+        public function query(string $query, ?int $fetchMode = null, mixed ...$fetchModeArgs): PDOStatement
         {
             unset($query, $fetchMode, $fetchModeArgs);
 
@@ -248,6 +270,8 @@ test('MySQL PDO locks use the native lock path', function (): void {
                 {
                 }
 
+                /** @param array<array-key,mixed>|null $params */
+                #[\Override]
                 public function execute(?array $params = null): bool
                 {
                     unset($params);
@@ -255,6 +279,7 @@ test('MySQL PDO locks use the native lock path', function (): void {
                     return true;
                 }
 
+                #[\Override]
                 public function fetchColumn(int $column = 0): mixed
                 {
                     unset($column);
@@ -281,6 +306,7 @@ test('PostgreSQL PDO locks accept native boolean results', function (): void {
         {
         }
 
+        #[\Override]
         public function getAttribute(int $attribute): mixed
         {
             unset($attribute);
@@ -288,14 +314,17 @@ test('PostgreSQL PDO locks accept native boolean results', function (): void {
             return 'pgsql';
         }
 
-        public function prepare(string $query, array $options = []): PDOStatement|false
+        /** @param array<int,mixed> $options */
+        #[\Override]
+        public function prepare(string $query, array $options = []): PDOStatement
         {
             unset($query, $options);
 
             return $this->successfulStatement();
         }
 
-        public function query(string $query, ?int $fetchMode = null, mixed ...$fetchModeArgs): PDOStatement|false
+        #[\Override]
+        public function query(string $query, ?int $fetchMode = null, mixed ...$fetchModeArgs): PDOStatement
         {
             unset($query, $fetchMode, $fetchModeArgs);
 
@@ -309,6 +338,8 @@ test('PostgreSQL PDO locks accept native boolean results', function (): void {
                 {
                 }
 
+                /** @param array<array-key,mixed>|null $params */
+                #[\Override]
                 public function execute(?array $params = null): bool
                 {
                     unset($params);
@@ -316,6 +347,7 @@ test('PostgreSQL PDO locks accept native boolean results', function (): void {
                     return true;
                 }
 
+                #[\Override]
                 public function fetchColumn(int $column = 0): mixed
                 {
                     unset($column);
@@ -334,4 +366,47 @@ test('PostgreSQL PDO locks accept native boolean results', function (): void {
     $provider->release($handle);
 
     expect($provider->refresh($handle, 10.0))->toBeFalse();
+});
+
+test('lock providers reject nonfinite waits and leases before backend operations', function (): void {
+    $providers = [
+        new FileLockProvider(),
+        new PdoLockProvider(new PDO('sqlite::memory:')),
+        new \Infocyph\CacheLayer\Cache\Lock\RedisLockProvider(new Redis()),
+        new \Infocyph\CacheLayer\Cache\Lock\MemcachedLockProvider(new Memcached()),
+    ];
+    foreach ($providers as $provider) {
+        expect(fn() => $provider->acquire('invalid', INF, 1.0))->toThrow(InvalidArgumentException::class)
+            ->and(fn() => $provider->acquire('invalid', 0.0, NAN))->toThrow(InvalidArgumentException::class)
+            ->and(fn() => $provider->acquire('invalid', 0.0, INF))->toThrow(InvalidArgumentException::class);
+    }
+});
+
+test('a stale file lock handle cannot release its replacement', function (): void {
+    $directory = sys_get_temp_dir() . '/cachelayer-lock-stale-' . bin2hex(random_bytes(5));
+    $provider = new FileLockProvider($directory);
+    $first = null;
+    $second = null;
+    try {
+        $first = $provider->acquire('shared', 0.0);
+        expect($first)->not->toBeNull();
+        $provider->release($first);
+        $second = $provider->acquire('shared', 0.0);
+        expect($second)->not->toBeNull();
+        $provider->release($first);
+        expect($provider->refresh($first, 30.0))->toBeFalse()
+            ->and($provider->refresh($second, 30.0))->toBeTrue()
+            ->and($provider->acquire('shared', 0.0))->toBeNull();
+    } finally {
+        $provider->release($first);
+        $provider->release($second);
+        if (is_dir($directory)) {
+            foreach (new DirectoryIterator($directory) as $file) {
+                if ($file->isFile()) {
+                    unlink($file->getPathname());
+                }
+            }
+            rmdir($directory);
+        }
+    }
 });

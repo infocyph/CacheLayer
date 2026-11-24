@@ -22,11 +22,20 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
 
     private string $metadataDirectory;
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws RuntimeException
+     */
     public function __construct(string $namespace = 'default', ?string $baseDir = null)
     {
         $this->createDirectory($namespace, $baseDir);
     }
 
+    /**
+     * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
+    #[\Override]
     public function atomicCompareAndSet(string $key, mixed $expected, CacheItemInterface $replacement): bool
     {
         if (!$this->supportsItem($replacement)) {
@@ -47,6 +56,11 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         });
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws RuntimeException
+     */
+    #[\Override]
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
         $this->discardDeferredKey($key);
@@ -64,6 +78,11 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         });
     }
 
+    /**
+     * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
+    #[\Override]
     public function atomicSetIfAbsent(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
@@ -83,21 +102,21 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         });
     }
 
+    #[\Override]
     public function clear(): bool
     {
-        $ok = true;
-        foreach (glob($this->dataDirectory . '*.php') ?: [] as $file) {
-            $this->invalidateOpcache($file);
-            $ok = (!is_file($file) || unlink($file)) && $ok;
-        }
-        foreach (glob($this->metadataDirectory . '*') ?: [] as $file) {
-            $ok = (!is_file($file) || unlink($file)) && $ok;
-        }
+        $ok = $this->clearDirectoryFiles($this->dataDirectory, '.php', $this->invalidateOpcache(...));
+        $ok = $this->clearDirectoryFiles($this->metadataDirectory, '.generation') && $ok;
         $this->deferred = [];
 
         return $ok;
     }
 
+    /**
+     * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
+    #[\Override]
     public function deleteItem(string $key): bool
     {
         $this->discardDeferredKey($key);
@@ -105,7 +124,8 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         return $this->withKeyLock($key, fn(): bool => $this->deleteItemUnlocked($key));
     }
 
-    /** @param list<string> $keys */
+    /** @param array<array-key, string> $keys */
+    #[\Override]
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
@@ -118,6 +138,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         return $ok;
     }
 
+    #[\Override]
     public function getItem(string $key): CacheItem
     {
         $record = $this->readLiveRecordUnlocked($key);
@@ -130,7 +151,8 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
 
     /**
      * @param list<string> $tags
-     * @return array<string, string>
+     * @return array<int|string, string>
+     * @throws RuntimeException
      */
     #[\Override]
     public function getTagGenerations(array $tags): array
@@ -151,6 +173,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         return $generations;
     }
 
+    #[\Override]
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
@@ -159,7 +182,9 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
     /**
      * @param list<string> $keys
      * @return array<string, CacheItem>
+     * @throws \Psr\Cache\InvalidArgumentException
      */
+    #[\Override]
     public function multiFetch(array $keys): array
     {
         $items = [];
@@ -180,6 +205,11 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         );
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws RuntimeException
+     */
+    #[\Override]
     public function save(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
@@ -189,7 +219,11 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         return $this->persistItem($item);
     }
 
-    /** @param array<string, CacheItemInterface> $items */
+    /**
+     * @param array<string, CacheItemInterface> $items
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
+    #[\Override]
     public function saveItems(array $items): bool
     {
         if (!$this->supportsItems($items)) {
@@ -204,6 +238,10 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         return $ok;
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws RuntimeException
+     */
     private function createDirectory(string $ns, ?string $baseDir): void
     {
         $baseDir = rtrim($baseDir ?? $this->defaultBaseDirectory(), DIRECTORY_SEPARATOR);
@@ -257,11 +295,19 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         return $this->metadataDirectory . hash('xxh128', $tag) . '.generation';
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function persistItem(CacheItemInterface $item): bool
     {
         return $this->withKeyLock($item->getKey(), fn(): bool => $this->persistItemUnlocked($item));
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws RuntimeException
+     */
     private function persistItemUnlocked(CacheItemInterface $item): bool
     {
         $expires = CachePayloadCodec::expirationFromItem($item);
@@ -332,6 +378,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
      * @template T
      * @param callable(): T $callback
      * @return T
+     * @throws RuntimeException
      */
     private function withKeyLock(string $key, callable $callback): mixed
     {

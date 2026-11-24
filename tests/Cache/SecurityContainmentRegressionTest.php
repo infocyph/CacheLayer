@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+namespace Infocyph\CacheLayer\Tests\Cache;
+
 use Infocyph\CacheLayer\Cache\Adapter\ArrayCacheAdapter;
 use Infocyph\CacheLayer\Cache\Adapter\PdoCacheAdapter;
 use Infocyph\CacheLayer\Cache\Adapter\SharedMemoryCacheAdapter;
@@ -20,6 +22,15 @@ use Infocyph\CacheLayer\Node\NodeCacheConfig;
 use Infocyph\CacheLayer\Serializer\ClosureSerializer;
 use Infocyph\CacheLayer\Serializer\SignedClosureSerializer;
 use Infocyph\CacheLayer\Support\RedisConnection;
+use FilesystemIterator;
+use LogicException;
+use PDO;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
+use ReflectionParameter;
+use RuntimeException;
+use SensitiveParameter;
+use Throwable;
 
 test('adapter policy is immutable from the first facade binding', function () {
     $adapter = new ArrayCacheAdapter('shared-policy');
@@ -50,7 +61,7 @@ test('node SQLite cache preserves caller-owned transactions', function () {
     expect(fn() => $adapter->saveMany([$item]))
         ->toThrow(NodeCacheStorageException::class)
         ->and($pdo->inTransaction())->toBeTrue()
-        ->and((int) $pdo->query('SELECT COUNT(*) FROM business_rows')->fetchColumn())->toBe(1);
+        ->and(\Infocyph\CacheLayer\Tests\Support\CacheFixture::countRows($pdo, 'SELECT COUNT(*) FROM business_rows'))->toBe(1);
 
     $pdo->rollBack();
 });
@@ -91,7 +102,6 @@ test('Redis DSN errors never echo credentials', function () {
 
     try {
         RedisConnection::connect($dsn);
-        test()->fail('Expected invalid Redis DSN.');
     } catch (Throwable $failure) {
         for ($current = $failure; $current instanceof Throwable; $current = $current->getPrevious()) {
             expect($current->getMessage())->not->toContain($secret)
@@ -99,11 +109,14 @@ test('Redis DSN errors never echo credentials', function () {
         }
         expect((string) $failure)->not->toContain($secret)
             ->and((string) $failure)->not->toContain($dsn);
+
+        return;
     } finally {
         if ($previous !== false) {
             ini_set('zend.exception_ignore_args', $previous);
         }
     }
+    \PHPUnit\Framework\Assert::fail('Expected invalid Redis DSN.');
 });
 
 test('secret-bearing public parameters are marked sensitive', function () {
@@ -222,7 +235,9 @@ PHP;
         ],
         $pipes,
     );
-    expect(is_resource($process))->toBeTrue();
+    if (!is_resource($process)) {
+        throw new \RuntimeException('Unable to launch codec isolation subprocess.');
+    }
     fclose($pipes[0]);
     $stdout = stream_get_contents($pipes[1]);
     $stderr = stream_get_contents($pipes[2]);
@@ -278,6 +293,9 @@ test('file atomic consumption reports deletion failure instead of returning the 
             RecursiveIteratorIterator::CHILD_FIRST,
         );
         foreach ($files as $file) {
+            if (!$file instanceof \SplFileInfo) {
+                throw new \UnexpectedValueException('Unexpected filesystem iterator entry.');
+            }
             $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
         }
         rmdir($base);
@@ -369,7 +387,9 @@ test('shared-memory token creation rejects a pre-created symlink', function () {
         mkdir($directory, 0700, true);
     }
     $target = tempnam(sys_get_temp_dir(), 'cachelayer-token-target-');
-    expect($target)->not->toBeFalse();
+    if ($target === false) {
+        throw new RuntimeException('Unable to create the shared-memory symlink target.');
+    }
     $token = $directory . DIRECTORY_SEPARATOR . hash('xxh128', $namespace) . '.tok';
     expect(symlink($target, $token))->toBeTrue();
 
@@ -380,7 +400,7 @@ test('shared-memory token creation rejects a pre-created symlink', function () {
         if (is_link($token)) {
             unlink($token);
         }
-        if (is_string($target) && is_file($target)) {
+        if (is_file($target)) {
             unlink($target);
         }
     }

@@ -13,6 +13,10 @@ use Throwable;
 /** @internal PDO atomic protocol kept separate from normal cache mechanics. */
 trait PdoAtomicOperations
 {
+    /**
+     * @throws RuntimeException
+     * @throws Throwable
+     */
     public function atomicCompareAndSet(
         string $key,
         mixed $expected,
@@ -43,6 +47,11 @@ trait PdoAtomicOperations
         });
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws RuntimeException
+     * @throws Throwable
+     */
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
         $this->discardDeferredKey($key);
@@ -67,6 +76,10 @@ trait PdoAtomicOperations
         });
     }
 
+    /**
+     * @throws RuntimeException
+     * @throws Throwable
+     */
     public function atomicSetIfAbsent(CacheItemInterface $item): bool
     {
         if (!$this->supportsAtomicCache() || !$this->supportsItem($item)) {
@@ -175,6 +188,8 @@ trait PdoAtomicOperations
      * @template T
      * @param callable(): T $callback
      * @return T
+     * @throws RuntimeException
+     * @throws Throwable
      */
     private function atomicTransaction(callable $callback): mixed
     {

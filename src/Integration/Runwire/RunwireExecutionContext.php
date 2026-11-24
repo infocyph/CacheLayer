@@ -12,6 +12,10 @@ use LogicException;
 
 final readonly class RunwireExecutionContext
 {
+    /**
+     * @throws LogicException
+     * @throws \Infocyph\Runwire\Exception\CancelledException
+     */
     public function __construct(
         public RuntimeContext $runtime,
         public ?RequestContext $request = null,

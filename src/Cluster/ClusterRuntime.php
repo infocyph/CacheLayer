@@ -41,16 +41,26 @@ final readonly class ClusterRuntime
         return $this->cache;
     }
 
+    /**
+     * @throws ClusterCacheException
+     */
     public function clearNamespace(): void
     {
         $this->coordinator->clearNamespace();
     }
 
+    /**
+     * @throws \Throwable
+     */
     public function consume(?int $limit = null): int
     {
         return $this->consumer->consume($limit ?? $this->consumerBatchSize);
     }
 
+    /**
+     * @throws ClusterCacheException
+     * @throws \Throwable
+     */
     public function drain(?int $limit = null, int $maxBatches = 100): int
     {
         $limit ??= $this->consumerBatchSize;
@@ -70,11 +80,17 @@ final readonly class ClusterRuntime
         return $total;
     }
 
+    /**
+     * @throws ClusterCacheException
+     */
     public function invalidateKey(string $key): void
     {
         $this->coordinator->invalidateKey($key);
     }
 
+    /**
+     * @throws ClusterCacheException
+     */
     public function invalidateTag(string $tag): void
     {
         $this->coordinator->invalidateTag($tag);
@@ -83,12 +99,16 @@ final readonly class ClusterRuntime
     /**
      * @param array $tags The tags argument.
      * @phpstan-param list<string> $tags
+     * @throws ClusterCacheException
      */
     public function invalidateTags(array $tags): void
     {
         $this->coordinator->invalidateTags($tags);
     }
 
+    /**
+     * @throws ClusterCacheException
+     */
     public function outbox(PDO $connection): ClusterOutbox
     {
         if (!$this->transport instanceof TransactionalInvalidationTransportInterface) {
@@ -105,6 +125,13 @@ final readonly class ClusterRuntime
         );
     }
 
+    /**
+     * @throws ClusterCacheException
+     * @throws \Infocyph\Runwire\Exception\CancelledException
+     * @throws \Throwable
+     * @throws \InvalidArgumentException
+     * @throws \LogicException
+     */
     public function poll(
         ?int $limit = null,
         int $cycles = 1,
@@ -128,6 +155,10 @@ final readonly class ClusterRuntime
         return $total;
     }
 
+    /**
+     * @throws ClusterCacheException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
+     */
     public function recoverIfRequired(): bool
     {
         $recovered = $this->recovery->recoverIfRequired();
@@ -138,6 +169,10 @@ final readonly class ClusterRuntime
         return $recovered;
     }
 
+    /**
+     * @throws ClusterCacheException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
+     */
     public function skipEventAfterClear(string $eventId): void
     {
         ClusterInput::eventId($eventId);

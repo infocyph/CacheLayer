@@ -14,6 +14,10 @@ use InvalidArgumentException;
 
 final class RunwireWorkerIntegration
 {
+    /**
+     * @throws \LogicException
+     * @throws \Throwable
+     */
     public static function startClusterConsumer(
         WorkerContext $worker,
         ClusterRuntime $cluster,
@@ -48,6 +52,10 @@ final class RunwireWorkerIntegration
         );
     }
 
+    /**
+     * @throws \LogicException
+     * @throws \Throwable
+     */
     public static function startNodeMaintenance(
         WorkerContext $worker,
         NodeCacheMaintenance $maintenance,
@@ -104,6 +112,9 @@ final class RunwireWorkerIntegration
             && RunwireIntegration::supports(RuntimeCapability::RUNWIRE_LOOP_AVAILABLE);
     }
 
+    /**
+     * @throws InvalidArgumentException
+     */
     private static function validateClusterOptions(int $batchSize, float $idleSeconds): void
     {
         if ($batchSize < 1) {
@@ -114,6 +125,9 @@ final class RunwireWorkerIntegration
         }
     }
 
+    /**
+     * @throws InvalidArgumentException
+     */
     private static function validateMaintenanceOptions(
         float $intervalSeconds,
         int $pruneLimit,

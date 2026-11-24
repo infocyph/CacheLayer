@@ -10,6 +10,7 @@ final readonly class ClusterCacheConfig
 {
     /**
      * @param string $transportIdentity Durable history generation; rotate to a never-used value after history reset.
+     * @throws ClusterConfigurationException
      */
     public function __construct(
         public string $cluster,

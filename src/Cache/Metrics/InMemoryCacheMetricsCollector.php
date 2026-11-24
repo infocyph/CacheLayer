@@ -11,11 +11,13 @@ final class InMemoryCacheMetricsCollector implements CacheMetricsCollectorInterf
      */
     private array $counters = [];
 
+    #[\Override]
     public function export(): array
     {
         return $this->counters;
     }
 
+    #[\Override]
     public function increment(string $adapterClass, string $metric, int $amount = 1): void
     {
         $this->counters[$adapterClass][$metric] = ($this->counters[$adapterClass][$metric] ?? 0) + $amount;

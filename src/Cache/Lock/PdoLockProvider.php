@@ -17,6 +17,9 @@ final class PdoLockProvider implements LockProviderInterface
 
     private int $retrySleepMicros;
 
+    /**
+     * @throws UnsupportedPdoLockDriver
+     */
     public function __construct(
         private \PDO $pdo,
         private string $prefix = 'cachelayer:lock:',
@@ -35,6 +38,9 @@ final class PdoLockProvider implements LockProviderInterface
         }
     }
 
+    /**
+     * @throws UnsupportedPdoLockDriver
+     */
     public static function strict(
         \PDO $pdo,
         string $prefix = 'cachelayer:lock:',
@@ -48,10 +54,18 @@ final class PdoLockProvider implements LockProviderInterface
         return in_array(strtolower($driver), ['mysql', 'mariadb', 'pgsql'], true);
     }
 
+    /**
+     * @throws \InvalidArgumentException
+     */
+    #[\Override]
     public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): ?LockHandle
     {
-        if ($leaseSeconds <= 0) {
-            throw new \InvalidArgumentException('Lock lease duration must be positive.');
+        if (!is_finite($leaseSeconds) || $leaseSeconds <= 0.0) {
+            throw new \InvalidArgumentException('Lock lease duration must be finite and positive.');
+        }
+
+        if (!is_finite($waitSeconds)) {
+            throw new \InvalidArgumentException('Lock wait duration must be finite.');
         }
 
         return match ($this->driver) {
@@ -61,10 +75,14 @@ final class PdoLockProvider implements LockProviderInterface
         };
     }
 
+    /**
+     * @throws \InvalidArgumentException
+     */
+    #[\Override]
     public function refresh(?LockHandle $handle, float $leaseSeconds): bool
     {
-        if ($leaseSeconds <= 0) {
-            throw new \InvalidArgumentException('Lock lease duration must be positive.');
+        if (!is_finite($leaseSeconds) || $leaseSeconds <= 0.0) {
+            throw new \InvalidArgumentException('Lock lease duration must be finite and positive.');
         }
         if (!$handle instanceof LockHandle) {
             return false;
@@ -76,6 +94,7 @@ final class PdoLockProvider implements LockProviderInterface
         };
     }
 
+    #[\Override]
     public function release(?LockHandle $handle): void
     {
         if (!$handle instanceof LockHandle) {

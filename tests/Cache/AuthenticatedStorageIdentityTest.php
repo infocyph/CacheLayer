@@ -17,6 +17,9 @@ test('signed payloads are bound to their logical cache key', function () {
 
     $store = new ReflectionProperty($adapter, 'store');
     $records = $store->getValue($adapter);
+    if (!is_array($records) || !is_string($records['tenant:d:alice'] ?? null)) {
+        throw new RuntimeException('Expected a signed source record.');
+    }
     $records['tenant:d:bob'] = $records['tenant:d:alice'];
     $store->setValue($adapter, $records);
 
@@ -36,7 +39,11 @@ test('signed payloads are bound to their logical cache namespace', function () {
     $sourceStore = new ReflectionProperty($sourceAdapter, 'store');
     $targetStore = new ReflectionProperty($targetAdapter, 'store');
     $records = $targetStore->getValue($targetAdapter);
-    $records['tenant-b:d:same'] = $sourceStore->getValue($sourceAdapter)['tenant-a:d:same'];
+    $sourceRecords = $sourceStore->getValue($sourceAdapter);
+    if (!is_array($records) || !is_array($sourceRecords) || !is_string($sourceRecords['tenant-a:d:same'] ?? null)) {
+        throw new RuntimeException('Expected a signed source record and target store.');
+    }
+    $records['tenant-b:d:same'] = $sourceRecords['tenant-a:d:same'];
     $targetStore->setValue($targetAdapter, $records);
 
     expect($target->get('same', 'missing'))->toBe('missing')

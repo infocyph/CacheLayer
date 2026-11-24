@@ -16,6 +16,14 @@ use Infocyph\CacheLayer\Node\NodeCacheConfig;
 
 final class ClusterCache
 {
+    /**
+     * @throws \Infocyph\CacheLayer\Cluster\Exception\ClusterConfigurationException
+     * @throws \Infocyph\CacheLayer\Node\Exception\NodeCacheConfigurationException
+     * @throws \RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \Infocyph\CacheLayer\Cluster\Exception\ClusterCacheException
+     * @throws \LogicException
+     */
     public static function create(
         NodeCacheConfig $node,
         ClusterCacheConfig $cluster,

@@ -15,6 +15,9 @@ use Infocyph\Runwire\Runtime\Enum\RuntimeDriver;
 use Infocyph\Runwire\RuntimeCapabilities;
 use Infocyph\Runwire\RuntimeContext;
 
+/**
+ * @throws InvalidArgumentException
+ */
 function cacheLayerRunwireContext(bool $persistent = true, bool $concurrent = false): RuntimeContext
 {
     return RuntimeContext::fromCapabilities(
@@ -107,22 +110,22 @@ it('keeps concurrent request memoizers isolated by fiber', function (): void {
         return ++$runsB;
     };
 
-    $fiberA = new Fiber(static fn(): int => RunwireIntegration::share(
+    $fiberA = new Fiber(static fn(): mixed => RunwireIntegration::share(
         $requestA,
         null,
-        static function () use ($loaderA): int {
+        static function () use ($loaderA): mixed {
             $first = memoize($loaderA);
-            Fiber::suspend($first);
+            expect(Fiber::suspend($first))->toBeNull();
 
             return memoize($loaderA);
         },
     ));
-    $fiberB = new Fiber(static fn(): int => RunwireIntegration::share(
+    $fiberB = new Fiber(static fn(): mixed => RunwireIntegration::share(
         $requestB,
         null,
-        static function () use ($loaderB): int {
+        static function () use ($loaderB): mixed {
             $first = memoize($loaderB);
-            Fiber::suspend($first);
+            expect(Fiber::suspend($first))->toBeNull();
 
             return memoize($loaderB);
         },
@@ -198,7 +201,7 @@ it('replaces runtime bindings without retaining a previous worker request scope'
     RunwireIntegration::share(
         $oldRequest,
         null,
-        static fn(): int => memoize(static fn(): int => 1),
+        static fn(): mixed => memoize(static fn(): int => 1),
     );
     RunwireIntegration::bind($secondRuntime);
 
@@ -225,6 +228,9 @@ it('releases request-owned memoizers across repeated persistent request lifecycl
             null,
             static fn(): mixed => memoize(),
         );
+        if (!$memoizer instanceof \Infocyph\CacheLayer\Memoize\Memoizer) {
+            throw new RuntimeException('Expected a request-owned memoizer.');
+        }
         $references[] = WeakReference::create($memoizer);
         $request->complete();
         unset($memoizer, $request);
@@ -264,11 +270,15 @@ it('flushing one Runwire request does not change another live request memoizer i
                 },
             );
 
-            return [$first, memoize($callback), $runs];
+            $second = memoize($callback);
+            expect($runs)->toBe(1);
+
+            return [$first, $second];
         },
     );
 
-    expect($result)->toBe([1, 1, 1]);
+    expect($result)->toBe([1, 1])
+        ->and($runs)->toBe(1);
 });
 
 it('borrows an explicit runtime without global binding and restores nested task contexts', function (): void {
@@ -280,9 +290,11 @@ it('borrows an explicit runtime without global binding and restores nested task 
         \Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration::share($request, null, static function () use ($runtime, $request, $nested): void {
             expect(\Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration::runtime())->toBe($runtime)
                 ->and(\Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration::current()?->request)->toBe($request);
-            expect(fn() => \Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration::share($nested, null, static function (): void {
-                throw new RuntimeException('nested failure');
-            }))->toThrow(RuntimeException::class, 'nested failure');
+            expect(static function () use ($nested): void {
+                \Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration::share($nested, null, static function (): never {
+                    throw new RuntimeException('nested failure');
+                });
+            })->toThrow(RuntimeException::class, 'nested failure');
             expect(\Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration::current()?->request)->toBe($request);
         }, $runtime);
         expect(\Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration::runtime())->toBe($before)
@@ -297,15 +309,15 @@ it('keeps explicitly passed request scopes separate across overlapping Fibers', 
     $runtime = \Infocyph\Runwire\RuntimeContext::standalone();
     $one = \Infocyph\Runwire\RequestContext::create($runtime);
     $two = \Infocyph\Runwire\RequestContext::create($runtime);
-    $work = static fn($request) => \Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration::share($request, null, static function () use ($request): object {
+    $work = static fn(\Infocyph\Runwire\RequestContext $request): mixed => \Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration::share($request, null, static function () use ($request): object {
         $memoizer = \Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration::memoizer();
-        Fiber::suspend($memoizer);
+        expect(Fiber::suspend($memoizer))->toBeNull();
         expect(\Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration::current()?->request)->toBe($request);
 
         return $request;
     }, $runtime);
-    $first = new Fiber(static fn() => $work($one));
-    $second = new Fiber(static fn() => $work($two));
+    $first = new Fiber(static fn(): mixed => $work($one));
+    $second = new Fiber(static fn(): mixed => $work($two));
     try {
         $firstMemoizer = $first->start();
         $secondMemoizer = $second->start();
@@ -353,20 +365,22 @@ it('unwinds suspended nested Fibers after the host discards their binding', func
     $runtime = cacheLayerRunwireContext(concurrent: true);
     RunwireIntegration::bind($runtime);
     $request = RequestContext::create($runtime);
-    $fiber = new Fiber(static fn() => RunwireIntegration::share($request, null, static function () use ($request, $throw): void {
-        RunwireIntegration::share($request, null, static function () use ($throw): void {
-            Fiber::suspend();
-            if ($throw) {
-                throw new RuntimeException('callback failure');
-            }
+    $fiber = new Fiber(static function () use ($request, $throw): void {
+        RunwireIntegration::share($request, null, static function () use ($request, $throw): void {
+            RunwireIntegration::share($request, null, static function () use ($throw): void {
+                expect(Fiber::suspend())->toBeNull();
+                if ($throw) {
+                    throw new RuntimeException('callback failure');
+                }
+            });
         });
-    }));
+    });
     $fiber->start();
     $replacement = $replace ? cacheLayerRunwireContext(concurrent: true) : null;
     $replacement === null ? RunwireIntegration::release() : RunwireIntegration::bind($replacement);
 
     if ($throw) {
-        expect(fn() => $fiber->resume())->toThrow(RuntimeException::class, 'callback failure');
+        expect(fn(): mixed => $fiber->resume())->toThrow(RuntimeException::class, 'callback failure');
     } else {
         $fiber->resume();
     }
@@ -380,12 +394,11 @@ it('rejects a completed request before application work executes', function (): 
     $runtime = cacheLayerRunwireContext();
     $request = RequestContext::create($runtime);
     $request->complete();
-    $ran = false;
-
-    expect(fn() => RunwireIntegration::share($request, null, function () use (&$ran): void {
-        $ran = true;
-    }, $runtime))->toThrow(LogicException::class, 'Completed request');
-    expect($ran)->toBeFalse();
+    expect(static function () use ($request, $runtime): void {
+        RunwireIntegration::share($request, null, static function (): never {
+            throw new UnexpectedValueException('Rejected request unexpectedly executed application work.');
+        }, $runtime);
+    })->toThrow(LogicException::class, 'Completed request');
 });
 
 it('rejects cancelled or expired requests before application work executes', function (bool $expired): void {
@@ -396,12 +409,11 @@ it('rejects cancelled or expired requests before application work executes', fun
     if (!$expired) {
         $request->cancel(CancellationReason::HOST_CANCELLED);
     }
-    $ran = false;
-
-    expect(fn() => RunwireIntegration::share($request, null, function () use (&$ran): void {
-        $ran = true;
-    }, $runtime))->toThrow(CancelledException::class);
-    expect($ran)->toBeFalse();
+    expect(static function () use ($request, $runtime): void {
+        RunwireIntegration::share($request, null, static function (): never {
+            throw new UnexpectedValueException('Rejected request unexpectedly executed application work.');
+        }, $runtime);
+    })->toThrow(CancelledException::class);
 })->with([false, true]);
 
 it('checks request cancellation without a coroutine scope', function (): void {

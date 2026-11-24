@@ -13,6 +13,9 @@ final readonly class RedisLockProvider implements LockProviderInterface
 
     private int $retrySleepMicros;
 
+    /**
+     * @throws RuntimeException
+     */
     public function __construct(
         private \Redis $redis,
         private string $prefix = 'cachelayer:lock:',
@@ -22,6 +25,10 @@ final readonly class RedisLockProvider implements LockProviderInterface
         $this->retrySleepMicros = self::normalizeRetrySleepMicros($retrySleepMicros);
     }
 
+    /**
+     * @throws \InvalidArgumentException
+     */
+    #[\Override]
     public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): ?LockHandle
     {
         $ttlMs = self::leaseMilliseconds($leaseSeconds);
@@ -31,10 +38,14 @@ final readonly class RedisLockProvider implements LockProviderInterface
             $key,
             $waitSeconds,
             $leaseSeconds,
-            fn(string $lockKey, string $token): bool => (bool) $this->redis->set($lockKey, $token, ['nx', 'px' => $ttlMs]),
+            fn(string $lockKey, string $token): bool => $this->redis->set($lockKey, $token, ['nx', 'px' => $ttlMs]) === true,
         );
     }
 
+    /**
+     * @throws \InvalidArgumentException
+     */
+    #[\Override]
     public function refresh(?LockHandle $handle, float $leaseSeconds): bool
     {
         if (!$handle instanceof LockHandle) {
@@ -54,6 +65,7 @@ LUA;
         return $result === 1 || $result === '1';
     }
 
+    #[\Override]
     public function release(?LockHandle $handle): void
     {
         $script = <<<'LUA'
@@ -71,6 +83,9 @@ LUA;
         );
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function assertRedisExtensionLoaded(): void
     {
         if (!class_exists(\Redis::class)) {

@@ -2,8 +2,15 @@
 
 declare(strict_types=1);
 
+namespace Infocyph\CacheLayer\Tests\Cache;
+
 use Infocyph\CacheLayer\Cache\AtomicCacheInterface;
 use Infocyph\CacheLayer\Cache\Cache;
+use FilesystemIterator;
+use Memcached;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
+use RuntimeException;
 
 $cleanupTree = static function (string $directory): void {
     if (!is_dir($directory)) {
@@ -14,6 +21,9 @@ $cleanupTree = static function (string $directory): void {
         RecursiveIteratorIterator::CHILD_FIRST,
     );
     foreach ($iterator as $entry) {
+        if (!$entry instanceof \SplFileInfo) {
+            throw new \UnexpectedValueException('Unexpected filesystem iterator entry.');
+        }
         $entry->isDir() ? rmdir($entry->getPathname()) : unlink($entry->getPathname());
     }
     rmdir($directory);
@@ -21,10 +31,9 @@ $cleanupTree = static function (string $directory): void {
 
 test('WeakMap supports the full atomic cache contract', function () {
     $cache = Cache::weakMap('atomic-weak-map-contract');
-    $atomic = $cache->atomic();
+    $atomic = $cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
 
-    expect($atomic)->toBeInstanceOf(AtomicCacheInterface::class)
-        ->and($atomic->setIfAbsent('claim', 1, 30))->toBeTrue()
+    expect($atomic->setIfAbsent('claim', 1, 30))->toBeTrue()
         ->and($atomic->setIfAbsent('claim', 2, 30))->toBeFalse()
         ->and($atomic->compareAndSet('claim', '1', 2, 30))->toBeFalse()
         ->and($atomic->compareAndSet('claim', 1, 2, 30))->toBeTrue()
@@ -39,10 +48,9 @@ test('file and PHP-file stores support the full atomic cache contract', function
             $cache = $factory === 'file'
                 ? Cache::file('atomic-files', $directory)
                 : Cache::phpFiles('atomic-files', $directory);
-            $atomic = $cache->atomic();
+            $atomic = $cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
 
-            expect($atomic)->toBeInstanceOf(AtomicCacheInterface::class)
-                ->and($atomic->setIfAbsent('claim', 'first', 30))->toBeTrue()
+            expect($atomic->setIfAbsent('claim', 'first', 30))->toBeTrue()
                 ->and($atomic->setIfAbsent('claim', 'second', 30))->toBeFalse()
                 ->and($atomic->compareAndSet('claim', 'first', 'updated', 30))->toBeTrue()
                 ->and($cache->get('claim'))->toBe('updated')
@@ -58,10 +66,9 @@ test('SQLite PDO supports the full atomic cache contract', function () {
     $file = sys_get_temp_dir() . '/cachelayer-atomic-pdo-' . uniqid('', true) . '.sqlite';
     try {
         $cache = Cache::sqlite('atomic-pdo', $file);
-        $atomic = $cache->atomic();
+        $atomic = $cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
 
-        expect($atomic)->toBeInstanceOf(AtomicCacheInterface::class)
-            ->and($atomic->setIfAbsent('claim', null, 30))->toBeTrue()
+        expect($atomic->setIfAbsent('claim', null, 30))->toBeTrue()
             ->and($atomic->compareAndSet('claim', null, 'updated', 30))->toBeTrue()
             ->and($atomic->getAndDelete('claim', 'missing'))->toBe('updated')
             ->and($atomic->getAndDelete('claim', 'missing'))->toBe('missing');
@@ -76,8 +83,8 @@ if (!class_exists(Memcached::class)) {
     throw new RuntimeException('Memcached extension is required for the configured atomic test matrix.');
 }
 
-$host = getenv('IC_MEMCACHED_HOST') ?: getenv('CACHELAYER_MEMCACHED_HOST') ?: '127.0.0.1';
-$port = (int) (getenv('IC_MEMCACHED_PORT') ?: getenv('CACHELAYER_MEMCACHED_PORT') ?: '11211');
+$host = \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_MEMCACHED_HOST') ?? \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('CACHELAYER_MEMCACHED_HOST') ?? '127.0.0.1';
+$port = (int) (\Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_MEMCACHED_PORT') ?? \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('CACHELAYER_MEMCACHED_PORT') ?? '11211');
 $probe = new Memcached();
 $probe->addServer($host, $port);
 $available = $probe->set('cachelayer-atomic-probe', 'ok')
@@ -91,10 +98,9 @@ test('Memcached supports CAS-backed atomic cache operations', function () use ($
     $client->addServer($host, $port);
     $client->flush();
     $cache = Cache::memcached('atomic-memcached', [[$host, $port, 0]], $client);
-    $atomic = $cache->atomic();
+    $atomic = $cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
 
-    expect($atomic)->toBeInstanceOf(AtomicCacheInterface::class)
-        ->and($atomic->setIfAbsent('claim', 'first', 30))->toBeTrue()
+    expect($atomic->setIfAbsent('claim', 'first', 30))->toBeTrue()
         ->and($atomic->setIfAbsent('claim', 'second', 30))->toBeFalse()
         ->and($atomic->compareAndSet('claim', 'first', 'updated', 30))->toBeTrue()
         ->and($atomic->getAndDelete('claim', 'missing'))->toBe('updated')
@@ -124,9 +130,9 @@ test('file PHP-file SQLite WeakMap and Memcached atomic consume discard deferred
     try {
         foreach ($caches as $index => $cache) {
             $key = 'consume-' . $index;
-            $atomic = $cache->atomic();
-            expect($atomic)->not->toBeNull()
-                ->and($cache->set($key, 'stored'))->toBeTrue()
+            $atomic = $cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
+
+            expect($cache->set($key, 'stored'))->toBeTrue()
                 ->and($cache->saveDeferred($cache->getItem($key)->set('pending')))->toBeTrue()
                 ->and($atomic->getAndDelete($key, 'missing'))->toBe('stored')
                 ->and($atomic->getAndDelete($key, 'missing'))->toBe('missing')

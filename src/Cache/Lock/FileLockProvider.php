@@ -25,10 +25,18 @@ final readonly class FileLockProvider implements LockProviderInterface
         $this->retrySleepMicros = max(1_000, $retrySleepMicros);
     }
 
+    /**
+     * @throws \InvalidArgumentException
+     */
+    #[\Override]
     public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): ?LockHandle
     {
-        if ($leaseSeconds <= 0) {
-            throw new \InvalidArgumentException('Lock lease duration must be positive.');
+        if (!is_finite($leaseSeconds) || $leaseSeconds <= 0.0) {
+            throw new \InvalidArgumentException('Lock lease duration must be finite and positive.');
+        }
+
+        if (!is_finite($waitSeconds)) {
+            throw new \InvalidArgumentException('Lock wait duration must be finite.');
         }
 
         $activeLocks = &self::activeRegistry();
@@ -63,20 +71,31 @@ final readonly class FileLockProvider implements LockProviderInterface
 
             return null;
         }
-        $activeLocks[$path] = true;
+        $activeLocks[$path] = $token;
 
         return new LockHandle($path, $token, $handle, $leaseSeconds);
     }
 
+    /**
+     * @throws \InvalidArgumentException
+     */
+    #[\Override]
     public function refresh(?LockHandle $handle, float $leaseSeconds): bool
     {
-        if ($leaseSeconds <= 0) {
-            throw new \InvalidArgumentException('Lock lease duration must be positive.');
+        if (!is_finite($leaseSeconds) || $leaseSeconds <= 0.0) {
+            throw new \InvalidArgumentException('Lock lease duration must be finite and positive.');
         }
 
-        return $handle instanceof LockHandle && is_resource($handle->resource);
+        if (!$handle instanceof LockHandle || !is_resource($handle->resource)) {
+            return false;
+        }
+
+        $token = self::activeRegistry()[$handle->key] ?? null;
+
+        return $token === $handle->token;
     }
 
+    #[\Override]
     public function release(?LockHandle $handle): void
     {
         if (!$handle instanceof LockHandle) {
@@ -85,20 +104,24 @@ final readonly class FileLockProvider implements LockProviderInterface
 
         $activeLocks = &self::activeRegistry();
 
-        if (is_resource($handle->resource)) {
-            flock($handle->resource, LOCK_UN);
-            fclose($handle->resource);
+        if (($activeLocks[$handle->key] ?? null) !== $handle->token) {
+            return;
+        }
+        $resource = $handle->resource;
+        if (is_resource($resource)) {
+            flock($resource, LOCK_UN);
+            fclose($resource);
         }
 
         unset($activeLocks[$handle->key]);
     }
 
     /**
-     * @phpstan-return array<string, bool>
+     * @phpstan-return array<string, string>
      */
     private static function &activeRegistry(): array
     {
-        /** @var array<string, bool> $registry */
+        /** @var array<string, string> $registry */
         static $registry = [];
 
         return $registry;

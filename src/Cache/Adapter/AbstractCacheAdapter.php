@@ -21,7 +21,7 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
 
     private bool $committing = false;
 
-    /** @var array<string, string> */
+    /** @var array<int|string, string> */
     private array $localMetadata = [];
 
     private ?CacheOptions $options = null;
@@ -44,12 +44,17 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
      * @param list<string> $keys
      * @return array<string, CacheItem>
      */
+    #[\Override]
     abstract public function multiFetch(array $keys): array;
 
     /** @param array<string, CacheItemInterface> $items */
+    #[\Override]
     abstract public function saveItems(array $items): bool;
 
-    /** @internal */
+    /**
+     * @internal
+     * @throws \LogicException
+     */
     public function assertOptionsCompatible(CacheOptions $options): void
     {
         if ($this->options !== null && $this->options != $options) {
@@ -57,7 +62,10 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         }
     }
 
-    /** @internal */
+    /**
+     * @internal
+     * @throws \LogicException
+     */
     public function assertStorageIdentityCompatible(string $storageIdentity): void
     {
         if ($this->storageIdentity !== null && $this->storageIdentity !== $storageIdentity) {
@@ -65,6 +73,7 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         }
     }
 
+    #[\Override]
     public function commit(): bool
     {
         if ($this->deferred === []) {
@@ -87,20 +96,30 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         return $saved;
     }
 
-    /** @internal */
+    /**
+     * @internal
+     * @throws \LogicException
+     */
     public function configureOptions(CacheOptions $options): void
     {
         $this->assertOptionsCompatible($options);
         $this->options ??= $options;
     }
 
-    /** @internal */
+    /**
+     * @internal
+     * @throws \LogicException
+     */
     public function configureStorageIdentity(string $storageIdentity): void
     {
         $this->assertStorageIdentityCompatible($storageIdentity);
         $this->storageIdentity ??= $storageIdentity;
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
+    #[\Override]
     public function createItem(string $key): CacheItemInterface
     {
         CacheInput::key($key);
@@ -109,9 +128,10 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
     }
 
     /**
-     * @param list<string> $keys
+     * @param array<array-key, string> $keys
      * @return array<string, CacheItem>
      */
+    #[\Override]
     public function getItems(array $keys = []): array
     {
         $keys = CacheInput::keys($keys);
@@ -129,7 +149,11 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         return $items;
     }
 
-    /** @param list<string> $tags */
+    /**
+     * @param list<string> $tags
+     * @return array<int|string, string>
+     */
+    #[\Override]
     public function getTagGenerations(array $tags): array
     {
         $generations = [];
@@ -140,17 +164,23 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         return $generations;
     }
 
+    #[\Override]
     public function internalPersist(CacheItemInterface $item): bool
     {
         return $this->save($item);
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
+    #[\Override]
     public function internalQueue(CacheItemInterface $item): bool
     {
         return $this->saveDeferred($item);
     }
 
     /** @param list<string> $tags */
+    #[\Override]
     public function rotateTagGenerations(array $tags): bool
     {
         foreach ($tags as $tag) {
@@ -160,6 +190,10 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         return true;
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
+    #[\Override]
     public function saveDeferred(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
@@ -207,6 +241,9 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
             : null;
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     protected function deferredRead(string $key): ?CacheItem
     {
         $pending = $this->deferred[$this->deferredKey($key)] ?? null;
@@ -220,6 +257,9 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         return clone $pending;
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     protected function discardDeferredKey(string $key): void
     {
         CacheInput::key($key);
@@ -230,7 +270,10 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         unset($this->deferred[$this->deferredKey($key)]);
     }
 
-    /** @param list<string> $keys */
+    /**
+     * @param array<array-key, string> $keys
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     protected function discardDeferredKeys(array $keys): void
     {
         $keys = CacheInput::keys($keys);
@@ -243,6 +286,10 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         }
     }
 
+    /**
+     * @throws \InvalidArgumentException
+     * @throws \RuntimeException
+     */
     protected function encodeItem(
         CacheItemInterface $item,
         ?int $expiresAt,
@@ -260,6 +307,9 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         );
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     protected function genericDeleteAndMiss(string $key): CacheItem
     {
         $this->deleteItem($key);
@@ -267,7 +317,10 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         return $this->genericMiss($key);
     }
 
-    /** @param callable(): bool $onInvalid */
+    /**
+     * @param callable(): bool $onInvalid
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     protected function genericFromBase64WithInvalidator(
         string $key,
         ?string $payload,
@@ -281,7 +334,10 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         );
     }
 
-    /** @param callable(): bool $onInvalid */
+    /**
+     * @param callable(): bool $onInvalid
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     protected function genericFromBlobWithInvalidator(
         string $key,
         ?string $blob,
@@ -295,6 +351,9 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         );
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     protected function genericItemFromRecord(string $key, CacheRecord $record): CacheItem
     {
         CacheInput::key($key);
@@ -313,6 +372,9 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         );
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     protected function genericMiss(string $key): CacheItem
     {
         CacheInput::key($key);
@@ -332,6 +394,7 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
 
     /**
      * @param callable(CacheItemInterface, array{ttl:int|null, expiresAt:int|null}): bool $writer
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
     protected function saveEncoded(CacheItemInterface $item, callable $writer): bool
     {
@@ -347,6 +410,9 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         return $writer($item, $expiration);
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     protected function supportsItem(CacheItemInterface $item): bool
     {
         if (!$this->ownsItem($item)) {
@@ -359,7 +425,10 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         return true;
     }
 
-    /** @param array<string, CacheItemInterface> $items */
+    /**
+     * @param array<string, CacheItemInterface> $items
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     protected function supportsItems(array $items): bool
     {
         foreach ($items as $item) {
@@ -381,6 +450,9 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         return "key:\0" . $key;
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     private function deferredSnapshot(CacheItemInterface $item): CacheItem
     {
         $ttl = $item instanceof CacheItem ? $item->ttlSeconds() : null;
@@ -391,6 +463,9 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
             ->setTagGenerations($tags);
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     private function genericFromEncodedWithInvalidator(
         string $key,
         ?string $encoded,

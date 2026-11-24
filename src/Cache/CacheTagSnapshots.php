@@ -11,7 +11,7 @@ use Psr\Cache\CacheItemInterface;
 final class CacheTagSnapshots
 {
     /**
-     * @param array<string, CacheItemInterface> $items
+     * @param array<int|string, CacheItemInterface> $items
      * @return list<string>
      */
     public static function collectTags(array $items): array
@@ -36,7 +36,7 @@ final class CacheTagSnapshots
         return $tags;
     }
 
-    /** @param array<string, string> $generations */
+    /** @param array<int|string, string> $generations */
     public static function isCurrent(CacheItem $item, array $generations): bool
     {
         foreach ($item->getTagGenerations() as $tag => $expected) {
@@ -51,9 +51,9 @@ final class CacheTagSnapshots
     }
 
     /**
-     * @param array<string, CacheItemInterface> $items
+     * @param array<int|string, CacheItemInterface> $items
      * @param callable(string): CacheItemInterface $miss
-     * @return array<string, CacheItemInterface>
+     * @return array<int|string, CacheItemInterface>
      */
     public static function missTagged(array $items, callable $miss): array
     {
@@ -68,10 +68,10 @@ final class CacheTagSnapshots
     }
 
     /**
-     * @param array<string, CacheItemInterface> $items
-     * @param array<string, string> $generations
+     * @param array<int|string, CacheItemInterface> $items
+     * @param array<int|string, string> $generations
      * @param callable(string): CacheItemInterface $miss
-     * @return array{items:array<string, CacheItemInterface>, stale:list<string>}
+     * @return array{items:array<int|string, CacheItemInterface>, stale:list<string>}
      */
     public static function rejectStale(array $items, array $generations, callable $miss): array
     {

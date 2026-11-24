@@ -8,11 +8,12 @@ use Infocyph\CacheLayer\Cache\Adapter\ArrayCacheAdapter;
 use Infocyph\CacheLayer\Cache\Cache;
 use PhpBench\Attributes as Bench;
 
+/** @api PHPBench discovers this benchmark entry point through attributes. */
 #[Bench\Iterations(5)]
 #[Bench\Revs(1)]
 final class CacheBulkBench
 {
-    private Cache $cache;
+    private ?Cache $cache = null;
 
     /** @var list<string> */
     private array $keys = [];
@@ -22,7 +23,12 @@ final class CacheBulkBench
     /** @var array<string, int> */
     private array $values = [];
 
-    /** @param array{size:int} $params */
+    /**
+     * @param array{size:int} $params
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
+     * @throws \LogicException
+     */
     public function setUp(array $params): void
     {
         $this->cache = Cache::memory('bulk-bench');
@@ -36,76 +42,145 @@ final class CacheBulkBench
         $this->cache->setMultiple($this->values, 60);
     }
 
-    /** @param array{size:int} $params */
+    /**
+     * @param array{size:int} $params
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \LogicException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
+     */
     #[Bench\ParamProviders('provideSizes')]
     #[Bench\BeforeMethods('setUp')]
     public function benchMemoryDeleteMultiple(array $params): int
     {
+        $cache = $this->cache ?? throw new \LogicException('Benchmark setup did not run.');
+
         unset($params);
 
-        return $this->cache->deleteMultiple($this->keys) ? count($this->keys) : 0;
+        return $cache->deleteMultiple($this->keys) ? count($this->keys) : 0;
     }
 
-    /** @param array{size:int} $params */
+    /**
+     * @param array{size:int} $params
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \LogicException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
+     */
     #[Bench\ParamProviders('provideSizes')]
     #[Bench\BeforeMethods('setUp')]
     public function benchMemoryGetMultiple(array $params): int
     {
+        $cache = $this->cache ?? throw new \LogicException('Benchmark setup did not run.');
+
         unset($params);
 
-        return count($this->cache->getMultiple($this->keys));
+        return iterator_count($cache->getMultiple($this->keys));
     }
 
-    /** @param array{size:int} $params */
+    /**
+     * @param array{size:int} $params
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \LogicException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
+     */
     #[Bench\ParamProviders('provideSizes')]
     #[Bench\BeforeMethods('setUp')]
     public function benchMemorySetMultiple(array $params): int
     {
+        $cache = $this->cache ?? throw new \LogicException('Benchmark setup did not run.');
+
         unset($params);
 
-        return $this->cache->setMultiple($this->values, 60) ? count($this->values) : 0;
+        return $cache->setMultiple($this->values, 60) ? count($this->values) : 0;
     }
 
+    /**
+     * @throws \Psr\SimpleCache\InvalidArgumentException
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \UnexpectedValueException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
+     * @throws \LogicException
+     */
     public function benchSingleMemoryHit(): int
     {
         $cache = Cache::memory('single-memory');
         $cache->set('hot', 42);
 
-        return (int) $cache->get('hot');
+        $value = $cache->get('hot');
+        if (!is_int($value)) {
+            throw new \UnexpectedValueException('The benchmark expected an integer cache hit.');
+        }
+
+        return $value;
     }
 
+    /**
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \LogicException
+     * @throws \UnexpectedValueException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
+     */
     #[Bench\BeforeMethods('setUpSingleSqlite')]
     #[Bench\AfterMethods('tearDownSqlite')]
     public function benchSingleSqliteHit(): int
     {
-        return (int) $this->cache->get('hot');
+        $cache = $this->cache ?? throw new \LogicException('Benchmark setup did not run.');
+
+        $value = $cache->get('hot');
+        if (!is_int($value)) {
+            throw new \UnexpectedValueException('The benchmark expected an integer cache hit.');
+        }
+
+        return $value;
     }
 
-    /** @param array{size:int} $params */
+    /**
+     * @param array{size:int} $params
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \LogicException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
+     */
     #[Bench\ParamProviders('provideSizes')]
     #[Bench\BeforeMethods('setUpSqlite')]
     #[Bench\AfterMethods('tearDownSqlite')]
     public function benchSqliteGetMultiple(array $params): int
     {
+        $cache = $this->cache ?? throw new \LogicException('Benchmark setup did not run.');
+
         unset($params);
 
-        return count($this->cache->getMultiple($this->keys));
+        return iterator_count($cache->getMultiple($this->keys));
     }
 
-    /** @param array{size:int} $params */
+    /**
+     * @param array{size:int} $params
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \Psr\SimpleCache\InvalidArgumentException
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \LogicException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
+     */
     #[Bench\ParamProviders('provideSizes')]
     #[Bench\BeforeMethods('setUp')]
     public function benchTaggedBatchRead(array $params): int
     {
+        $cache = $this->cache ?? throw new \LogicException('Benchmark setup did not run.');
+
         unset($params);
         foreach ($this->values as $key => $value) {
-            $this->cache->setTagged($key, $value, ['bulk']);
+            $cache->setTagged($key, $value, ['bulk']);
         }
 
-        return count($this->cache->getMultiple($this->keys));
+        return iterator_count($cache->getMultiple($this->keys));
     }
 
-    /** @param array{size:int} $params */
+    /**
+     * @param array{size:int} $params
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
+     * @throws \LogicException
+     */
     #[Bench\ParamProviders('provideSizes')]
     public function benchTieredL1FullHit(array $params): int
     {
@@ -119,10 +194,17 @@ final class CacheBulkBench
             $l1->save($l1->createItem($key)->set($index)->expiresAfter(60));
         }
 
-        return count($cache->getMultiple($keys));
+        return iterator_count($cache->getMultiple($keys));
     }
 
-    /** @param array{size:int} $params */
+    /**
+     * @param array{size:int} $params
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
+     * @throws \LogicException
+     */
     #[Bench\ParamProviders('provideSizes')]
     public function benchTieredL3Promotion(array $params): int
     {
@@ -137,10 +219,17 @@ final class CacheBulkBench
             $l3->save($l3->createItem($key)->set($index)->expiresAfter(60));
         }
 
-        return count($cache->getMultiple($keys));
+        return iterator_count($cache->getMultiple($keys));
     }
 
-    /** @param array{size:int} $params */
+    /**
+     * @param array{size:int} $params
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
+     * @throws \LogicException
+     */
     #[Bench\ParamProviders('provideSizes')]
     public function benchTieredPartialHit(array $params): int
     {
@@ -155,9 +244,10 @@ final class CacheBulkBench
             $target->save($target->createItem($key)->set($index)->expiresAfter(60));
         }
 
-        return count($cache->getMultiple($keys));
+        return iterator_count($cache->getMultiple($keys));
     }
 
+    /** @return iterable<string, array{size:int}> */
     public function provideSizes(): iterable
     {
         yield '1 key' => ['size' => 1];
@@ -166,6 +256,13 @@ final class CacheBulkBench
         yield '1000 keys' => ['size' => 1000];
     }
 
+    /**
+     * @throws \Psr\SimpleCache\InvalidArgumentException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
+     * @throws \RuntimeException
+     * @throws \Infocyph\CacheLayer\Cache\Lock\UnsupportedPdoLockDriver
+     * @throws \LogicException
+     */
     public function setUpSingleSqlite(): void
     {
         $this->sqliteFile = sys_get_temp_dir() . '/cachelayer-bench-' . uniqid() . '.sqlite';
@@ -173,7 +270,14 @@ final class CacheBulkBench
         $this->cache->set('hot', 42, 60);
     }
 
-    /** @param array{size:int} $params */
+    /**
+     * @param array{size:int} $params
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
+     * @throws \RuntimeException
+     * @throws \Infocyph\CacheLayer\Cache\Lock\UnsupportedPdoLockDriver
+     * @throws \LogicException
+     */
     public function setUpSqlite(array $params): void
     {
         $this->sqliteFile = sys_get_temp_dir() . '/cachelayer-bench-' . uniqid() . '.sqlite';
@@ -188,6 +292,10 @@ final class CacheBulkBench
         $this->cache->setMultiple($this->values, 60);
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \LogicException
+     */
     public function tearDownSqlite(): void
     {
         $this->cache = Cache::memory('released');

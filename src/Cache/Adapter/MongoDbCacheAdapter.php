@@ -15,6 +15,10 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
 {
     private readonly string $ns;
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws RuntimeException
+     */
     public function __construct(
         private readonly object $collection,
         string $namespace = 'default',
@@ -42,6 +46,10 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         }
     }
 
+    /**
+     * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     public static function fromClient(
         object $client,
         string $database = 'cachelayer',
@@ -58,6 +66,12 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return new self($selected, $namespace);
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws RuntimeException
+     */
+    #[\Override]
     public function atomicCompareAndSet(
         string $key,
         mixed $expected,
@@ -93,6 +107,10 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return $this->matchedCount($result) === 1;
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
+    #[\Override]
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
         $this->discardDeferredKey($key);
@@ -106,6 +124,10 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
             : $this->genericMiss($key);
     }
 
+    /**
+     * @throws Throwable
+     */
+    #[\Override]
     public function atomicSetIfAbsent(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
@@ -132,6 +154,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return false;
     }
 
+    #[\Override]
     public function clear(): bool
     {
         $this->collection->deleteMany(['ns' => $this->ns]);
@@ -140,6 +163,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return true;
     }
 
+    #[\Override]
     public function deleteItem(string $key): bool
     {
         $this->discardDeferredKey($key);
@@ -150,11 +174,13 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
 
     /**
      * @param array $keys The keys argument.
-     * @phpstan-param list<string> $keys
+     * @phpstan-param array<array-key, string> $keys
      */
+    #[\Override]
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
+        $keys = array_values($keys);
         if ($keys !== []) {
             $this->collection->deleteMany([
                 '_id' => ['$in' => array_map($this->mapData(...), $keys)],
@@ -164,6 +190,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return true;
     }
 
+    #[\Override]
     public function getItem(string $key): CacheItem
     {
         $doc = $this->collection->findOne(['_id' => $this->mapData($key)]);
@@ -184,7 +211,9 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
 
     /**
      * @param list<string> $tags
-     * @return array<string, string>
+     * @return array<int|string, string>
+     * @throws RuntimeException
+     * @throws Throwable
      */
     #[\Override]
     public function getTagGenerations(array $tags): array
@@ -208,6 +237,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return $actual;
     }
 
+    #[\Override]
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
@@ -217,7 +247,10 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
      * @param array $keys The keys argument.
      * @phpstan-param list<string> $keys
      * @phpstan-return array<string, CacheItem>
+     * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
+    #[\Override]
     public function multiFetch(array $keys): array
     {
         $ids = array_map($this->mapData(...), $keys);
@@ -227,7 +260,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         }
         $byId = [];
         foreach ($documents as $document) {
-            $row = AdapterValueNormalizer::fromJsonOrArrayLike($document);
+            $row = AdapterValueNormalizer::fromJsonOrArrayLike($document) ?? [];
             if (!is_string($row['_id'] ?? null)) {
                 continue;
             }
@@ -248,7 +281,11 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return $items;
     }
 
-    /** @param list<string> $tags */
+    /**
+     * @param list<string> $tags
+     * @return array<int|string, string>
+     * @throws RuntimeException
+     */
     #[\Override]
     public function readTagGenerations(array $tags): array
     {
@@ -286,6 +323,10 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return $this->storeTagGenerations($generations);
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
+    #[\Override]
     public function save(CacheItemInterface $item): bool
     {
         return $this->saveEncoded($item, function (CacheItemInterface $saveItem, array $expires): bool {
@@ -306,7 +347,13 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         });
     }
 
-    /** @param array<string, CacheItemInterface> $items */
+    /**
+     * @param array<string, CacheItemInterface> $items
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws RuntimeException
+     */
+    #[\Override]
     public function saveItems(array $items): bool
     {
         $operations = [];
@@ -340,7 +387,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return true;
     }
 
-    /** @param array<string, string> $generations */
+    /** @param array<int|string, string> $generations */
     #[\Override]
     public function storeTagGenerations(array $generations): bool
     {
@@ -372,6 +419,8 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
 
     /**
      * @return array{ns:string, kind:string, payload:mixed, expires:int|null}
+     * @throws \InvalidArgumentException
+     * @throws RuntimeException
      */
     private function atomicReplacement(CacheItemInterface $item, ?int $expiresAt): array
     {
@@ -405,6 +454,9 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return $value;
     }
 
+    /**
+     * @throws Throwable
+     */
     private function initializeTagGeneration(string $tag): void
     {
         $candidate = self::newGeneration();
@@ -469,6 +521,10 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return $record;
     }
 
+    /**
+     * @throws RuntimeException
+     * @throws Throwable
+     */
     private function recordTagsAreCurrent(CacheRecord $record): bool
     {
         if ($record->tags === []) {
@@ -486,7 +542,10 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return true;
     }
 
-    /** @param array{ns:string, kind:string, payload:mixed, expires:int|null} $replacement */
+    /**
+     * @param array{ns:string, kind:string, payload:mixed, expires:int|null} $replacement
+     * @throws Throwable
+     */
     private function tryAtomicInsert(string $id, array $replacement): bool
     {
         try {

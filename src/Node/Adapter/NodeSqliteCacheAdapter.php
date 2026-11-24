@@ -28,6 +28,10 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
 
     private bool $ownsTransaction = false;
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws NodeCacheStorageException
+     */
     public function __construct(
         private readonly PDO $connection,
         string $namespace,
@@ -49,6 +53,10 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
         );
     }
 
+    /**
+     * @throws NodeCacheStorageException
+     */
+    #[\Override]
     public function clear(): bool
     {
         $this->assertWritableTransaction();
@@ -64,6 +72,12 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
         }
     }
 
+    /**
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws NodeCacheStorageException
+     * @throws \InvalidArgumentException
+     * @throws \RuntimeException
+     */
     #[\Override]
     public function commit(): bool
     {
@@ -82,6 +96,11 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
         return $this->connection;
     }
 
+    /**
+     * @throws NodeCacheStorageException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
+    #[\Override]
     public function deleteItem(string $key): bool
     {
         $this->discardDeferredKey($key);
@@ -99,8 +118,11 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
 
     /**
      * @param array $keys The keys argument.
-     * @phpstan-param list<string> $keys
+     * @phpstan-param array<array-key, string> $keys
+     * @throws NodeCacheStorageException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
+    #[\Override]
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
@@ -111,7 +133,7 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
         $this->assertWritableTransaction();
 
         try {
-            $mapped = array_map($this->mapData(...), $keys);
+            $mapped = array_map($this->mapData(...), array_values($keys));
             $marks = implode(',', array_fill(0, count($mapped), '?'));
             $statement = $this->connection->prepare(
                 'DELETE FROM ' . self::TABLE . " WHERE namespace = ? AND cache_key IN ({$marks})",
@@ -123,6 +145,11 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
         }
     }
 
+    /**
+     * @throws NodeCacheStorageException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
+    #[\Override]
     public function getItem(string $key): CacheItem
     {
         try {
@@ -150,7 +177,8 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
 
     /**
      * @param list<string> $tags
-     * @return array<string, string>
+     * @return array<int|string, string>
+     * @throws NodeCacheStorageException
      */
     #[\Override]
     public function getTagGenerations(array $tags): array
@@ -176,6 +204,11 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
         return $actual;
     }
 
+    /**
+     * @throws NodeCacheStorageException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
+    #[\Override]
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
@@ -185,7 +218,9 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
      * @param array $keys The keys argument.
      * @phpstan-param list<string> $keys
      * @phpstan-return array<string, CacheItem>
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
+    #[\Override]
     public function multiFetch(array $keys): array
     {
         if ($keys === []) {
@@ -225,7 +260,10 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
         return $items;
     }
 
-    /** @param list<string> $tags */
+    /**
+     * @param list<string> $tags
+     * @return array<int|string, string>
+     */
     #[\Override]
     public function readTagGenerations(array $tags): array
     {
@@ -257,7 +295,10 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
         return $generations;
     }
 
-    /** @param list<string> $tags */
+    /**
+     * @param list<string> $tags
+     * @throws NodeCacheStorageException
+     */
     #[\Override]
     public function rotateTagGenerations(array $tags): bool
     {
@@ -269,6 +310,13 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
         return $this->storeTagGenerations($generations);
     }
 
+    /**
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws NodeCacheStorageException
+     * @throws \InvalidArgumentException
+     * @throws \RuntimeException
+     */
+    #[\Override]
     public function save(CacheItemInterface $item): bool
     {
         $this->assertWritableTransaction();
@@ -300,7 +348,14 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
         }
     }
 
-    /** @param array<string, CacheItemInterface> $items */
+    /**
+     * @param array<string, CacheItemInterface> $items
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws NodeCacheStorageException
+     * @throws \InvalidArgumentException
+     * @throws \RuntimeException
+     */
+    #[\Override]
     public function saveItems(array $items): bool
     {
         return $this->saveMany(array_values($items));
@@ -309,6 +364,10 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
     /**
      * @param array $items The items argument.
      * @phpstan-param list<CacheItemInterface> $items
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws NodeCacheStorageException
+     * @throws \InvalidArgumentException
+     * @throws \RuntimeException
      */
     public function saveMany(array $items): bool
     {
@@ -364,7 +423,10 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
         }
     }
 
-    /** @param array<string, string> $generations */
+    /**
+     * @param array<int|string, string> $generations
+     * @throws NodeCacheStorageException
+     */
     #[\Override]
     public function storeTagGenerations(array $generations): bool
     {
@@ -381,6 +443,9 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
         return $this->upsertRows($rows);
     }
 
+    /**
+     * @throws NodeCacheStorageException
+     */
     private function assertWritableTransaction(): void
     {
         if ($this->connection->inTransaction() && !$this->ownsTransaction) {
@@ -390,6 +455,9 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
         }
     }
 
+    /**
+     * @throws NodeCacheStorageException
+     */
     private function createSchemaIfMissing(): void
     {
         try {
@@ -407,7 +475,10 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
         }
     }
 
-    /** @param array<string, string> $generations */
+    /**
+     * @param array<int|string, string> $generations
+     * @throws NodeCacheStorageException
+     */
     private function insertTagGenerationsIfMissing(array $generations): bool
     {
         $this->assertWritableTransaction();

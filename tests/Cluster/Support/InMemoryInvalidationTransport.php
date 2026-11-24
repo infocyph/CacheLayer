@@ -15,15 +15,25 @@ final class InMemoryInvalidationTransport implements InvalidationTransportInspec
 
     private int $nextId = 1;
 
+    public ?InvalidationBatch $forcedBatch = null;
+
+    /**
+     * @throws \Infocyph\CacheLayer\Cluster\Exception\ClusterCacheException
+     */
+    #[\Override]
     public function consumeAfter(string $cluster, ?string $cursor, int $limit): InvalidationBatch
     {
+        if ($this->forcedBatch !== null) {
+            return $this->forcedBatch;
+        }
+
         $after = $cursor === null ? 0 : (int) $cursor;
         $events = array_filter(
             $this->events[$cluster] ?? [],
             static fn(InvalidationEvent $event): bool => (int) $event->id > $after,
         );
 
-        return new InvalidationBatch(array_values(array_slice($events, 0, $limit)));
+        return new InvalidationBatch(array_slice($events, 0, $limit));
     }
 
     public function discardBefore(string $cluster, int $eventId): void
@@ -34,16 +44,19 @@ final class InMemoryInvalidationTransport implements InvalidationTransportInspec
         ));
     }
 
+    #[\Override]
     public function isCursorBefore(string $cursor, string $oldestAvailableId): bool
     {
         return (int) $cursor < (int) $oldestAvailableId;
     }
 
+    #[\Override]
     public function oldestAvailableId(string $cluster): ?string
     {
         return $this->events[$cluster][0]->id ?? null;
     }
 
+    #[\Override]
     public function newestAvailableId(string $cluster): ?string
     {
         $events = $this->events[$cluster] ?? [];
@@ -51,11 +64,17 @@ final class InMemoryInvalidationTransport implements InvalidationTransportInspec
         return $events === [] ? null : $events[array_key_last($events)]->id;
     }
 
+    /** @throws \Infocyph\CacheLayer\Cluster\Exception\ClusterCacheException */
+    #[\Override]
     public function countAfter(string $cluster, ?string $cursor): int
     {
         return count($this->consumeAfter($cluster, $cursor, PHP_INT_MAX)->events);
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Cluster\Exception\ClusterCacheException
+     */
+    #[\Override]
     public function publish(InvalidationEvent $event): string
     {
         $id = (string) $this->nextId++;

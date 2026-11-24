@@ -17,6 +17,8 @@ final class CacheBatchResults
     public static function items(array $keys, array $items): iterable
     {
         if (!self::requiresKeyPreservation($keys)) {
+            // The key-preservation check excludes integer-coercible logical keys.
+            /** @var array<string, CacheItemInterface> $items */
             return $items;
         }
 

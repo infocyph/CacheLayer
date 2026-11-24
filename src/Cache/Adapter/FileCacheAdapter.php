@@ -23,11 +23,20 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
 
     private string $metadataDirectory;
 
+    /**
+     * @throws CacheInvalidArgumentException
+     * @throws RuntimeException
+     */
     public function __construct(string $namespace = 'default', ?string $baseDir = null)
     {
         $this->createDirectory($namespace, $baseDir);
     }
 
+    /**
+     * @throws RuntimeException
+     * @throws CacheInvalidArgumentException
+     */
+    #[\Override]
     public function atomicCompareAndSet(string $key, mixed $expected, CacheItemInterface $replacement): bool
     {
         if (!$this->supportsItem($replacement)) {
@@ -48,6 +57,11 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
         });
     }
 
+    /**
+     * @throws CacheInvalidArgumentException
+     * @throws RuntimeException
+     */
+    #[\Override]
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
         $this->discardDeferredKey($key);
@@ -65,6 +79,11 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
         });
     }
 
+    /**
+     * @throws RuntimeException
+     * @throws CacheInvalidArgumentException
+     */
+    #[\Override]
     public function atomicSetIfAbsent(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
@@ -84,19 +103,21 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
         });
     }
 
+    #[\Override]
     public function clear(): bool
     {
-        $ok = true;
-        foreach ([$this->dataDirectory, $this->metadataDirectory] as $directory) {
-            foreach (glob($directory . '*') ?: [] as $file) {
-                $ok = (!is_file($file) || unlink($file)) && $ok;
-            }
-        }
+        $ok = $this->clearDirectoryFiles($this->dataDirectory, '.cache');
+        $ok = $this->clearDirectoryFiles($this->metadataDirectory, '.generation') && $ok;
         $this->deferred = [];
 
         return $ok;
     }
 
+    /**
+     * @throws RuntimeException
+     * @throws CacheInvalidArgumentException
+     */
+    #[\Override]
     public function deleteItem(string $key): bool
     {
         $this->discardDeferredKey($key);
@@ -104,7 +125,8 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
         return $this->withKeyLock($key, fn(): bool => $this->deleteItemUnlocked($key));
     }
 
-    /** @param list<string> $keys */
+    /** @param array<array-key, string> $keys */
+    #[\Override]
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
@@ -117,6 +139,7 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
         return $ok;
     }
 
+    #[\Override]
     public function getItem(string $key): CacheItem
     {
         $record = $this->readLiveRecordUnlocked($key);
@@ -129,7 +152,8 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
 
     /**
      * @param list<string> $tags
-     * @return array<string, string>
+     * @return array<int|string, string>
+     * @throws RuntimeException
      */
     #[\Override]
     public function getTagGenerations(array $tags): array
@@ -150,6 +174,7 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
         return $generations;
     }
 
+    #[\Override]
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
@@ -158,7 +183,9 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
     /**
      * @param list<string> $keys
      * @return array<string, CacheItem>
+     * @throws \Psr\Cache\InvalidArgumentException
      */
+    #[\Override]
     public function multiFetch(array $keys): array
     {
         $items = [];
@@ -169,7 +196,10 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
         return $items;
     }
 
-    /** @param list<string> $tags */
+    /**
+     * @param list<string> $tags
+     * @throws RuntimeException
+     */
     #[\Override]
     public function rotateTagGenerations(array $tags): bool
     {
@@ -183,6 +213,11 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
         return true;
     }
 
+    /**
+     * @throws CacheInvalidArgumentException
+     * @throws RuntimeException
+     */
+    #[\Override]
     public function save(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
@@ -192,7 +227,11 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
         return $this->persistItem($item);
     }
 
-    /** @param array<string, CacheItemInterface> $items */
+    /**
+     * @param array<string, CacheItemInterface> $items
+     * @throws CacheInvalidArgumentException
+     */
+    #[\Override]
     public function saveItems(array $items): bool
     {
         if (!$this->supportsItems($items)) {
@@ -207,6 +246,10 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
         return $ok;
     }
 
+    /**
+     * @throws CacheInvalidArgumentException
+     * @throws RuntimeException
+     */
     private function createDirectory(string $ns, ?string $baseDir): void
     {
         $baseDir = rtrim($baseDir ?? $this->defaultBaseDirectory(), DIRECTORY_SEPARATOR);
@@ -237,11 +280,14 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
         return $this->deleteFile($file);
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function ensureBaseDirectoryExists(string $baseDir): void
     {
         $this->assertPathNotSymlink($baseDir, 'Cache base directory');
         if (file_exists($baseDir) && !is_dir($baseDir)) {
-            throw new RuntimeException('Cache base path ' . realpath($baseDir) . ' exists and is *not* a directory');
+            throw new RuntimeException('Cache base path ' . $baseDir . ' exists and is *not* a directory');
         }
         if (!is_dir($baseDir) && !mkdir($baseDir, 0700, true) && !is_dir($baseDir)) {
             $this->throwCreationError('Failed to create base directory ' . $baseDir);
@@ -249,11 +295,14 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
         $this->assertSecureDirectory($baseDir, 'Cache base directory');
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function ensureCacheDirectoryExists(string $cacheDir): void
     {
         $this->assertPathNotSymlink($cacheDir, 'Cache directory');
         if (file_exists($cacheDir) && !is_dir($cacheDir)) {
-            throw new RuntimeException(realpath($cacheDir) . ' exists and is not a directory');
+            throw new RuntimeException($cacheDir . ' exists and is not a directory');
         }
         if (!is_dir($cacheDir) && !mkdir($cacheDir, 0700, true) && !is_dir($cacheDir)) {
             $this->throwCreationError('Failed to create cache directory ' . $cacheDir);
@@ -271,11 +320,19 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
         return $this->metadataDirectory . hash('xxh128', $tag) . '.generation';
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function persistItem(CacheItemInterface $item): bool
     {
         return $this->withKeyLock($item->getKey(), fn(): bool => $this->persistItemUnlocked($item));
     }
 
+    /**
+     * @throws CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws RuntimeException
+     */
     private function persistItemUnlocked(CacheItemInterface $item): bool
     {
         $expires = CachePayloadCodec::expirationFromItem($item);
@@ -334,6 +391,9 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
         return true;
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function throwCreationError(string $prefix): void
     {
         $err = error_get_last()['message'] ?? 'unknown error';
@@ -345,6 +405,7 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
      * @template T
      * @param callable(): T $callback
      * @return T
+     * @throws RuntimeException
      */
     private function withKeyLock(string $key, callable $callback): mixed
     {

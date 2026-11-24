@@ -2,7 +2,13 @@
 
 declare(strict_types=1);
 
+namespace Infocyph\CacheLayer\Tests\Memoize;
+
 use Infocyph\CacheLayer\Memoize\Memoizer;
+use Closure;
+use ReflectionClass;
+use stdClass;
+use WeakReference;
 use Infocyph\CacheLayer\Memoize\MemoizeTrait;
 use Infocyph\CacheLayer\Memoize\OnceMemoizer;
 
@@ -24,7 +30,11 @@ it('memoize() caches global callables', function () {
 
     expect($a)->toBe(2)->and($b)->toBe(2);
 
-    $stats = memoize()->stats();
+    $memoizer = memoize();
+    if (!$memoizer instanceof Memoizer) {
+        throw new \RuntimeException('Expected a memoizer instance.');
+    }
+    $stats = $memoizer->stats();
     expect($stats)->toMatchArray([
         'hits' => 1,
         'misses' => 1,
@@ -40,7 +50,7 @@ it('remember() returns Memoizer when called with no object', function () {
 it('remember() caches per-instance callables', function () {
     $obj = new stdClass;
     $counter = 0;
-    $fn = function () use (&$counter) {
+    $fn = function () use (&$counter): int {
         return ++$counter;
     };
 
@@ -48,21 +58,25 @@ it('remember() caches per-instance callables', function () {
     $second = remember($obj, $fn);
 
     expect($first)->toBe(1)
-        ->and($second)->toBe(1)
-        ->and(memoize()->stats()['hits'])->toBe(1);
+        ->and($second)->toBe(1);
+    $memoizer = memoize();
+    if (!$memoizer instanceof Memoizer) {
+        throw new \RuntimeException('Expected a memoizer instance.');
+    }
+    expect($memoizer->stats()['hits'])->toBe(1);
 });
 
 it('once() keeps distinct source lines independent', function () {
     $counter = 0;
 
-    $value = (function () use (&$counter) {
-        return once(function () use (&$counter) {
+    $value = (function () use (&$counter): mixed {
+        return once(function () use (&$counter): int {
             return ++$counter;
         });
     })();
 
-    $valueAgain = (function () use (&$counter) {
-        return once(function () use (&$counter) {
+    $valueAgain = (function () use (&$counter): mixed {
+        return once(function () use (&$counter): int {
             return ++$counter;
         });
     })();
@@ -95,7 +109,6 @@ it('memoizer distinguishes closure captures and object instances', function () {
 
 it('memoizer distinguishes separate reference captures from the same source', function () {
     $first = 10;
-    $second = 10;
     $factory = static function (int &$capture): Closure {
         return static function () use (&$capture): int {
             return $capture;
@@ -127,9 +140,17 @@ it('memoize trait caches values within object', function () {
 
         public int $count = 0;
 
+        /**
+         * @throws \RuntimeException
+         */
         public function next(): int
         {
-            return $this->memoize(__METHOD__, fn () => ++$this->count);
+            $value = $this->memoize(__METHOD__, fn (): int => ++$this->count);
+            if (!is_int($value)) {
+                throw new \RuntimeException('Expected an integer memoized value.');
+            }
+
+            return $value;
         }
     };
 
@@ -151,15 +172,23 @@ it('keeps global and per-object memoization buckets bounded', function () {
 
     $object = new stdClass();
     $weakMap = $objectCache->getValue($memoizer);
+    if (!$weakMap instanceof \WeakMap) {
+        throw new \RuntimeException('Expected the object memoization map.');
+    }
     $weakMap[$object] = $seed;
 
     $memoizer->get('strlen', ['fresh']);
     $memoizer->getFor($object, 'strlen', ['fresh']);
 
-    expect($staticCache->getValue($memoizer))->toHaveCount(2_048)
-        ->and($weakMap[$object])->toHaveCount(2_048)
-        ->and(array_key_exists('seed-0', $staticCache->getValue($memoizer)))->toBeFalse()
-        ->and(array_key_exists('seed-0', $weakMap[$object]))->toBeFalse();
+    $static = $staticCache->getValue($memoizer);
+    $perObject = $weakMap[$object];
+    if (!is_array($static)) {
+        throw new \RuntimeException('Expected memoization buckets.');
+    }
+    expect($static)->toHaveCount(2_048)
+        ->and($perObject)->toHaveCount(2_048)
+        ->and(array_key_exists('seed-0', $static))->toBeFalse()
+        ->and(array_key_exists('seed-0', $perObject))->toBeFalse();
 });
 
 
@@ -168,15 +197,21 @@ it('same-line closures remain distinct', function () {
 
     expect(memoize($first))->toBe('first')
         ->and(memoize($second))->toBe('second')
-        ->and(memoize($first))->toBe('first')
-        ->and(memoize()->stats()['hits'])->toBe(1);
+        ->and(memoize($first))->toBe('first');
+    $memoizer = memoize();
+    if (!$memoizer instanceof Memoizer) {
+        throw new \RuntimeException('Expected a memoizer instance.');
+    }
+    expect($memoizer->stats()['hits'])->toBe(1);
 });
 
 it('memoizer type-tags object string and resource parameters', function () {
     $object = new stdClass();
     $objectToken = 'stdClass#1';
     $resource = fopen('php://memory', 'rb');
-    expect($resource)->toBeResource();
+    if (!is_resource($resource)) {
+        throw new \RuntimeException('Unable to open resource fixture.');
+    }
 
     $identity = static fn(mixed $value): string => get_debug_type($value);
 
@@ -205,26 +240,23 @@ it('memoizer fingerprints recursive closure captures without traversing their gr
     $recursive['self'] = &$recursive;
     $arrayClosure = static fn(): int => count($recursive);
 
-    $selfClosure = null;
-    $selfClosure = static function () use (&$selfClosure): int {
-        return 7;
+    $selfClosure = static function () use (&$selfClosure): string {
+        return 'self:' . get_debug_type($selfClosure);
     };
 
-    $left = null;
-    $right = null;
-    $left = static function () use (&$right): int {
-        return 11;
+    $left = static function () use (&$right): string {
+        return 'right:' . get_debug_type($right);
     };
-    $right = static function () use (&$left): int {
-        return 13;
+    $right = static function () use (&$left): string {
+        return 'left:' . get_debug_type($left);
     };
 
     expect(memoize($arrayClosure))->toBe(1)
         ->and(memoize($arrayClosure))->toBe(1)
-        ->and(memoize($selfClosure))->toBe(7)
-        ->and(memoize($selfClosure))->toBe(7)
-        ->and(memoize($left))->toBe(11)
-        ->and(memoize($right))->toBe(13);
+        ->and(memoize($selfClosure))->toBe('self:Closure')
+        ->and(memoize($selfClosure))->toBe('self:Closure')
+        ->and(memoize($left))->toBe('right:Closure')
+        ->and(memoize($right))->toBe('left:Closure');
 });
 
 it('flushing an isolated memoizer does not invalidate another memoizer identity map', function () {
@@ -257,4 +289,18 @@ it('once() caches null results without repeating callback side effects', functio
     }
 
     expect($runs)->toBe(1);
+});
+
+it('memoizer distinguishes named argument bindings with the same values', function (): void {
+    $memoizer = memoize();
+    if (!$memoizer instanceof Memoizer) {
+        throw new \RuntimeException('Expected a memoizer instance.');
+    }
+    $callback = static fn(int $left, int $right): int => $left - $right;
+    $owner = new stdClass();
+    expect($memoizer->get($callback, ['left' => 1, 'right' => 2]))->toBe(-1)
+        ->and($memoizer->get($callback, ['right' => 1, 'left' => 2]))->toBe(1)
+        ->and($memoizer->getFor($owner, $callback, ['left' => 1, 'right' => 2]))->toBe(-1)
+        ->and($memoizer->getFor($owner, $callback, ['right' => 1, 'left' => 2]))->toBe(1)
+        ->and($memoizer->get($callback, ['left' => 1, 'right' => 2]))->toBe(-1);
 });

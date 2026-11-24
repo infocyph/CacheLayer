@@ -15,6 +15,7 @@ final class TieredPoolFactory
      * @param array $tiers The tiers argument.
      * @phpstan-param array<int, mixed> $tiers
      * @phpstan-return list<InternalCachePoolInterface>
+     * @throws CacheInvalidArgumentException
      */
     public static function fromArray(#[\SensitiveParameter] array $tiers): array
     {
@@ -35,6 +36,7 @@ final class TieredPoolFactory
      * @param string $key The key argument.
      * @param bool $default The default argument.
      * @phpstan-param array<string, mixed> $descriptor
+     * @throws CacheInvalidArgumentException
      */
     private static function bool(array $descriptor, string $key, bool $default): bool
     {
@@ -48,6 +50,10 @@ final class TieredPoolFactory
         );
     }
 
+    /**
+     * @throws CacheInvalidArgumentException
+     * @throws \RuntimeException
+     */
     private static function buildScyllaSession(string $keyspace): object
     {
         if (!OptionalCassandra::available()) {
@@ -63,6 +69,7 @@ final class TieredPoolFactory
      * @param array $descriptor The descriptor argument.
      * @param int|string $index The index argument.
      * @phpstan-param array<string, mixed> $descriptor
+     * @throws CacheInvalidArgumentException
      */
     private static function descriptorToPool(array $descriptor, int|string $index): InternalCachePoolInterface
     {
@@ -74,9 +81,7 @@ final class TieredPoolFactory
         }
         $driver = strtolower($driverValue);
 
-        $namespace = isset($descriptor['namespace']) && is_string($descriptor['namespace'])
-            ? $descriptor['namespace']
-            : 'default';
+        $namespace = self::string($descriptor, 'namespace', 'default');
         $client = $descriptor['client'] ?? $descriptor['session'] ?? null;
 
         return match ($driver) {
@@ -148,6 +153,7 @@ final class TieredPoolFactory
      * @param string $key The key argument.
      * @param float $default The default argument.
      * @phpstan-param array<string, mixed> $descriptor
+     * @throws CacheInvalidArgumentException
      */
     private static function float(array $descriptor, string $key, float $default): float
     {
@@ -162,7 +168,12 @@ final class TieredPoolFactory
             );
         }
 
-        return (float) $value;
+        $timeout = (float) $value;
+        if (!is_finite($timeout) || $timeout < 0.0) {
+            throw new CacheInvalidArgumentException(sprintf('Tier descriptor key `%s` must be finite and nonnegative.', $key));
+        }
+
+        return $timeout;
     }
 
     /**
@@ -170,6 +181,7 @@ final class TieredPoolFactory
      * @param string $key The key argument.
      * @param int $default The default argument.
      * @phpstan-param array<string, mixed> $descriptor
+     * @throws CacheInvalidArgumentException
      */
     private static function int(array $descriptor, string $key, int $default): int
     {
@@ -183,6 +195,7 @@ final class TieredPoolFactory
         );
     }
 
+    /** @throws CacheInvalidArgumentException */
     private static function memcachedClient(mixed $client, int|string $index): ?\Memcached
     {
         if ($client === null) {
@@ -204,6 +217,8 @@ final class TieredPoolFactory
      * @param mixed $client The client argument.
      * @param int|string $index The index argument.
      * @phpstan-param array<string, mixed> $descriptor
+     * @throws CacheInvalidArgumentException
+     * @throws \RuntimeException
      */
     private static function mongoPool(array $descriptor, string $namespace, mixed $client, int|string $index): InternalCachePoolInterface
     {
@@ -230,6 +245,7 @@ final class TieredPoolFactory
      * @param array $tier The tier argument.
      * @phpstan-param array<mixed, mixed> $tier
      * @phpstan-return array<string, mixed>
+     * @throws CacheInvalidArgumentException
      */
     private static function normalizeDescriptor(array $tier): array
     {
@@ -254,6 +270,7 @@ final class TieredPoolFactory
      * @param array $descriptor The descriptor argument.
      * @param string $keys The keys argument.
      * @phpstan-param array<string, mixed> $descriptor
+     * @throws CacheInvalidArgumentException
      */
     private static function nullableString(array $descriptor, string ...$keys): ?string
     {
@@ -279,6 +296,7 @@ final class TieredPoolFactory
         return null;
     }
 
+    /** @throws CacheInvalidArgumentException */
     private static function pdoClient(mixed $client, int|string $index): ?\PDO
     {
         if ($client === null) {
@@ -294,6 +312,7 @@ final class TieredPoolFactory
         return $client;
     }
 
+    /** @throws CacheInvalidArgumentException */
     private static function redisClient(mixed $client, int|string $index, string $driver): ?\Redis
     {
         if ($client === null) {
@@ -313,6 +332,7 @@ final class TieredPoolFactory
         return $client;
     }
 
+    /** @throws CacheInvalidArgumentException */
     private static function resolvePool(mixed $tier, int|string $index): InternalCachePoolInterface
     {
         if ($tier instanceof InternalCachePoolInterface) {
@@ -334,6 +354,7 @@ final class TieredPoolFactory
 
     /**
      * @return list<string>
+     * @throws CacheInvalidArgumentException
      */
     private static function seeds(mixed $value): array
     {
@@ -365,6 +386,7 @@ final class TieredPoolFactory
 
     /**
      * @return list<array{0:string, 1:int, 2:int}>
+     * @throws CacheInvalidArgumentException
      */
     private static function servers(mixed $value): array
     {
@@ -405,6 +427,7 @@ final class TieredPoolFactory
     /**
      * @param array $descriptor The descriptor argument.
      * @phpstan-param array<string, mixed> $descriptor
+     * @throws CacheInvalidArgumentException
      */
     private static function sqliteDsn(array $descriptor): ?string
     {
@@ -418,6 +441,7 @@ final class TieredPoolFactory
      * @param string $key The key argument.
      * @param string $default The default argument.
      * @phpstan-param array<string, mixed> $descriptor
+     * @throws CacheInvalidArgumentException
      */
     private static function string(array $descriptor, string $key, string $default): string
     {
@@ -439,6 +463,7 @@ final class TieredPoolFactory
      * @param string $expectedType The expected type argument.
      * @phpstan-param array<string, mixed> $descriptor
      * @phpstan-param callable(mixed): bool $validator
+     * @throws CacheInvalidArgumentException
      */
     private static function typedValue(
         array $descriptor,

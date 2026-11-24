@@ -2,9 +2,13 @@
 
 declare(strict_types=1);
 
+namespace Infocyph\CacheLayer\Tests\Cache;
+
 use Infocyph\CacheLayer\Cache\Adapter\SharedMemoryCacheAdapter;
 use Infocyph\CacheLayer\Cache\AtomicCacheInterface;
 use Infocyph\CacheLayer\Cache\Cache;
+use ReflectionClass;
+use RuntimeException;
 
 if (! function_exists('shm_attach')) {
     throw new RuntimeException('System V shared memory is required for the configured cache test matrix.');
@@ -26,9 +30,14 @@ test('shared memory adapter uses private filesystem and segment permissions', fu
     $reflection = new ReflectionClass($adapter);
     $tokenFile = $reflection->getProperty('tokenFile')->getValue($adapter);
 
-    expect($tokenFile)->toBeString()
-        ->and(is_file($tokenFile))->toBeTrue()
-        ->and(fileperms($tokenFile) & 0x0002)->toBe(0);
+    if (!is_string($tokenFile) || !is_file($tokenFile)) {
+        throw new RuntimeException('Expected a shared-memory token file.');
+    }
+    $permissions = fileperms($tokenFile);
+    if ($permissions === false) {
+        throw new RuntimeException('Unable to read token file permissions.');
+    }
+    expect($permissions & 0x0002)->toBe(0);
 
     $adapter->clear();
 });
@@ -50,12 +59,10 @@ test('shared memory namespace clear cannot affect another namespace', function (
 test('shared memory exposes atomic capability across instances', function () {
     $first = Cache::sharedMemory('shm-atomic');
     $second = Cache::sharedMemory('shm-atomic');
-    $firstAtomic = $first->atomic();
-    $secondAtomic = $second->atomic();
+    $firstAtomic = $first->atomic() ?? throw new \RuntimeException('The first store must support atomic operations.');
+    $secondAtomic = $second->atomic() ?? throw new \RuntimeException('The second store must support atomic operations.');
 
-    expect($firstAtomic)->toBeInstanceOf(AtomicCacheInterface::class)
-        ->and($secondAtomic)->toBeInstanceOf(AtomicCacheInterface::class)
-        ->and($firstAtomic->setIfAbsent('claim', 'first', 30))->toBeTrue()
+    expect($firstAtomic->setIfAbsent('claim', 'first', 30))->toBeTrue()
         ->and($secondAtomic->setIfAbsent('claim', 'second', 30))->toBeFalse()
         ->and($second->get('claim'))->toBe('first');
 
@@ -65,8 +72,7 @@ test('shared memory exposes atomic capability across instances', function () {
 test('shared memory compare-and-set is strict and visible across instances', function () {
     $first = Cache::sharedMemory('shm-cas');
     $second = Cache::sharedMemory('shm-cas');
-    $atomic = $second->atomic();
-    expect($atomic)->not->toBeNull();
+    $atomic = $second->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
     $first->set('state', 1, 30);
 
     expect($atomic->compareAndSet('state', '1', 2, 30))->toBeFalse()
@@ -79,8 +85,7 @@ test('shared memory compare-and-set is strict and visible across instances', fun
 
 test('shared memory compare-and-set validates tagged state inside its lock domain', function () {
     $cache = Cache::sharedMemory('shm-tagged-cas');
-    $atomic = $cache->atomic();
-    expect($atomic)->not->toBeNull();
+    $atomic = $cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
 
     $cache->setTagged('current', 'v1', ['group-current'], 30);
     expect($atomic->compareAndSet('current', 'v1', 'v2', 30))->toBeTrue()
@@ -95,8 +100,7 @@ test('shared memory compare-and-set validates tagged state inside its lock domai
 
 test('shared memory compare-and-set replacement honors ttl', function () {
     $cache = Cache::sharedMemory('shm-cas-ttl');
-    $atomic = $cache->atomic();
-    expect($atomic)->not->toBeNull();
+    $atomic = $cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
     $cache->set('state', 'v1', 30);
 
     expect($atomic->compareAndSet('state', 'v1', 'v2', 1))->toBeTrue();
@@ -109,8 +113,7 @@ test('shared memory compare-and-set replacement honors ttl', function () {
 test('shared memory atomic consume returns a value exactly once across instances', function () {
     $first = Cache::sharedMemory('shm-consume');
     $second = Cache::sharedMemory('shm-consume');
-    $atomic = $second->atomic();
-    expect($atomic)->not->toBeNull();
+    $atomic = $second->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
     $first->set('state', ['ok' => true], 30);
 
     expect($atomic->getAndDelete('state', 'missing'))->toBe(['ok' => true])
@@ -122,8 +125,7 @@ test('shared memory atomic consume returns a value exactly once across instances
 
 test('shared memory atomic set reclaims expired and tag-invalidated state', function () {
     $cache = Cache::sharedMemory('shm-stale');
-    $atomic = $cache->atomic();
-    expect($atomic)->not->toBeNull();
+    $atomic = $cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
 
     $cache->set('expired', 'old', 1);
     usleep(2_000_000);
@@ -141,7 +143,7 @@ test('shared memory atomic set reclaims expired and tag-invalidated state', func
 test('shared memory atomic claim has one winner under process contention', function () {
     expect(function_exists('pcntl_fork'))->toBeTrue();
 
-    $namespace = 'shm-contention-' . getmypid();
+    $namespace = 'shm-contention-' . bin2hex(random_bytes(8));
     $cache = Cache::sharedMemory($namespace);
     $cache->clear();
     $directory = sys_get_temp_dir() . '/cachelayer-shm-contention-' . uniqid('', true);
@@ -154,21 +156,27 @@ test('shared memory atomic claim has one winner under process contention', funct
             $workerCache = Cache::sharedMemory($namespace);
             $atomic = $workerCache->atomic();
             $won = $atomic?->setIfAbsent('claim', $worker, 30) === true;
-            file_put_contents($directory . '/' . getmypid(), $won ? '1' : '0');
-            exit(0);
+            $written = file_put_contents($directory . '/' . $worker, $won ? '1' : '0');
+            pcntl_exec(PHP_BINARY, ['-r', $written === 1 ? '' : 'throw new RuntimeException("Unable to write contender result.");']);
+
+            throw new RuntimeException('Unable to terminate shared-memory contender.');
         }
-        if ($pid > 0) {
-            $children[] = $pid;
+        if ($pid < 0) {
+            throw new RuntimeException('Unable to fork a cache contention process.');
         }
+        $children[] = $pid;
     }
 
     foreach ($children as $pid) {
-        pcntl_waitpid($pid, $status);
-        expect(pcntl_wexitstatus($status))->toBe(0);
+        expect(\Infocyph\CacheLayer\Tests\Support\CacheFixture::waitForChild($pid))->toBe(0);
     }
 
     $wins = 0;
-    foreach (glob($directory . '/*') ?: [] as $file) {
+    $files = glob($directory . '/*');
+    if ($files === false) {
+        throw new RuntimeException('Unable to enumerate cache test files.');
+    }
+    foreach ($files as $file) {
         $wins += file_get_contents($file) === '1' ? 1 : 0;
         unlink($file);
     }
@@ -183,9 +191,9 @@ test('shared memory atomic claim has one winner under process contention', funct
 
 test('shared memory atomic consume discards deferred overlays without resurrection', function () {
     $cache = Cache::sharedMemory('shm-deferred-consume');
-    $atomic = $cache->atomic();
-    expect($atomic)->not->toBeNull()
-        ->and($cache->set('state', 'stored'))->toBeTrue()
+    $atomic = $cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
+
+    expect($cache->set('state', 'stored'))->toBeTrue()
         ->and($cache->saveDeferred($cache->getItem('state')->set('pending')))->toBeTrue()
         ->and($atomic->getAndDelete('state', 'missing'))->toBe('stored')
         ->and($atomic->getAndDelete('state', 'missing'))->toBe('missing')
@@ -193,4 +201,23 @@ test('shared memory atomic consume discards deferred overlays without resurrecti
         ->and($cache->get('state'))->toBeNull();
 
     $cache->clear();
+});
+
+test('shared memory commits queued items before the adapter is collected', function (): void {
+    $namespace = 'shm-deferred-destruction';
+    $reader = new SharedMemoryCacheAdapter($namespace);
+    $reader->clear();
+
+    try {
+        $writer = new SharedMemoryCacheAdapter($namespace);
+        $item = $writer->createItem('pending')->set('saved-on-release');
+        expect($writer->saveDeferred($item))->toBeTrue()
+            ->and($reader->getItem('pending')->isHit())->toBeFalse();
+        unset($item, $writer);
+        gc_collect_cycles();
+
+        expect($reader->getItem('pending')->get())->toBe('saved-on-release');
+    } finally {
+        $reader->clear();
+    }
 });

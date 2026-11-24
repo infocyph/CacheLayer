@@ -1,5 +1,22 @@
-Upgrading from 3.x to 4.0
-=========================
+Upgrading to CacheLayer 4.0
+===========================
+
+Upgrading from 4.0.2 to 4.0.3
+=============================
+
+4.0.3 renames ``InvalidationEventType::Namespace`` to
+``InvalidationEventType::NamespaceClear`` to address the PHP 8.6 deprecation
+of the reserved case name. The rename applies on every PHP version. Update
+direct references and code that compares the enum's ``name``. Clear or migrate
+application-owned PHP-serialized payloads containing the old case before
+deployment.
+
+The backed value remains ``namespace``, so persisted PDO and Redis transport
+events remain readable. Calls to ``InvalidationEvent::namespace()`` continue
+to work.
+
+Upgrading from 3.x
+==================
 
 CacheLayer 4.0 is an intentional breaking release with a minimum runtime of
 PHP 8.4. It does not preserve 3.x API shape, named parameters, defaults,
@@ -15,7 +32,8 @@ Runtime floor
 =============
 
 CacheLayer 4.0 requires PHP 8.4 or newer. Upgrade the application runtime before
-installing the package. The release gates cover PHP 8.4 and PHP 8.5.
+installing the package. The release gates cover PHP 8.4, 8.5 and 8.6. Native Scylla CQL remains on PHP 8.4/8.5 until a
+compatible PHP 8.6 extension is published.
 
 Serialization and authenticated records
 ========================================
@@ -139,11 +157,11 @@ Cursor state is scoped by cluster, node, namespace, and transport identity.
 Retention gaps trigger a local namespace clear before progress is advanced.
 Permanent poison events are not skipped silently.
 
-Runwire 2.1 integration
+Runwire 3.1 integration
 =======================
 
 Runwire is still optional at installation time. Applications that use the
-integration should install ``infocyph/runwire:^2.1`` and bind the concrete
+integration should install ``infocyph/runwire:^3.1`` and bind the concrete
 Runwire ``RuntimeContext`` after each worker/generation is created. Share the
 current request/task scope only while that work is active and release the
 runtime binding on shutdown or replacement.

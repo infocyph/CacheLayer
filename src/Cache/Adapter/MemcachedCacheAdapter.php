@@ -21,6 +21,8 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
 
     /**
      * @param list<array{0:string, 1:int, 2:int}> $servers
+     * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
     public function __construct(
         string $namespace = 'default',
@@ -37,6 +39,12 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         }
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws RuntimeException
+     */
+    #[\Override]
     public function atomicCompareAndSet(
         string $key,
         mixed $expected,
@@ -85,6 +93,10 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         );
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
+    #[\Override]
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
         $this->discardDeferredKey($key);
@@ -109,6 +121,12 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         return $this->genericItemFromRecord($key, $record);
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws RuntimeException
+     */
+    #[\Override]
     public function atomicSetIfAbsent(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
@@ -150,6 +168,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         return $this->client->cas($extended['cas'], $mapped, $blob, MemcachedExpiration::fromRelative($ttl));
     }
 
+    #[\Override]
     public function clear(): bool
     {
         $cleared = $this->client->set($this->generationKey(), self::newGeneration());
@@ -158,6 +177,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         return $cleared;
     }
 
+    #[\Override]
     public function deleteItem(string $key): bool
     {
         $this->discardDeferredKey($key);
@@ -166,10 +186,12 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         return $this->deleteResultSucceeded();
     }
 
-    /** @param list<string> $keys */
+    /** @param array<array-key, string> $keys */
+    #[\Override]
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
+        $keys = array_values($keys);
         if ($keys === []) {
             return true;
         }
@@ -184,6 +206,11 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         return $this->client;
     }
 
+    /**
+     * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
+    #[\Override]
     public function getItem(string $key): CacheItem
     {
         $mapped = $this->mapData($key);
@@ -213,7 +240,8 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
 
     /**
      * @param list<string> $tags
-     * @return array<string, string>
+     * @return array<int|string, string>
+     * @throws RuntimeException
      */
     #[\Override]
     public function getTagGenerations(array $tags): array
@@ -232,6 +260,11 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         return $generations;
     }
 
+    /**
+     * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
+    #[\Override]
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
@@ -240,7 +273,10 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
     /**
      * @param list<string> $keys
      * @return array<string, CacheItem>
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws RuntimeException
      */
+    #[\Override]
     public function multiFetch(array $keys): array
     {
         if ($keys === []) {
@@ -298,6 +334,13 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         return $generations === [] || $this->client->setMulti($generations);
     }
 
+    /**
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws RuntimeException
+     */
+    #[\Override]
     public function save(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
@@ -315,7 +358,14 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         );
     }
 
-    /** @param array<string, CacheItemInterface> $items */
+    /**
+     * @param array<string, CacheItemInterface> $items
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws RuntimeException
+     * @throws \InvalidArgumentException
+     */
+    #[\Override]
     public function saveItems(array $items): bool
     {
         $generation = $this->namespaceGeneration();
@@ -381,6 +431,9 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         return $this->namespace . ':m:generation';
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function initializeGeneration(string $key, mixed $observed, string $failureMessage): string
     {
         $generation = self::normalizeGeneration($observed);
@@ -410,6 +463,9 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         return $this->namespace . ':m:tag:' . $tag;
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function namespaceGeneration(mixed $value = null): string
     {
         $value ??= $this->client->get($this->generationKey());
@@ -421,6 +477,9 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         );
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function recordTagsAreCurrent(CacheRecord $record): bool
     {
         if ($record->tags === []) {
@@ -438,6 +497,9 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         return true;
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function tagGeneration(string $key, mixed $value): string
     {
         return $this->initializeGeneration(

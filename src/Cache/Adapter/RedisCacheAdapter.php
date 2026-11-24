@@ -76,6 +76,7 @@ LUA;
      * @param string $namespace A namespace prefix to avoid key collisions.
      * @param string $dsn The Redis connection DSN (e.g., 'redis://127.0.0.1:6379').
      * @param \Redis|null $client Optional pre-configured Redis client instance.
+     * @throws CacheInvalidArgumentException
      */
     public function __construct(
         string $namespace = 'default',
@@ -91,6 +92,12 @@ LUA;
         $this->redis = $client ?? $this->connect($dsn);
     }
 
+    /**
+     * @throws CacheInvalidArgumentException
+     * @throws InvalidArgumentException
+     * @throws RuntimeException
+     */
+    #[\Override]
     public function atomicCompareAndSet(
         string $key,
         mixed $expected,
@@ -126,6 +133,10 @@ LUA;
         return AdapterValueNormalizer::intOrZero($result) === 1;
     }
 
+    /**
+     * @throws CacheInvalidArgumentException
+     */
+    #[\Override]
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
         $this->discardDeferredKey($key);
@@ -143,6 +154,12 @@ LUA;
         return $this->genericItemFromRecord($key, $record);
     }
 
+    /**
+     * @throws CacheInvalidArgumentException
+     * @throws InvalidArgumentException
+     * @throws RuntimeException
+     */
+    #[\Override]
     public function atomicSetIfAbsent(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
@@ -167,7 +184,7 @@ LUA;
 
         $existing = $this->redis->get($key);
         if (!is_string($existing)) {
-            return (bool) $this->redis->set($key, $blob, $options);
+            return $this->redis->set($key, $blob, $options) === true;
         }
 
         $record = $this->decodeRecordFromBlob($existing, $item->getKey());
@@ -184,33 +201,36 @@ LUA;
         return AdapterValueNormalizer::intOrZero($result) === 1;
     }
 
+    #[\Override]
     public function clear(): bool
     {
         foreach ([$this->ns . ':d:*', $this->ns . ':m:*'] as $pattern) {
             $cursor = null;
             do {
                 $keys = $this->redis->scan($cursor, $pattern, 1000);
-                if ($keys) {
-                    $this->redis->del($keys);
+                if ($keys !== false && $keys !== [] && !self::deleteSucceeded($this->redis->del($keys))) {
+                    return false;
                 }
-            } while ($cursor);
+            } while ($cursor !== 0 && $cursor !== null);
         }
         $this->deferred = [];
 
         return true;
     }
 
+    #[\Override]
     public function deleteItem(string $key): bool
     {
         $this->discardDeferredKey($key);
 
-        return $this->redis->del($this->map($key)) !== false;
+        return self::deleteSucceeded($this->redis->del($this->map($key)));
     }
 
     /**
      * @param array $keys The keys argument.
-     * @phpstan-param list<string> $keys
+     * @phpstan-param array<array-key, string> $keys
      */
+    #[\Override]
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
@@ -219,9 +239,9 @@ LUA;
             return true;
         }
 
-        $full = array_map($this->map(...), $keys);
+        $full = array_map($this->map(...), array_values($keys));
 
-        return $this->redis->del($full) !== false;
+        return self::deleteSucceeded($this->redis->del($full));
     }
 
     public function getClient(): \Redis
@@ -229,6 +249,7 @@ LUA;
         return $this->redis;
     }
 
+    #[\Override]
     public function getItem(string $key): CacheItem
     {
         $raw = $this->redis->get($this->map($key));
@@ -243,7 +264,11 @@ LUA;
         return $this->genericMiss($key);
     }
 
-    /** @param list<string> $tags */
+    /**
+     * @param list<string> $tags
+     * @return array<int|string, string>
+     * @throws RuntimeException
+     */
     #[\Override]
     public function getTagGenerations(array $tags): array
     {
@@ -251,8 +276,7 @@ LUA;
             return [];
         }
 
-        $values = $this->redis->mget(array_map($this->mapTag(...), $tags));
-        $values = is_array($values) ? array_values($values) : [];
+        $values = AdapterValueNormalizer::requireBatch($this->redis->mget(array_map($this->mapTag(...), $tags)), count($tags));
         $generations = [];
         $missing = [];
         foreach ($tags as $index => $tag) {
@@ -269,6 +293,7 @@ LUA;
         return $generations + $this->initializeTagGenerations($missing);
     }
 
+    #[\Override]
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
@@ -278,7 +303,10 @@ LUA;
      * @param array $keys The keys argument.
      * @phpstan-param list<string> $keys
      * @phpstan-return array<string, CacheItem>
+     * @throws CacheInvalidArgumentException
+     * @throws RuntimeException
      */
+    #[\Override]
     public function multiFetch(array $keys): array
     {
         if ($keys === []) {
@@ -286,11 +314,7 @@ LUA;
         }
 
         $prefixed = array_map($this->map(...), $keys);
-        $rawVals = $this->redis->mget($prefixed);
-        if (!is_array($rawVals)) {
-            $rawVals = [];
-        }
-        $rawVals = array_values($rawVals);
+        $rawVals = AdapterValueNormalizer::requireBatch($this->redis->mget($prefixed), count($keys));
 
         $items = [];
         $stale = [];
@@ -334,6 +358,12 @@ LUA;
         return $this->redis->mset($generations);
     }
 
+    /**
+     * @throws CacheInvalidArgumentException
+     * @throws InvalidArgumentException
+     * @throws RuntimeException
+     */
+    #[\Override]
     public function save(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
@@ -355,7 +385,13 @@ LUA;
             : $this->redis->setex($this->map($item->getKey()), max(1, $ttl), $blob);
     }
 
-    /** @param array<string, CacheItemInterface> $items */
+    /**
+     * @param array<string, CacheItemInterface> $items
+     * @throws CacheInvalidArgumentException
+     * @throws InvalidArgumentException
+     * @throws RuntimeException
+     */
+    #[\Override]
     public function saveItems(array $items): bool
     {
         if (!$this->supportsItems($items)) {
@@ -367,31 +403,37 @@ LUA;
         $expired = [];
         foreach ($items as $item) {
             $expiration = CachePayloadCodec::expirationFromItem($item);
-            if ($expiration['ttl'] !== null && $expiration['ttl'] <= 0) {
-                $expired[] = $this->map($item->getKey());
+            $key = $this->map($item->getKey());
+            $ttl = $expiration['ttl'];
+            if ($ttl === null) {
+                $plain[$key] = $this->encodeItem($item, $expiration['expiresAt']);
 
                 continue;
             }
-            $blob = $this->encodeItem($item, $expiration['expiresAt']);
-            if ($expiration['ttl'] === null) {
-                $plain[$this->map($item->getKey())] = $blob;
-            } else {
-                $expiring[] = [$this->map($item->getKey()), max(1, $expiration['ttl']), $blob];
+            if ($ttl <= 0) {
+                $expired[] = $key;
+
+                continue;
             }
+            $expiring[] = [$key, $ttl, $this->encodeItem($item, $expiration['expiresAt'])];
         }
 
-        if ($expired !== []) {
-            $this->redis->del($expired);
+        if ($expired !== [] && !self::deleteSucceeded($this->redis->del($expired))) {
+            return false;
         }
 
-        $ok = $plain === [] || $this->redis->mset($plain);
-        if ($expiring === []) {
-            return $ok;
-        }
-
-        return $ok && $this->saveExpiring($expiring);
+        return ($plain === [] || $this->redis->mset($plain) === true)
+            && ($expiring === [] || $this->saveExpiring($expiring));
     }
 
+    private static function deleteSucceeded(mixed $result): bool
+    {
+        return is_int($result) && $result >= 0;
+    }
+
+    /**
+     * @throws RuntimeException
+     */
     private function connect(#[\SensitiveParameter] string $dsn): \Redis
     {
         try {
@@ -401,6 +443,9 @@ LUA;
         }
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function initializeTagGeneration(string $tag, mixed $observed): string
     {
         $candidate = self::newGeneration();
@@ -422,8 +467,9 @@ LUA;
     }
 
     /**
-     * @param array<string, mixed> $missing
-     * @return array<string, string>
+     * @param array<int|string, mixed> $missing
+     * @return array<int|string, string>
+     * @throws RuntimeException
      */
     private function initializeTagGenerations(array $missing): array
     {
@@ -445,6 +491,9 @@ LUA;
         return $this->ns . ':m:tag:' . $tag;
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function recordTagsAreCurrent(CacheRecord $record): bool
     {
         if ($record->tags === []) {
@@ -465,14 +514,15 @@ LUA;
     /** @param list<array{0:string, 1:int, 2:string}> $records */
     private function saveExpiring(array $records): bool
     {
-        $pipeline = $this->redis->multi(\Redis::PIPELINE);
+        $pipeline = AdapterValueNormalizer::redisPipeline($this->redis->multi(\Redis::PIPELINE));
+        if ($pipeline === null) {
+            return false;
+        }
         foreach ($records as [$key, $ttl, $blob]) {
             $pipeline->setex($key, $ttl, $blob);
         }
         $results = $pipeline->exec();
 
-        return is_array($results)
-            && count($results) === count($records)
-            && AdapterValueNormalizer::allTrue($results);
+        return AdapterValueNormalizer::completeWriteBatch($results, count($records));
     }
 }
