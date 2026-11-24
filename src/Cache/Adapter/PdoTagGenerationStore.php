@@ -44,18 +44,18 @@ final class PdoTagGenerationStore
             if (array_key_exists($tag, $stored)) {
                 throw new RuntimeException('PDO tag generation contains invalid state.');
             }
-            $missing[$tag] = bin2hex(random_bytes(16));
+            $missing[] = [$tag, bin2hex(random_bytes(16))];
         }
 
-        foreach ($missing as $tag => $candidate) {
-            self::insertIfMissing($pdo, $driver, $table, $namespace, (string) $tag, $candidate);
+        foreach ($missing as [$tag, $candidate]) {
+            self::insertIfMissing($pdo, $driver, $table, $namespace, $tag, $candidate);
         }
         if ($missing === []) {
             return $generations;
         }
 
-        $actual = self::fetch($pdo, $table, $namespace, array_map(strval(...), array_keys($missing)));
-        foreach ($missing as $tag => $_candidate) {
+        $actual = self::fetch($pdo, $table, $namespace, array_column($missing, 0));
+        foreach ($missing as [$tag]) {
             $generation = self::normalize($actual[$tag] ?? null);
             if ($generation === null) {
                 throw new RuntimeException('Unable to initialize PDO tag generation.');

@@ -271,8 +271,7 @@ LUA;
             return [];
         }
 
-        $values = $this->redis->mget(array_map($this->mapTag(...), $tags));
-        $values = is_array($values) ? array_values($values) : [];
+        $values = AdapterValueNormalizer::requireBatch($this->redis->mget(array_map($this->mapTag(...), $tags)), count($tags));
         $generations = [];
         $missing = [];
         foreach ($tags as $index => $tag) {
@@ -309,11 +308,7 @@ LUA;
         }
 
         $prefixed = array_map($this->map(...), $keys);
-        $rawVals = $this->redis->mget($prefixed);
-        if (!is_array($rawVals)) {
-            $rawVals = [];
-        }
-        $rawVals = array_values($rawVals);
+        $rawVals = AdapterValueNormalizer::requireBatch($this->redis->mget($prefixed), count($keys));
 
         $items = [];
         $stale = [];
@@ -408,8 +403,8 @@ LUA;
             }
         }
 
-        if ($expired !== []) {
-            $this->redis->del($expired);
+        if ($expired !== [] && !self::deleteSucceeded($this->redis->del($expired))) {
+            return false;
         }
 
         $ok = $plain === [] || $this->redis->mset($plain);
@@ -506,13 +501,14 @@ LUA;
     private function saveExpiring(array $records): bool
     {
         $pipeline = $this->redis->multi(\Redis::PIPELINE);
+        if (!$pipeline instanceof \Redis) {
+            return false;
+        }
         foreach ($records as [$key, $ttl, $blob]) {
             $pipeline->setex($key, $ttl, $blob);
         }
         $results = $pipeline->exec();
 
-        return is_array($results)
-            && count($results) === count($records)
-            && AdapterValueNormalizer::allTrue($results);
+        return AdapterValueNormalizer::completeWriteBatch($results, count($records));
     }
 }

@@ -61,7 +61,7 @@ LUA;
     #[\Override]
     public function delete(string $key): bool
     {
-        return $this->client->del($this->map($key)) !== false;
+        return self::deleteSucceeded($this->client->del($this->map($key)));
     }
 
     /**
@@ -70,16 +70,7 @@ LUA;
     #[\Override]
     public function get(string $key): ?int
     {
-        $value = $this->client->get($this->map($key));
-        if ($value === false || $value === null) {
-            return null;
-        }
-
-        if (!is_string($value)) {
-            throw new AtomicCounterException('Atomic counter contains a non-integer value.');
-        }
-
-        return $this->parseInteger($value);
+        return $this->readCounter($this->client->get($this->map($key)));
     }
 
     /**
@@ -93,6 +84,11 @@ LUA;
         }
 
         return $this->change($key, $by, $ttlSeconds);
+    }
+
+    private static function deleteSucceeded(mixed $result): bool
+    {
+        return is_int($result) && $result >= 0;
     }
 
     /**
@@ -173,5 +169,18 @@ LUA;
         }
 
         return (int) (($negative && $digits !== '0' ? '-' : '') . $digits);
+    }
+
+    /** @throws AtomicCounterException */
+    private function readCounter(mixed $value): ?int
+    {
+        if ($value === false || $value === null) {
+            return null;
+        }
+        if (!is_string($value)) {
+            throw new AtomicCounterException('Atomic counter contains a non-integer value.');
+        }
+
+        return $this->parseInteger($value);
     }
 }

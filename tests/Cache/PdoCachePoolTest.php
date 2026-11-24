@@ -77,3 +77,16 @@ test('PDO cache supports numeric-looking tag names without changing their identi
         ->and($cache->has('first'))->toBeFalse()
         ->and($cache->get('second'))->toBe('B');
 });
+
+test('PDO bounded pruning removes only expired data for the selected namespace', function (): void {
+    $pdo = new PDO('sqlite::memory:');
+    $adapter = new PdoCacheAdapter('prune', pdo: $pdo);
+    $insert = $pdo->prepare('INSERT INTO cachelayer_entries (namespace, kind, cache_key, payload, expires) VALUES (?, ?, ?, ?, ?)');
+    foreach ([['prune', 'data', 'old1', time() - 10], ['prune', 'data', 'old2', time() - 10], ['prune', 'data', 'live', time() + 600], ['other', 'data', 'old3', time() - 10], ['prune', 'tag', 'tag', null]] as [$ns, $kind, $key, $expiry]) {
+        $insert->execute([$ns, $kind, $key, 'payload', $expiry]);
+    }
+    expect($adapter->pruneExpired(1))->toBe(1)
+        ->and($adapter->pruneExpired(1))->toBe(1)
+        ->and($adapter->pruneExpired(1))->toBe(0)
+        ->and($pdo->query('SELECT COUNT(*) FROM cachelayer_entries')->fetchColumn())->toBe(3);
+});

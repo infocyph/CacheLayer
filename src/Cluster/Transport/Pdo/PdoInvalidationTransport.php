@@ -293,7 +293,7 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
      */
     private function eventIdFromValue(mixed $value): string
     {
-        if (is_int($value)) {
+        if (is_int($value) && $value >= 0) {
             return (string) $value;
         }
 
@@ -328,8 +328,9 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
             throw new ClusterTransportException('Unable to publish an invalidation event.', 0, $exception);
         }
 
-        if (!is_string($id) || $id === '') {
-            throw new ClusterTransportException('PDO invalidation transport did not return an event ID.');
+        $id = $this->eventIdFromValue($id);
+        if ($this->eventId($id) === '0') {
+            throw new ClusterTransportException('PDO invalidation transport did not return a positive event ID.');
         }
 
         return $id;

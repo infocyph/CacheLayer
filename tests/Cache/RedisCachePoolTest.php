@@ -613,3 +613,25 @@ test('Redis clear and delete propagate a refused native delete operation', funct
         ->and($adapter->deleteItems(['key']))->toBeFalse()
         ->and($adapter->clear())->toBeFalse();
 });
+
+test('Redis incomplete bulk responses are backend failures rather than ordinary misses', function (): void {
+    $client = $this->createMock(Redis::class);
+    $client->method('mget')->willReturn([false]);
+    $adapter = new \Infocyph\CacheLayer\Cache\Adapter\RedisCacheAdapter('incomplete', client: $client);
+    $closed = new Cache($adapter);
+    expect(fn (): iterable => $closed->getMultiple(['one', 'two']))
+        ->toThrow(\Infocyph\CacheLayer\Exceptions\CacheBackendException::class);
+    expect(fn (): array => $adapter->getTagGenerations(['one', 'two']))
+        ->toThrow(RuntimeException::class);
+
+    $open = new Cache(new \Infocyph\CacheLayer\Cache\Adapter\RedisCacheAdapter('incomplete-open', client: $client), options: new CacheOptions(failOpen: true));
+    expect($open->getMultiple(['one', 'two'], 'fallback'))->toBe(['one' => 'fallback', 'two' => 'fallback']);
+});
+
+test('Redis bulk persistence does not report success when expired entry deletion fails', function (): void {
+    $client = $this->createMock(Redis::class);
+    $client->method('del')->willReturn(false);
+    $adapter = new \Infocyph\CacheLayer\Cache\Adapter\RedisCacheAdapter('expired-batch', client: $client);
+    $item = $adapter->createItem('expired')->set('old')->expiresAfter(-1);
+    expect($adapter->saveItems(['expired' => $item]))->toBeFalse();
+});

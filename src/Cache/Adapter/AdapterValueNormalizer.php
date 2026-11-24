@@ -12,6 +12,11 @@ final class AdapterValueNormalizer
         return array_all($values, static fn(mixed $value): bool => $value === true);
     }
 
+    public static function completeWriteBatch(mixed $values, int $expected): bool
+    {
+        return is_array($values) && count($values) === $expected && self::allTrue($values);
+    }
+
     /**
      * @phpstan-return array<string, mixed>|null
      * @param mixed $value The value argument.
@@ -79,6 +84,19 @@ final class AdapterValueNormalizer
         }
 
         return is_string($value) ? $value : null;
+    }
+
+    /**
+     * @return list<mixed>
+     * @throws \RuntimeException
+     */
+    public static function requireBatch(mixed $values, int $expected): array
+    {
+        if (!is_array($values) || count($values) !== $expected || !array_is_list($values)) {
+            throw new \RuntimeException('Cache backend returned an incomplete or invalid batch.');
+        }
+
+        return $values;
     }
 
     /**
