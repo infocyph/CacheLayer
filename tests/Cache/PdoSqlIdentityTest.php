@@ -8,6 +8,7 @@ use Infocyph\CacheLayer\Cluster\Event\InvalidationEvent;
 use Infocyph\CacheLayer\Cluster\Transport\Pdo\PdoInvalidationSchema;
 use Infocyph\CacheLayer\Cluster\Transport\Pdo\PdoInvalidationTransport;
 
+/** @return array<string, array{string,string,string}> */
 $backends = static function (): array {
     $servicePassword = getenv('IC_SERVICE_PASSWORD');
     $servicePassword = $servicePassword === false ? '' : $servicePassword;
@@ -54,6 +55,9 @@ test('MySQL-family cache and invalidation identities use byte-sensitive collatio
             );
             $statement->execute([$cacheTable]);
             $collations = $statement->fetchAll(PDO::FETCH_COLUMN, 1);
+            if (!array_all($collations, is_string(...))) {
+                throw new RuntimeException('Database returned an invalid collation name.');
+            }
             expect(array_values(array_unique($collations)))->toBe(['ascii_bin']);
 
             $upper = Cache::pdo('Tenant', pdo: $pdo, table: $cacheTable);
@@ -82,6 +86,9 @@ test('MySQL-family cache and invalidation identities use byte-sensitive collatio
             );
             $statement->execute();
             $collations = $statement->fetchAll(PDO::FETCH_COLUMN, 1);
+            if (!array_all($collations, is_string(...))) {
+                throw new RuntimeException('Database returned an invalid collation name.');
+            }
             expect(array_values(array_unique($collations)))->toBe(['ascii_bin']);
 
             $transport = new PdoInvalidationTransport($pdo, initializeSchema: false);
@@ -102,6 +109,7 @@ test('MySQL-family cache and invalidation identities use byte-sensitive collatio
 
 
 
+/** @return array<string, array{string,string,string}> */
 $orderingBackends = static function (): array {
     $servicePassword = getenv('IC_SERVICE_PASSWORD');
     $servicePassword = $servicePassword === false ? '' : $servicePassword;
@@ -121,6 +129,7 @@ $orderingBackends = static function (): array {
     ];
 };
 
+/** @param array{string,string,string} $backend */
 $connectOrderingBackend = static function (array $backend): PDO {
     [$dsn, $user, $password] = $backend;
 
@@ -151,6 +160,7 @@ $removeTestFile = static function (string $path): void {
     }
 };
 
+/** @param array{string,string,string} $backend */
 $startPublisher = static function (
     array $backend,
     string $cluster,

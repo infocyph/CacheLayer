@@ -23,10 +23,14 @@ final class ScyllaSessionDouble
 
     /**
      * @return array<int, array<string, mixed>>
+     * @throws \InvalidArgumentException
      */
     public function execute(mixed $statement, mixed $options = []): array
     {
-        $cql = trim((string) $statement);
+        if (!is_string($statement)) {
+            throw new \InvalidArgumentException('Scylla test statements must be strings.');
+        }
+        $cql = trim($statement);
         $args = $this->extractArguments($options);
 
         if (str_starts_with($cql, 'CREATE TABLE')) {
@@ -37,7 +41,7 @@ final class ScyllaSessionDouble
             if (str_starts_with($cql, 'SELECT tag, generation')) {
                 $ns = (string) ($args[0] ?? '');
                 $bucket = (int) ($args[1] ?? 0);
-                $tags = array_map('strval', array_slice($args, 2));
+                $tags = array_map(static fn(int|string|null $value): string => (string) $value, array_slice($args, 2));
 
                 return array_values(array_filter(
                     $this->metadata,
@@ -126,7 +130,7 @@ final class ScyllaSessionDouble
             $this->bucketReads++;
             $ns = (string) ($args[0] ?? '');
             $bucket = (int) ($args[1] ?? 0);
-            $keys = array_map('strval', array_slice($args, 2));
+            $keys = array_map(static fn(int|string|null $value): string => (string) $value, array_slice($args, 2));
 
             return array_values(array_filter(
                 $this->rows,
@@ -153,24 +157,33 @@ final class ScyllaSessionDouble
     }
 
     /**
-     * @return array<int, mixed>
+     * @return list<int|string|null>
+     * @throws \InvalidArgumentException
      */
     private function extractArguments(mixed $options): array
     {
         if (is_array($options) && is_array($options['arguments'] ?? null)) {
-            return array_values($options['arguments']);
+            $arguments = [];
+            foreach ($options['arguments'] as $argument) {
+                if (!is_int($argument) && !is_string($argument) && $argument !== null) {
+                    throw new \InvalidArgumentException('Scylla test arguments must be scalar strings, integers or null.');
+                }
+                $arguments[] = $argument;
+            }
+
+            return $arguments;
         }
 
         return [];
     }
 
-    /** @param array<int, mixed> $row */
+    /** @param list<int|string|null> $row */
     private function rowKey(array $row): string
     {
         return (string) ($row[0] ?? '') . ':' . (int) ($row[1] ?? 0) . ':' . (string) ($row[2] ?? '');
     }
 
-    /** @param array<int, mixed> $row */
+    /** @param list<int|string|null> $row */
     private function store(array $row): void
     {
         $key = $this->rowKey($row);

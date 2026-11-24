@@ -16,6 +16,9 @@ final class MongoCollectionDouble
 
     public int $findCalls = 0;
 
+    /**
+     * @param array{_id?:string,ns?:string} $filter
+     */
     public function countDocuments(array $filter): int
     {
         $id = $filter['_id'] ?? null;
@@ -39,14 +42,18 @@ final class MongoCollectionDouble
         return $count;
     }
 
+    /**
+     * @param array{_id?:array{'$in':array<array-key,string>},ns?:string} $filter
+     * @throws InvalidArgumentException
+     */
     public function deleteMany(array $filter): void
     {
         foreach ($this->docs as $key => $doc) {
             $ids = $filter['_id']['$in'] ?? null;
-            if (is_array($ids) && !array_is_list($ids)) {
+            if ($ids !== null && !array_is_list($ids)) {
                 throw new InvalidArgumentException('MongoDB $in requires a list.');
             }
-            if (is_array($ids) && in_array($key, $ids, true)) {
+            if ($ids !== null && in_array($key, $ids, true)) {
                 unset($this->docs[$key]);
             } elseif (isset($filter['ns']) && ($doc['ns'] ?? null) === $filter['ns']) {
                 unset($this->docs[$key]);
@@ -54,16 +61,27 @@ final class MongoCollectionDouble
         }
     }
 
+    /**
+     * @param array{_id:string} $filter
+     */
     public function deleteOne(array $filter): void
     {
         unset($this->docs[$filter['_id']]);
     }
 
+    /**
+     * @param array{_id:string} $filter
+     * @return array<string,mixed>|null
+     */
     public function findOne(array $filter): ?array
     {
         return $this->docs[$filter['_id']] ?? null;
     }
 
+    /**
+     * @param array{_id:string} $filter
+     * @return array<string,mixed>|null
+     */
     public function findOneAndDelete(array $filter): ?array
     {
         $id = $filter['_id'];
@@ -73,7 +91,10 @@ final class MongoCollectionDouble
         return $document;
     }
 
-    /** @return list<array<string, mixed>> */
+    /**
+     * @param array{_id:array{'$in':list<string>}} $filter
+     * @return list<array<string, mixed>>
+     */
     public function find(array $filter): array
     {
         $this->findCalls++;
@@ -85,6 +106,10 @@ final class MongoCollectionDouble
         ));
     }
 
+    /**
+     * @param array{_id:string,...<string,mixed>} $document
+     * @throws RuntimeException
+     */
     public function insertOne(array $document): object
     {
         $id = $document['_id'];
@@ -102,15 +127,21 @@ final class MongoCollectionDouble
         };
     }
 
+    /**
+     * @param array{_id:string,payload?:mixed} $filter
+     * @param array{'$setOnInsert'?:array<string,mixed>,'$set'?:array<string,mixed>,'$inc'?:array<string,int>} $update
+     * @param array{upsert?:bool} $options
+     * @throws InvalidArgumentException
+     */
     public function updateOne(array $filter, array $update, array $options = []): object
     {
         $id = $filter['_id'];
         $existing = $this->docs[$id] ?? null;
         if (array_key_exists('payload', $filter)
-            && (!is_array($existing) || ($existing['payload'] ?? null) !== $filter['payload'])) {
+            && ($existing === null || ($existing['payload'] ?? null) !== $filter['payload'])) {
             return $this->writeResult(0);
         }
-        if ($existing === null && !($options['upsert'] ?? false)) {
+        if ($existing === null && ($options['upsert'] ?? false) !== true) {
             return $this->writeResult(0);
         }
 
@@ -119,18 +150,24 @@ final class MongoCollectionDouble
         $onInsert = $update['$setOnInsert'] ?? [];
         $set = $update['$set'] ?? [];
         $increments = $update['$inc'] ?? [];
-        if (!is_array($onInsert) || !is_array($set) || !is_array($increments)) {
-            throw new InvalidArgumentException('Invalid MongoDB update document.');
-        }
         $document = [...$document, ...$onInsert, ...$set];
         foreach ($increments as $field => $amount) {
-            $document[$field] = (int) ($document[$field] ?? 0) + (int) $amount;
+            $current = $document[$field] ?? 0;
+            if (!is_int($current)) {
+                throw new InvalidArgumentException('MongoDB test increment requires an integer field.');
+            }
+            $document[$field] = $current + $amount;
         }
         $this->docs[$id] = $document;
 
         return $this->writeResult($matched);
     }
 
+    /**
+     * @param list<array{updateOne:array{array{_id:string,payload?:mixed},array{'$setOnInsert'?:array<string,mixed>,'$set'?:array<string,mixed>,'$inc'?:array<string,int>},array{upsert?:bool}}}> $operations
+     * @param array{ordered?:bool} $options
+     * @throws InvalidArgumentException
+     */
     public function bulkWrite(array $operations, array $options = []): void
     {
         $this->bulkWrites++;

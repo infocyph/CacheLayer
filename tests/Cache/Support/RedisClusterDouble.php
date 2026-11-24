@@ -24,6 +24,7 @@ final class RedisClusterDouble
     /** @var list<bool> */
     private array $transactionResults = [];
 
+    /** @param string|list<string> $keys */
     public function del(string|array $keys): int
     {
         $deleted = 0;
@@ -37,10 +38,10 @@ final class RedisClusterDouble
         return $deleted;
     }
 
-    /** @param list<mixed> $arguments */
+    /** @param list<string> $arguments */
     public function eval(string $script, array $arguments, int $numKeys): mixed
     {
-        if ($numKeys !== 2 || !is_string($arguments[0] ?? null) || !is_string($arguments[1] ?? null)) {
+        if ($numKeys !== 2 || !isset($arguments[0], $arguments[1])) {
             return false;
         }
         $generationKey = $arguments[0];
@@ -61,7 +62,7 @@ final class RedisClusterDouble
             $expectedExisting = $arguments[3] ?? null;
             $blob = $arguments[4] ?? null;
             $ttl = (int) ($arguments[5] ?? 0);
-            if (!is_string($expectedGeneration) || !is_string($expectedExisting) || !is_string($blob)) {
+            if ($expectedGeneration === null || $expectedExisting === null || $blob === null) {
                 return false;
             }
             if ($this->get($generationKey) !== $expectedGeneration) {
@@ -87,7 +88,7 @@ final class RedisClusterDouble
         $ttl = (int) ($arguments[4] ?? 0);
         $replaceStale = ($arguments[5] ?? '0') === '1';
         $expectedExisting = $arguments[6] ?? null;
-        if (!is_string($expectedGeneration) || !is_string($blob)) {
+        if ($expectedGeneration === null || $blob === null) {
             return false;
         }
         if ($this->get($generationKey) !== $expectedGeneration) {
@@ -126,7 +127,10 @@ final class RedisClusterDouble
         return $next;
     }
 
-    /** @param list<string> $keys */
+    /**
+     * @param list<string> $keys
+     * @return list<string|false>
+     */
     public function mget(array $keys): array
     {
         $this->mgetCalls++;
@@ -150,7 +154,7 @@ final class RedisClusterDouble
             throw new RuntimeException('Redis Cluster supports MULTI transactions only.');
         }
         $this->transactionCalls++;
-        $this->transactional = $mode > 0;
+        $this->transactional = true;
         $this->transactionResults = [];
 
         return $this;

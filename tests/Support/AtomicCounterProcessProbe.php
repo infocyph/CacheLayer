@@ -27,9 +27,8 @@ final class AtomicCounterProcessProbe
             $pid = pcntl_fork();
             if ($pid === 0) {
                 $client = new \Redis();
-                $client->connect($host, $port);
-                if ($password !== '') {
-                    $client->auth($password);
+                if (!$client->connect($host, $port) || ($password !== '' && !$client->auth($password))) {
+                    throw new RuntimeException('Unable to connect atomic counter contender.');
                 }
                 $counter = $backend === 'valkey'
                     ? AtomicCounters::valkey($namespace, client: $client)
@@ -39,14 +38,21 @@ final class AtomicCounterProcessProbe
 
                 throw new RuntimeException('Unable to terminate atomic counter child process.');
             }
-            if ($pid > 0) {
-                $children[] = $pid;
+            if ($pid < 0) {
+                foreach ($children as $child) {
+                    pcntl_waitpid($child, $status);
+                }
+                throw new RuntimeException('Unable to fork all atomic counter contenders.');
             }
+            $children[] = $pid;
         }
 
         $wins = 0;
         foreach ($children as $pid) {
-            pcntl_waitpid($pid, $status);
+            $status = 0;
+            if (pcntl_waitpid($pid, $status) !== $pid || !pcntl_wifexited($status)) {
+                throw new RuntimeException('Atomic counter contender did not exit normally.');
+            }
             $wins += pcntl_wexitstatus($status) === 0 ? 1 : 0;
         }
 
