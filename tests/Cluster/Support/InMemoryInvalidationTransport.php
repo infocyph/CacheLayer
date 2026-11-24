@@ -27,7 +27,7 @@ final class InMemoryInvalidationTransport implements InvalidationTransportInspec
             static fn(InvalidationEvent $event): bool => (int) $event->id > $after,
         );
 
-        return new InvalidationBatch(array_values(array_slice($events, 0, $limit)));
+        return new InvalidationBatch(array_slice($events, 0, $limit));
     }
 
     public function discardBefore(string $cluster, int $eventId): void

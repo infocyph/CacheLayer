@@ -139,7 +139,7 @@ test('shared memory atomic set reclaims expired and tag-invalidated state', func
 test('shared memory atomic claim has one winner under process contention', function () {
     expect(function_exists('pcntl_fork'))->toBeTrue();
 
-    $namespace = 'shm-contention-' . getmypid();
+    $namespace = 'shm-contention-' . bin2hex(random_bytes(8));
     $cache = Cache::sharedMemory($namespace);
     $cache->clear();
     $directory = sys_get_temp_dir() . '/cachelayer-shm-contention-' . uniqid('', true);
@@ -152,24 +152,31 @@ test('shared memory atomic claim has one winner under process contention', funct
             $workerCache = Cache::sharedMemory($namespace);
             $atomic = $workerCache->atomic();
             $won = $atomic?->setIfAbsent('claim', $worker, 30) === true;
-            file_put_contents($directory . '/' . getmypid(), $won ? '1' : '0');
+            if (file_put_contents($directory . '/' . $worker, $won ? '1' : '0') === false) {
+                exit(2);
+            }
             exit(0);
         }
-        if ($pid > 0) {
-            $children[] = $pid;
+        if ($pid < 0) {
+            throw new RuntimeException('Unable to fork a cache contention process.');
         }
+        $children[] = $pid;
     }
 
     foreach ($children as $pid) {
         $status = 0;
-        if (pcntl_waitpid($pid, $status) !== $pid || !pcntl_wifexited($status)) {
+        if (pcntl_waitpid($pid, $status) !== $pid || !is_int($status) || !pcntl_wifexited($status)) {
             throw new RuntimeException('Shared-memory contender did not exit normally.');
         }
         expect(pcntl_wexitstatus($status))->toBe(0);
     }
 
     $wins = 0;
-    foreach (glob($directory . '/*') ?: [] as $file) {
+    $files = glob($directory . '/*');
+    if ($files === false) {
+        throw new RuntimeException('Unable to enumerate cache test files.');
+    }
+    foreach ($files as $file) {
         $wins += file_get_contents($file) === '1' ? 1 : 0;
         unlink($file);
     }

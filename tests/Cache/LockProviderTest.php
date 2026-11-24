@@ -17,7 +17,7 @@ test('file locks retain ownership until release and support lease refresh', func
         $handle = $first->acquire('worker:reports', 0.0, 0.05);
 
         expect($handle)->not->toBeNull()
-            ->and($handle?->leaseSeconds)->toBe(0.05)
+            ->and($handle->leaseSeconds)->toBe(0.05)
             ->and($first->refresh($handle, 0.05))->toBeTrue();
 
         usleep(75_000);
@@ -30,7 +30,11 @@ test('file locks retain ownership until release and support lease refresh', func
         expect($replacement)->not->toBeNull();
         $second->release($replacement);
     } finally {
-        foreach (glob($directory . '/*.lock') ?: [] as $file) {
+        $files = glob($directory . '/*.lock');
+        if ($files === false) {
+            throw new RuntimeException('Unable to enumerate cache test files.');
+        }
+        foreach ($files as $file) {
             unlink($file);
         }
         if (is_dir($directory)) {
@@ -65,7 +69,11 @@ test('file lock registry keeps identical keys in different directories independe
         $second->release($secondHandle);
     } finally {
         foreach ([$firstDirectory, $secondDirectory] as $directory) {
-            foreach (glob($directory . '/*.lock') ?: [] as $file) {
+            $files = glob($directory . '/*.lock');
+            if ($files === false) {
+                throw new RuntimeException('Unable to enumerate cache test files.');
+            }
+            foreach ($files as $file) {
                 unlink($file);
             }
             if (is_dir($directory)) {
@@ -96,7 +104,11 @@ test('sqlite PDO locks use the shared file-lock fallback', function (): void {
         expect($replacement)->not->toBeNull();
         $second->release($replacement);
     } finally {
-        foreach (glob($directory . '/*.lock') ?: [] as $file) {
+        $files = glob($directory . '/*.lock');
+        if ($files === false) {
+            throw new RuntimeException('Unable to enumerate cache test files.');
+        }
+        foreach ($files as $file) {
             unlink($file);
         }
         if (is_dir($directory)) {

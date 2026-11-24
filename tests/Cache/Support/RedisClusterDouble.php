@@ -121,7 +121,8 @@ final class RedisClusterDouble
 
     public function incr(string $key): int
     {
-        $next = (int) ($this->get($key) ?: 0) + 1;
+        $current = $this->get($key);
+        $next = ($current === false ? 0 : (int) $current) + 1;
         $this->set($key, (string) $next);
 
         return $next;

@@ -522,12 +522,18 @@ test('node APCu identity includes the SQLite store', function () use (&$nodeFixt
 });
 
 test('node lock identity includes the SQLite store', function () use (&$nodeFixtureDirectory): void {
-    $keys = [];
-    $provider = new class ($keys) implements LockProviderInterface {
-        public function __construct(private array &$keys) {}
+    $provider = new class implements LockProviderInterface {
+        /** @var list<string> */
+        private array $keys = [];
+
+        /** @return list<string> */
+        public function keys(): array
+        {
+            return $this->keys;
+        }
 
         #[\Override]
-        public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): ?LockHandle
+        public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): LockHandle
         {
             unset($waitSeconds);
             $this->keys[] = $key;
@@ -555,6 +561,7 @@ test('node lock identity includes the SQLite store', function () use (&$nodeFixt
         $cache->remember('same-key', static fn(): string => 'value', 30);
     }
 
+    $keys = $provider->keys();
     expect($keys)->toHaveCount(2)
         ->and($keys[0])->not->toBe($keys[1]);
 });

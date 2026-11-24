@@ -7,7 +7,7 @@ use Infocyph\CacheLayer\Cluster\Transport\Pdo\PdoInvalidationTransport;
 
 require dirname(__DIR__, 3) . '/vendor/autoload.php';
 
-if (count($argv) !== 11) {
+if (count($argv) !== 11 || !isset($argv[10])) {
     throw new RuntimeException('Invalid concurrent invalidation publisher arguments.');
 }
 

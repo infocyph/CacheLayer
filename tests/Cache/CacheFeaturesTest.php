@@ -173,7 +173,7 @@ test('file tag rotations remain valid during concurrent updates', function () us
     }
     foreach ($children as $pid) {
         $status = 0;
-        if (pcntl_waitpid($pid, $status) !== $pid || !pcntl_wifexited($status)) {
+        if (pcntl_waitpid($pid, $status) !== $pid || !is_int($status) || !pcntl_wifexited($status)) {
             throw new RuntimeException('Tag rotation worker did not exit normally.');
         }
         expect(pcntl_wexitstatus($status))->toBe(0);
@@ -310,10 +310,15 @@ test('remember never stores after lock ownership is lost', function (): void {
 });
 
 test('remember lock identities include the cache namespace', function (): void {
-    $keys = [];
-    $provider = new class($keys) implements LockProviderInterface {
-        /** @param list<string> $keys */
-        public function __construct(private array &$keys) {}
+    $provider = new class implements LockProviderInterface {
+        /** @var list<string> */
+        private array $keys = [];
+
+        /** @return list<string> */
+        public function keys(): array
+        {
+            return $this->keys;
+        }
 
         #[\Override]
         public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): LockHandle
@@ -339,6 +344,7 @@ test('remember lock identities include the cache namespace', function (): void {
     Cache::memory('tenant-a')->setLockProvider($provider)->remember('same', fn(): int => 1);
     Cache::memory('tenant-b')->setLockProvider($provider)->remember('same', fn(): int => 2);
 
+    $keys = $provider->keys();
     expect($keys)->toHaveCount(2)
         ->and($keys[0])->not->toBe($keys[1]);
 });

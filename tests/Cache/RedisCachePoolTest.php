@@ -255,14 +255,17 @@ test('Redis atomic claims have one winner under process contention', function ()
             $cache = Cache::redis('tests', sprintf('redis://%s:%d', $redisHost, $redisPort), $client);
             $finishForkedTest($cache->atomic()?->setIfAbsent('contended', (string) $worker, 30) === true);
         }
-        if ($pid > 0) {
-            $children[] = $pid;
+        if ($pid < 0) {
+            throw new RuntimeException('Unable to fork a cache contention process.');
         }
+        $children[] = $pid;
     }
 
     $wins = 0;
     foreach ($children as $pid) {
-        pcntl_waitpid($pid, $status);
+        if (pcntl_waitpid($pid, $status) !== $pid || !is_int($status) || !pcntl_wifexited($status)) {
+            throw new RuntimeException('Redis contention process did not exit normally.');
+        }
         $wins += pcntl_wexitstatus($status) === 0 ? 1 : 0;
     }
 
@@ -296,14 +299,17 @@ test('Redis atomic compare and set has one winner under process contention', fun
             $cache = Cache::redis('tests', sprintf('redis://%s:%d', $redisHost, $redisPort), $client);
             $finishForkedTest($cache->atomic()?->compareAndSet('cas-contended', 0, $worker, 30) === true);
         }
-        if ($pid > 0) {
-            $children[] = $pid;
+        if ($pid < 0) {
+            throw new RuntimeException('Unable to fork a cache contention process.');
         }
+        $children[] = $pid;
     }
 
     $wins = 0;
     foreach ($children as $pid) {
-        pcntl_waitpid($pid, $status);
+        if (pcntl_waitpid($pid, $status) !== $pid || !is_int($status) || !pcntl_wifexited($status)) {
+            throw new RuntimeException('Redis contention process did not exit normally.');
+        }
         $wins += pcntl_wexitstatus($status) === 0 ? 1 : 0;
     }
 
@@ -339,14 +345,17 @@ test('Redis atomic consumption has one winner under process contention', functio
             $cache = Cache::redis('tests', sprintf('redis://%s:%d', $redisHost, $redisPort), $client);
             $finishForkedTest($cache->atomic()?->getAndDelete('consume-once', '__missing__') === 'payload');
         }
-        if ($pid > 0) {
-            $children[] = $pid;
+        if ($pid < 0) {
+            throw new RuntimeException('Unable to fork a cache contention process.');
         }
+        $children[] = $pid;
     }
 
     $wins = 0;
     foreach ($children as $pid) {
-        pcntl_waitpid($pid, $status);
+        if (pcntl_waitpid($pid, $status) !== $pid || !is_int($status) || !pcntl_wifexited($status)) {
+            throw new RuntimeException('Redis contention process did not exit normally.');
+        }
         $wins += pcntl_wexitstatus($status) === 0 ? 1 : 0;
     }
 
@@ -479,11 +488,14 @@ test('Redis compare-safe cleanup preserves a concurrent replacement', function (
     $key = 'cachelayer:guard:stale-read';
     $redisFixtureRedisClient->set($key, 'observed-invalid');
     $observed = $redisFixtureRedisClient->get($key);
+    if (!is_string($observed)) {
+        throw new RuntimeException('Redis did not return the seeded string value.');
+    }
     expect($observed)->toBe('observed-invalid');
 
     $redisFixtureRedisClient->set($key, 'replacement');
 
-    expect(RedisValueGuard::deleteIfUnchanged($redisFixtureRedisClient, $key, (string) $observed))->toBeFalse()
+    expect(RedisValueGuard::deleteIfUnchanged($redisFixtureRedisClient, $key, $observed))->toBeFalse()
         ->and($redisFixtureRedisClient->get($key))->toBe('replacement');
 });
 
@@ -550,7 +562,11 @@ test('Redis Stream recovery clears stale local state after complete history loss
             ->and($runtime->recoverIfRequired())->toBeFalse();
     } finally {
         if (is_dir($directory)) {
-            foreach (glob($directory . '/*') ?: [] as $file) {
+            $files = glob($directory . '/*');
+            if ($files === false) {
+                throw new RuntimeException('Unable to enumerate cache test files.');
+            }
+            foreach ($files as $file) {
                 if (is_file($file)) {
                     unlink($file);
                 }
