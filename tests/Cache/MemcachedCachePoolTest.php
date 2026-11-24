@@ -190,11 +190,7 @@ test('Memcached long TTLs remain relative at the CacheLayer boundary', function 
 
 test('Memcached atomic writes and leases normalize long TTLs', function () use (&$memcachedFixtureCache, &$memcachedFixtureClient): void {
     $longTtl = 2_592_001;
-    $atomic = $memcachedFixtureCache->atomic();
-    expect($atomic)->not->toBeNull();
-    if ($atomic === null) {
-        return;
-    }
+    $atomic = $memcachedFixtureCache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
 
     expect($atomic->setIfAbsent('atomic-long', 'first', $longTtl))->toBeTrue()
         ->and($memcachedFixtureCache->get('atomic-long'))->toBe('first')

@@ -181,10 +181,9 @@ test('Redis exposes native atomic cache capability', function () use (&$redisFix
 });
 
 test('Redis setIfAbsent is conditional and TTL-aware', function () use (&$redisFixtureCache): void {
-    $atomic = $redisFixtureCache->atomic();
+    $atomic = $redisFixtureCache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
 
-    expect($atomic)->not->toBeNull()
-        ->and($atomic->setIfAbsent('claim', 'first', 1))->toBeTrue()
+    expect($atomic->setIfAbsent('claim', 'first', 1))->toBeTrue()
         ->and($atomic->setIfAbsent('claim', 'second', 30))->toBeFalse()
         ->and($redisFixtureCache->get('claim'))->toBe('first');
 
@@ -195,9 +194,7 @@ test('Redis setIfAbsent is conditional and TTL-aware', function () use (&$redisF
 });
 
 test('Redis setIfAbsent can replace a stale tagged physical record', function () use (&$redisFixtureCache): void {
-    $atomic = $redisFixtureCache->atomic();
-
-    expect($atomic)->not->toBeNull();
+    $atomic = $redisFixtureCache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
     $redisFixtureCache->setTagged('claim', 'stale', ['group']);
     $redisFixtureCache->invalidateTag('group');
 
@@ -206,9 +203,7 @@ test('Redis setIfAbsent can replace a stale tagged physical record', function ()
 });
 
 test('Redis compareAndSet strictly replaces one live untagged value', function () use (&$redisFixtureCache): void {
-    $atomic = $redisFixtureCache->atomic();
-
-    expect($atomic)->not->toBeNull();
+    $atomic = $redisFixtureCache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
     $redisFixtureCache->set('version', 1, 30);
 
     expect($atomic->compareAndSet('version', '1', 2, 30))->toBeFalse()
@@ -218,9 +213,7 @@ test('Redis compareAndSet strictly replaces one live untagged value', function (
 });
 
 test('Redis compareAndSet does not claim atomic tag coordination', function () use (&$redisFixtureCache): void {
-    $atomic = $redisFixtureCache->atomic();
-
-    expect($atomic)->not->toBeNull();
+    $atomic = $redisFixtureCache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
     $redisFixtureCache->setTagged('tagged', 'old', ['group'], 30);
 
     expect($atomic->compareAndSet('tagged', 'old', 'new', 30))->toBeFalse()
@@ -228,9 +221,7 @@ test('Redis compareAndSet does not claim atomic tag coordination', function () u
 });
 
 test('Redis getAndDelete consumes one value atomically', function () use (&$redisFixtureCache): void {
-    $atomic = $redisFixtureCache->atomic();
-
-    expect($atomic)->not->toBeNull();
+    $atomic = $redisFixtureCache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
     $redisFixtureCache->set('one-time', null, 30);
 
     expect($atomic->getAndDelete('one-time', 'missing'))->toBeNull()
@@ -239,8 +230,7 @@ test('Redis getAndDelete consumes one value atomically', function () use (&$redi
 });
 
 test('Redis atomic claims have one winner under process contention', function () use ($redisHost, $redisPort, $redisPassword, $finishForkedTest, &$redisFixtureCache): void {
-    $atomic = $redisFixtureCache->atomic();
-    expect($atomic)->not->toBeNull();
+    $atomic = $redisFixtureCache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
 
     if (!function_exists('pcntl_fork')) {
         $wins = 0;
@@ -280,8 +270,7 @@ test('Redis atomic claims have one winner under process contention', function ()
 });
 
 test('Redis atomic compare and set has one winner under process contention', function () use ($redisHost, $redisPort, $redisPassword, $finishForkedTest, &$redisFixtureCache): void {
-    $atomic = $redisFixtureCache->atomic();
-    expect($atomic)->not->toBeNull();
+    $atomic = $redisFixtureCache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
     $redisFixtureCache->set('cas-contended', 0, 30);
 
     if (!function_exists('pcntl_fork')) {
@@ -324,8 +313,7 @@ test('Redis atomic compare and set has one winner under process contention', fun
 });
 
 test('Redis atomic consumption has one winner under process contention', function () use ($redisHost, $redisPort, $redisPassword, $finishForkedTest, &$redisFixtureCache): void {
-    $atomic = $redisFixtureCache->atomic();
-    expect($atomic)->not->toBeNull();
+    $atomic = $redisFixtureCache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
     $redisFixtureCache->set('consume-once', 'payload', 30);
 
     if (!function_exists('pcntl_fork')) {
@@ -445,9 +433,9 @@ test('Redis atomic counters expire fixed windows', function () use (&$redisFixtu
 
 
 test('Redis atomic consume discards deferred overlays without resurrection', function () use (&$redisFixtureCache): void {
-    $atomic = $redisFixtureCache->atomic();
-    expect($atomic)->not->toBeNull()
-        ->and($redisFixtureCache->set('deferred-consume', 'stored'))->toBeTrue()
+    $atomic = $redisFixtureCache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
+
+    expect($redisFixtureCache->set('deferred-consume', 'stored'))->toBeTrue()
         ->and($redisFixtureCache->saveDeferred($redisFixtureCache->getItem('deferred-consume')->set('pending')))->toBeTrue()
         ->and($atomic->getAndDelete('deferred-consume', 'missing'))->toBe('stored')
         ->and($atomic->getAndDelete('deferred-consume', 'missing'))->toBe('missing')
@@ -618,7 +606,7 @@ test('Redis incomplete bulk responses are backend failures rather than ordinary 
     $client = $this->createMock(Redis::class);
     $client->method('mget')->willReturn([false]);
     $adapter = new \Infocyph\CacheLayer\Cache\Adapter\RedisCacheAdapter('incomplete', client: $client);
-    $closed = new Cache($adapter);
+    $closed = new Cache($adapter, options: new CacheOptions(failOpen: false));
     expect(fn (): iterable => $closed->getMultiple(['one', 'two']))
         ->toThrow(\Infocyph\CacheLayer\Exceptions\CacheBackendException::class);
     expect(fn (): array => $adapter->getTagGenerations(['one', 'two']))

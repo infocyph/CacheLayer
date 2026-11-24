@@ -50,12 +50,10 @@ test('shared memory namespace clear cannot affect another namespace', function (
 test('shared memory exposes atomic capability across instances', function () {
     $first = Cache::sharedMemory('shm-atomic');
     $second = Cache::sharedMemory('shm-atomic');
-    $firstAtomic = $first->atomic();
-    $secondAtomic = $second->atomic();
+    $firstAtomic = $first->atomic() ?? throw new \RuntimeException('The first store must support atomic operations.');
+    $secondAtomic = $second->atomic() ?? throw new \RuntimeException('The second store must support atomic operations.');
 
-    expect($firstAtomic)->toBeInstanceOf(AtomicCacheInterface::class)
-        ->and($secondAtomic)->toBeInstanceOf(AtomicCacheInterface::class)
-        ->and($firstAtomic->setIfAbsent('claim', 'first', 30))->toBeTrue()
+    expect($firstAtomic->setIfAbsent('claim', 'first', 30))->toBeTrue()
         ->and($secondAtomic->setIfAbsent('claim', 'second', 30))->toBeFalse()
         ->and($second->get('claim'))->toBe('first');
 
@@ -65,8 +63,7 @@ test('shared memory exposes atomic capability across instances', function () {
 test('shared memory compare-and-set is strict and visible across instances', function () {
     $first = Cache::sharedMemory('shm-cas');
     $second = Cache::sharedMemory('shm-cas');
-    $atomic = $second->atomic();
-    expect($atomic)->not->toBeNull();
+    $atomic = $second->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
     $first->set('state', 1, 30);
 
     expect($atomic->compareAndSet('state', '1', 2, 30))->toBeFalse()
@@ -79,8 +76,7 @@ test('shared memory compare-and-set is strict and visible across instances', fun
 
 test('shared memory compare-and-set validates tagged state inside its lock domain', function () {
     $cache = Cache::sharedMemory('shm-tagged-cas');
-    $atomic = $cache->atomic();
-    expect($atomic)->not->toBeNull();
+    $atomic = $cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
 
     $cache->setTagged('current', 'v1', ['group-current'], 30);
     expect($atomic->compareAndSet('current', 'v1', 'v2', 30))->toBeTrue()
@@ -95,8 +91,7 @@ test('shared memory compare-and-set validates tagged state inside its lock domai
 
 test('shared memory compare-and-set replacement honors ttl', function () {
     $cache = Cache::sharedMemory('shm-cas-ttl');
-    $atomic = $cache->atomic();
-    expect($atomic)->not->toBeNull();
+    $atomic = $cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
     $cache->set('state', 'v1', 30);
 
     expect($atomic->compareAndSet('state', 'v1', 'v2', 1))->toBeTrue();
@@ -109,8 +104,7 @@ test('shared memory compare-and-set replacement honors ttl', function () {
 test('shared memory atomic consume returns a value exactly once across instances', function () {
     $first = Cache::sharedMemory('shm-consume');
     $second = Cache::sharedMemory('shm-consume');
-    $atomic = $second->atomic();
-    expect($atomic)->not->toBeNull();
+    $atomic = $second->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
     $first->set('state', ['ok' => true], 30);
 
     expect($atomic->getAndDelete('state', 'missing'))->toBe(['ok' => true])
@@ -122,8 +116,7 @@ test('shared memory atomic consume returns a value exactly once across instances
 
 test('shared memory atomic set reclaims expired and tag-invalidated state', function () {
     $cache = Cache::sharedMemory('shm-stale');
-    $atomic = $cache->atomic();
-    expect($atomic)->not->toBeNull();
+    $atomic = $cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
 
     $cache->set('expired', 'old', 1);
     usleep(2_000_000);
@@ -183,9 +176,9 @@ test('shared memory atomic claim has one winner under process contention', funct
 
 test('shared memory atomic consume discards deferred overlays without resurrection', function () {
     $cache = Cache::sharedMemory('shm-deferred-consume');
-    $atomic = $cache->atomic();
-    expect($atomic)->not->toBeNull()
-        ->and($cache->set('state', 'stored'))->toBeTrue()
+    $atomic = $cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
+
+    expect($cache->set('state', 'stored'))->toBeTrue()
         ->and($cache->saveDeferred($cache->getItem('state')->set('pending')))->toBeTrue()
         ->and($atomic->getAndDelete('state', 'missing'))->toBe('stored')
         ->and($atomic->getAndDelete('state', 'missing'))->toBe('missing')

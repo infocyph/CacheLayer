@@ -76,18 +76,16 @@ test('valkey adapter supports remember lock path', function () use (&$valkeyFixt
 });
 
 test('valkey exposes Redis-compatible atomic capability', function () use (&$valkeyFixtureCache): void {
-    $atomic = $valkeyFixtureCache->atomic();
+    $atomic = $valkeyFixtureCache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
 
-    expect($atomic)->toBeInstanceOf(AtomicCacheInterface::class)
-        ->and($atomic->setIfAbsent('claim', 'first', 30))->toBeTrue()
+    expect($atomic->setIfAbsent('claim', 'first', 30))->toBeTrue()
         ->and($atomic->setIfAbsent('claim', 'second', 30))->toBeFalse()
         ->and($atomic->getAndDelete('claim', 'missing'))->toBe('first')
         ->and($atomic->getAndDelete('claim', 'missing'))->toBe('missing');
 });
 
 test('valkey atomic compare-and-set is strict and rejects tagged state', function () use (&$valkeyFixtureCache): void {
-    $atomic = $valkeyFixtureCache->atomic();
-    expect($atomic)->not->toBeNull();
+    $atomic = $valkeyFixtureCache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
     $valkeyFixtureCache->set('cas', 1, 30);
 
     expect($atomic->compareAndSet('cas', '1', 2, 30))->toBeFalse()
@@ -102,8 +100,7 @@ test('valkey atomic compare-and-set is strict and rejects tagged state', functio
 });
 
 test('valkey atomic compare-and-set replacement honors ttl', function () use (&$valkeyFixtureCache): void {
-    $atomic = $valkeyFixtureCache->atomic();
-    expect($atomic)->not->toBeNull();
+    $atomic = $valkeyFixtureCache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
     $valkeyFixtureCache->set('cas-ttl', 'v1', 30);
 
     expect($atomic->compareAndSet('cas-ttl', 'v1', 'v2', 1))->toBeTrue();
@@ -113,9 +110,9 @@ test('valkey atomic compare-and-set replacement honors ttl', function () use (&$
 });
 
 test('valkey atomic ttl permits a later claim', function () use (&$valkeyFixtureCache): void {
-    $atomic = $valkeyFixtureCache->atomic();
-    expect($atomic)->not->toBeNull()
-        ->and($atomic->setIfAbsent('claim', 'first', 1))->toBeTrue();
+    $atomic = $valkeyFixtureCache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
+
+    expect($atomic->setIfAbsent('claim', 'first', 1))->toBeTrue();
     usleep(2_000_000);
 
     expect($atomic->setIfAbsent('claim', 'second', 30))->toBeTrue()
@@ -174,9 +171,9 @@ test('Valkey atomic counters expire fixed windows', function () use (&$valkeyFix
 
 
 test('Valkey atomic consume discards deferred overlays without resurrection', function () use (&$valkeyFixtureCache): void {
-    $atomic = $valkeyFixtureCache->atomic();
-    expect($atomic)->not->toBeNull()
-        ->and($valkeyFixtureCache->set('deferred-consume', 'stored'))->toBeTrue()
+    $atomic = $valkeyFixtureCache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
+
+    expect($valkeyFixtureCache->set('deferred-consume', 'stored'))->toBeTrue()
         ->and($valkeyFixtureCache->saveDeferred($valkeyFixtureCache->getItem('deferred-consume')->set('pending')))->toBeTrue()
         ->and($atomic->getAndDelete('deferred-consume', 'missing'))->toBe('stored')
         ->and($atomic->getAndDelete('deferred-consume', 'missing'))->toBe('missing')

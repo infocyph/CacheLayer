@@ -17,10 +17,10 @@ use RuntimeException;
 
 final class ArchitectureHardeningTest extends AbstractCacheAdapter
 {
-    /** @var array<string, array{value:mixed,expires:int|null,tags:array<string,string>}> */
+    /** @var array<string, array{value:mixed,expires:int|null,tags:array<int|string,string>}> */
     private array $records = [];
 
-    /** @var array<string, string> */
+    /** @var array<int|string, string> */
     private array $generations = [];
 
     public int $deleteBatches = 0;
@@ -107,10 +107,8 @@ final class ArchitectureHardeningTest extends AbstractCacheAdapter
     public function saveItems(array $items): bool
     {
         $this->saveBatches++;
-        foreach ($items as $item) {
-            if (!$this->supportsItem($item)) {
-                return false;
-            }
+        if (!$this->supportsItems($items)) {
+            return false;
         }
         foreach ($items as $item) {
             $ttl = $item instanceof CacheItem ? $item->ttlSeconds() : null;

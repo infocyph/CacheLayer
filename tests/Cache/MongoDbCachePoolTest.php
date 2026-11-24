@@ -193,17 +193,15 @@ test('mongodb uses one native bulk write and one $in read', function () use ($mo
 });
 
 test('mongodb exposes atomic cache capability with one-winner semantics', function () use ($mongoFixture): void {
-    $atomic = $mongoFixture->cache->atomic();
+    $atomic = $mongoFixture->cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
 
-    expect($atomic)->toBeInstanceOf(AtomicCacheInterface::class)
-        ->and($atomic->setIfAbsent('claim', 'first', 30))->toBeTrue()
+    expect($atomic->setIfAbsent('claim', 'first', 30))->toBeTrue()
         ->and($atomic->setIfAbsent('claim', 'second', 30))->toBeFalse()
         ->and($mongoFixture->cache->get('claim'))->toBe('first');
 });
 
 test('mongodb atomic compare-and-set uses strict live-value semantics', function () use ($mongoFixture): void {
-    $atomic = $mongoFixture->cache->atomic();
-    expect($atomic)->not->toBeNull();
+    $atomic = $mongoFixture->cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
     $mongoFixture->cache->set('cas', 1, 30);
 
     expect($atomic->compareAndSet('cas', '1', 2, 30))->toBeFalse()
@@ -213,8 +211,7 @@ test('mongodb atomic compare-and-set uses strict live-value semantics', function
 });
 
 test('mongodb atomic compare-and-set rejects tagged state', function () use ($mongoFixture): void {
-    $atomic = $mongoFixture->cache->atomic();
-    expect($atomic)->not->toBeNull();
+    $atomic = $mongoFixture->cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
     $mongoFixture->cache->setTagged('tagged', 'v1', ['group'], 30);
 
     expect($atomic->compareAndSet('tagged', 'v1', 'v2', 30))->toBeFalse()
@@ -222,8 +219,7 @@ test('mongodb atomic compare-and-set rejects tagged state', function () use ($mo
 });
 
 test('mongodb atomic compare-and-set replacement honors ttl', function () use ($mongoFixture): void {
-    $atomic = $mongoFixture->cache->atomic();
-    expect($atomic)->not->toBeNull();
+    $atomic = $mongoFixture->cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
     $mongoFixture->cache->set('cas-ttl', 'v1', 30);
 
     expect($atomic->compareAndSet('cas-ttl', 'v1', 'v2', 1))->toBeTrue();
@@ -233,8 +229,7 @@ test('mongodb atomic compare-and-set replacement honors ttl', function () use ($
 });
 
 test('mongodb atomic set replaces expired state', function () use ($mongoFixture): void {
-    $atomic = $mongoFixture->cache->atomic();
-    expect($atomic)->not->toBeNull();
+    $atomic = $mongoFixture->cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
     $mongoFixture->cache->set('claim', 'old', 1);
     usleep(2_000_000);
 
@@ -243,8 +238,7 @@ test('mongodb atomic set replaces expired state', function () use ($mongoFixture
 });
 
 test('mongodb atomic consume returns one live value', function () use ($mongoFixture): void {
-    $atomic = $mongoFixture->cache->atomic();
-    expect($atomic)->not->toBeNull();
+    $atomic = $mongoFixture->cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
     $mongoFixture->cache->set('consume', ['ok' => true], 30);
 
     expect($atomic->getAndDelete('consume', 'missing'))->toBe(['ok' => true])
@@ -252,8 +246,7 @@ test('mongodb atomic consume returns one live value', function () use ($mongoFix
 });
 
 test('mongodb atomic set can reclaim tag-invalidated state', function () use ($mongoFixture): void {
-    $atomic = $mongoFixture->cache->atomic();
-    expect($atomic)->not->toBeNull();
+    $atomic = $mongoFixture->cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
     $mongoFixture->cache->setTagged('claim', 'old', ['group'], 30);
     $mongoFixture->cache->invalidateTag('group');
 
@@ -263,9 +256,9 @@ test('mongodb atomic set can reclaim tag-invalidated state', function () use ($m
 
 
 test('mongodb atomic consume discards deferred overlays without resurrection', function () use ($mongoFixture): void {
-    $atomic = $mongoFixture->cache->atomic();
-    expect($atomic)->not->toBeNull()
-        ->and($mongoFixture->cache->set('deferred-consume', 'stored'))->toBeTrue()
+    $atomic = $mongoFixture->cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
+
+    expect($mongoFixture->cache->set('deferred-consume', 'stored'))->toBeTrue()
         ->and($mongoFixture->cache->saveDeferred($mongoFixture->cache->getItem('deferred-consume')->set('pending')))->toBeTrue()
         ->and($atomic->getAndDelete('deferred-consume', 'missing'))->toBe('stored')
         ->and($atomic->getAndDelete('deferred-consume', 'missing'))->toBe('missing')

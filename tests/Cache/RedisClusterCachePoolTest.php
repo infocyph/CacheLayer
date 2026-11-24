@@ -283,17 +283,15 @@ test('missing bucket generation cannot resurrect data written before clear', fun
 });
 
 test('redis cluster exposes atomic capability with one-winner semantics', function () use ($redisClusterFixture): void {
-    $atomic = $redisClusterFixture->cache->atomic();
+    $atomic = $redisClusterFixture->cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
 
-    expect($atomic)->toBeInstanceOf(AtomicCacheInterface::class)
-        ->and($atomic->setIfAbsent('claim', 'first', 30))->toBeTrue()
+    expect($atomic->setIfAbsent('claim', 'first', 30))->toBeTrue()
         ->and($atomic->setIfAbsent('claim', 'second', 30))->toBeFalse()
         ->and($redisClusterFixture->cache->get('claim'))->toBe('first');
 });
 
 test('redis cluster atomic compare-and-set uses strict live-value semantics', function () use ($redisClusterFixture): void {
-    $atomic = $redisClusterFixture->cache->atomic();
-    expect($atomic)->not->toBeNull();
+    $atomic = $redisClusterFixture->cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
     $redisClusterFixture->cache->set('cas', 1, 30);
 
     expect($atomic->compareAndSet('cas', '1', 2, 30))->toBeFalse()
@@ -303,8 +301,7 @@ test('redis cluster atomic compare-and-set uses strict live-value semantics', fu
 });
 
 test('redis cluster atomic compare-and-set rejects tagged and cleared values', function () use ($redisClusterFixture): void {
-    $atomic = $redisClusterFixture->cache->atomic();
-    expect($atomic)->not->toBeNull();
+    $atomic = $redisClusterFixture->cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
 
     $redisClusterFixture->cache->setTagged('tagged', 'v1', ['group'], 30);
     expect($atomic->compareAndSet('tagged', 'v1', 'v2', 30))->toBeFalse();
@@ -316,8 +313,7 @@ test('redis cluster atomic compare-and-set rejects tagged and cleared values', f
 });
 
 test('redis cluster atomic compare-and-set replacement honors ttl', function () use ($redisClusterFixture): void {
-    $atomic = $redisClusterFixture->cache->atomic();
-    expect($atomic)->not->toBeNull();
+    $atomic = $redisClusterFixture->cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
     $redisClusterFixture->cache->set('cas-ttl', 'v1', 30);
 
     expect($atomic->compareAndSet('cas-ttl', 'v1', 'v2', 1))->toBeTrue();
@@ -327,8 +323,7 @@ test('redis cluster atomic compare-and-set replacement honors ttl', function () 
 });
 
 test('redis cluster atomic consume returns a value once', function () use ($redisClusterFixture): void {
-    $atomic = $redisClusterFixture->cache->atomic();
-    expect($atomic)->not->toBeNull();
+    $atomic = $redisClusterFixture->cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
     $redisClusterFixture->cache->set('consume', ['ok' => true], 30);
 
     expect($atomic->getAndDelete('consume', 'missing'))->toBe(['ok' => true])
@@ -336,8 +331,7 @@ test('redis cluster atomic consume returns a value once', function () use ($redi
 });
 
 test('redis cluster atomic set replaces data invalidated by clear', function () use ($redisClusterFixture): void {
-    $atomic = $redisClusterFixture->cache->atomic();
-    expect($atomic)->not->toBeNull();
+    $atomic = $redisClusterFixture->cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
     $redisClusterFixture->cache->set('claim', 'stale', 30);
     $redisClusterFixture->cache->clear();
 
@@ -346,8 +340,7 @@ test('redis cluster atomic set replaces data invalidated by clear', function () 
 });
 
 test('redis cluster atomic consume rejects data invalidated by clear', function () use ($redisClusterFixture): void {
-    $atomic = $redisClusterFixture->cache->atomic();
-    expect($atomic)->not->toBeNull();
+    $atomic = $redisClusterFixture->cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
     $redisClusterFixture->cache->set('consume', 'stale', 30);
     $redisClusterFixture->cache->clear();
 
@@ -356,9 +349,9 @@ test('redis cluster atomic consume rejects data invalidated by clear', function 
 });
 
 test('redis cluster atomic ttl expires before the next claim', function () use ($redisClusterFixture): void {
-    $atomic = $redisClusterFixture->cache->atomic();
-    expect($atomic)->not->toBeNull()
-        ->and($atomic->setIfAbsent('claim', 'first', 1))->toBeTrue();
+    $atomic = $redisClusterFixture->cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
+
+    expect($atomic->setIfAbsent('claim', 'first', 1))->toBeTrue();
     usleep(2_000_000);
 
     expect($atomic->setIfAbsent('claim', 'second', 30))->toBeTrue()
@@ -410,9 +403,9 @@ test('redis cluster generation repair fails closed without overwriting unexpecte
 
 
 test('redis cluster atomic consume discards deferred overlays without resurrection', function () use ($redisClusterFixture): void {
-    $atomic = $redisClusterFixture->cache->atomic();
-    expect($atomic)->not->toBeNull()
-        ->and($redisClusterFixture->cache->set('deferred-consume', 'stored'))->toBeTrue()
+    $atomic = $redisClusterFixture->cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
+
+    expect($redisClusterFixture->cache->set('deferred-consume', 'stored'))->toBeTrue()
         ->and($redisClusterFixture->cache->saveDeferred($redisClusterFixture->cache->getItem('deferred-consume')->set('pending')))->toBeTrue()
         ->and($atomic->getAndDelete('deferred-consume', 'missing'))->toBe('stored')
         ->and($atomic->getAndDelete('deferred-consume', 'missing'))->toBe('missing')

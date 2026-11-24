@@ -46,20 +46,18 @@ test('composite stores do not advertise atomic capability', function () {
 
 test('set if absent has one-winner semantics and preserves existing values', function () {
     $cache = Cache::memory('atomic-set-if-absent');
-    $atomic = $cache->atomic();
+    $atomic = $cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
 
-    expect($atomic)->not->toBeNull()
-        ->and($atomic->setIfAbsent('claim', 'first', 30))->toBeTrue()
+    expect($atomic->setIfAbsent('claim', 'first', 30))->toBeTrue()
         ->and($atomic->setIfAbsent('claim', 'second', 30))->toBeFalse()
         ->and($cache->get('claim'))->toBe('first');
 });
 
 test('non-positive ttl is a no-op for set if absent', function () {
     $cache = Cache::memory('atomic-zero-ttl');
-    $atomic = $cache->atomic();
+    $atomic = $cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
 
-    expect($atomic)->not->toBeNull()
-        ->and($atomic->setIfAbsent('claim', 'value', 0))->toBeFalse()
+    expect($atomic->setIfAbsent('claim', 'value', 0))->toBeFalse()
         ->and($cache->has('claim'))->toBeFalse();
 
     $cache->set('existing', 'keep');
@@ -69,9 +67,7 @@ test('non-positive ttl is a no-op for set if absent', function () {
 
 test('compare and set uses strict live-value semantics', function () {
     $cache = Cache::memory('atomic-cas');
-    $atomic = $cache->atomic();
-
-    expect($atomic)->not->toBeNull();
+    $atomic = $cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
     $cache->set('version', 1);
 
     expect($atomic->compareAndSet('version', '1', 2))->toBeFalse()
@@ -84,9 +80,7 @@ test('compare and set uses strict live-value semantics', function () {
 
 test('compare and set distinguishes absence from cached null', function () {
     $cache = Cache::memory('atomic-cas-null');
-    $atomic = $cache->atomic();
-
-    expect($atomic)->not->toBeNull();
+    $atomic = $cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
     $cache->set('nullable', null);
 
     expect($atomic->compareAndSet('missing', null, 'created'))->toBeFalse()
@@ -97,9 +91,7 @@ test('compare and set distinguishes absence from cached null', function () {
 
 test('compare and set applies replacement ttl and accepts absolute expiry', function () {
     $cache = Cache::memory('atomic-cas-ttl');
-    $atomic = $cache->atomic();
-
-    expect($atomic)->not->toBeNull();
+    $atomic = $cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
     $cache->set('claim', 'old');
 
     expect($atomic->compareAndSet('claim', 'old', 'new', new DateTimeImmutable('+1 second')))->toBeTrue()
@@ -112,9 +104,7 @@ test('compare and set applies replacement ttl and accepts absolute expiry', func
 
 test('non-positive ttl is a no-op for compare and set', function () {
     $cache = Cache::memory('atomic-cas-zero-ttl');
-    $atomic = $cache->atomic();
-
-    expect($atomic)->not->toBeNull();
+    $atomic = $cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
     $cache->set('claim', 'old');
 
     expect($atomic->compareAndSet('claim', 'old', 'new', 0))->toBeFalse()
@@ -123,9 +113,7 @@ test('non-positive ttl is a no-op for compare and set', function () {
 
 test('get and delete consumes exactly one live value including cached null', function () {
     $cache = Cache::memory('atomic-consume');
-    $atomic = $cache->atomic();
-
-    expect($atomic)->not->toBeNull();
+    $atomic = $cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
     $cache->set('nullable', null);
 
     expect($atomic->getAndDelete('nullable', 'fallback'))->toBeNull()
@@ -135,9 +123,7 @@ test('get and delete consumes exactly one live value including cached null', fun
 
 test('atomic operations reject stale tagged entries as live state', function () {
     $cache = Cache::memory('atomic-tagged');
-    $atomic = $cache->atomic();
-
-    expect($atomic)->not->toBeNull();
+    $atomic = $cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
     $cache->setTagged('claim', 'old', ['group']);
     $cache->invalidateTag('group');
 
@@ -152,10 +138,9 @@ test('atomic capability follows cache fail-open and metrics policy', function ()
         'atomic-policy',
         new CacheOptions(failOpen: false),
     )->setMetricsCollector($metrics);
-    $atomic = $cache->atomic();
+    $atomic = $cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
 
-    expect($atomic)->not->toBeNull()
-        ->and($atomic->setIfAbsent('claim', 'value'))->toBeTrue()
+    expect($atomic->setIfAbsent('claim', 'value'))->toBeTrue()
         ->and($atomic->compareAndSet('claim', 'value', 'updated'))->toBeTrue()
         ->and($atomic->getAndDelete('claim'))->toBe('updated');
 
@@ -175,8 +160,7 @@ test('atomic operations reconcile deferred state without repeated consume or res
         'atomic-deferred-policy',
         new CacheOptions(integrityKey: 'atomic-deferred-test-key'),
     );
-    $atomic = $cache->atomic();
-    expect($atomic)->not->toBeNull();
+    $atomic = $cache->atomic() ?? throw new \RuntimeException('The test requires atomic cache capability.');
 
     expect($cache->saveDeferred($cache->getItem('pending-only')->set('pending')))->toBeTrue()
         ->and($atomic->getAndDelete('pending-only', 'missing'))->toBe('missing')
