@@ -53,6 +53,8 @@ final class Memoizer
      * @param callable $callable The callable argument.
      * @param array $params The params argument.
      * @phpstan-param array<array-key, mixed> $params
+     * @throws \InvalidArgumentException
+     * @throws \LogicException
      */
     public function get(callable $callable, array $params = []): mixed
     {
@@ -81,6 +83,8 @@ final class Memoizer
      * @param callable $callable The callable argument.
      * @param array $params The params argument.
      * @phpstan-param array<array-key, mixed> $params
+     * @throws \InvalidArgumentException
+     * @throws \LogicException
      */
     public function getFor(object $object, callable $callable, array $params = []): mixed
     {

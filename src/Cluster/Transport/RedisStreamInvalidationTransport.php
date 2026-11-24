@@ -64,6 +64,9 @@ final readonly class RedisStreamInvalidationTransport implements InvalidationTra
         return new InvalidationBatch($events);
     }
 
+    /**
+     * @throws ClusterTransportException
+     */
     #[\Override]
     public function isCursorBefore(string $cursor, string $oldestAvailableId): bool
     {

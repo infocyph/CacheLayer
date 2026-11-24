@@ -63,6 +63,7 @@ final readonly class ClusterRecoveryManager
 
     /**
      * @throws ClusterCacheException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
      */
     private function clearLocalCache(): void
     {

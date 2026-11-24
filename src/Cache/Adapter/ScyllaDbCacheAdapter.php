@@ -51,6 +51,9 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
         $this->createSchemaIfMissing();
     }
 
+    /**
+     * @throws RuntimeException
+     */
     #[\Override]
     public function clear(): bool
     {
@@ -69,6 +72,9 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
         return true;
     }
 
+    /**
+     * @throws RuntimeException
+     */
     #[\Override]
     public function deleteItem(string $key): bool
     {
@@ -84,6 +90,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
     /**
      * @param array $keys The keys argument.
      * @phpstan-param array<array-key, string> $keys
+     * @throws RuntimeException
      */
     #[\Override]
     public function deleteItems(array $keys): bool
@@ -280,7 +287,10 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
         return true;
     }
 
-    /** @param array<int|string, string> $generations */
+    /**
+     * @param array<int|string, string> $generations
+     * @throws RuntimeException
+     */
     #[\Override]
     public function storeTagGenerations(array $generations): bool
     {
@@ -333,6 +343,9 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
         return $callable(...$arguments);
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function createSchemaIfMissing(): void
     {
         $this->executeCql(
@@ -469,6 +482,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
      * @param array $arguments The arguments argument.
      * @phpstan-param array<int, mixed> $arguments
      * @phpstan-return array<int, array<string, mixed>>
+     * @throws RuntimeException
      */
     private function queryRows(string $cql, array $arguments = []): array
     {
@@ -491,7 +505,11 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
         return [];
     }
 
-    /** @param list<array{0:CacheItemInterface, 1:int|null, 2:int|null}> $items */
+    /**
+     * @param list<array{0:CacheItemInterface, 1:int|null, 2:int|null}> $items
+     * @throws \InvalidArgumentException
+     * @throws RuntimeException
+     */
     private function saveBucket(int $bucket, array $items): void
     {
         $inserts = [];

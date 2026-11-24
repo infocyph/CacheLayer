@@ -26,6 +26,9 @@ final class NodeCacheBench
 
     private string $sqliteFile = '';
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     public function tearDown(): void
     {
         $this->cache = Cache::memory('node-bench-released');
@@ -119,6 +122,7 @@ final class NodeCacheBench
     /**
      * @throws \Psr\Cache\InvalidArgumentException
      * @throws \LogicException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
      */
     private function seed(): void
     {

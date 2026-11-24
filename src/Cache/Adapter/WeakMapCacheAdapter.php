@@ -267,7 +267,11 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return $this->ns . ':d:' . $key;
     }
 
-    /** @param array{ttl:int|null, expiresAt:int|null} $expires */
+    /**
+     * @param array{ttl:int|null, expiresAt:int|null} $expires
+     * @throws \InvalidArgumentException
+     * @throws \RuntimeException
+     */
     private function persistItem(CacheItemInterface $item, array $expires): bool
     {
         $mapped = $this->map($item->getKey());

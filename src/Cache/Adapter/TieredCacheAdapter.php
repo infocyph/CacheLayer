@@ -217,6 +217,9 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         return $incremented;
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     #[\Override]
     public function save(CacheItemInterface $item): bool
     {
@@ -237,7 +240,10 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         });
     }
 
-    /** @param array<string, CacheItemInterface> $items */
+    /**
+     * @param array<string, CacheItemInterface> $items
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     #[\Override]
     public function saveItems(array $items): bool
     {
@@ -265,6 +271,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
      * @param list<string> $wanted
      * @param array<string, CacheItemInterface> $fetched
      * @return array{array<string, CacheItem>, list<string>}
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
     private function extractHits(array $wanted, array $fetched): array
     {

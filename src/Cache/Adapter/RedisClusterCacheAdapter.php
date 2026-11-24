@@ -89,6 +89,9 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
         return $this->cluster;
     }
 
+    /**
+     * @throws RuntimeException
+     */
     #[\Override]
     public function getItem(string $key): CacheItem
     {
@@ -138,6 +141,7 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
     /**
      * @param list<string> $keys
      * @return array<string, CacheItem>
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
     #[\Override]
     public function multiFetch(array $keys): array
@@ -174,6 +178,8 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
 
     /**
      * @throws \Psr\Cache\InvalidArgumentException
+     * @throws RuntimeException
+     * @throws \InvalidArgumentException
      */
     #[\Override]
     public function save(CacheItemInterface $item): bool
@@ -194,7 +200,10 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
             : $this->call('setex', $this->mapData($item->getKey()), max(1, $expiration['ttl']), $blob));
     }
 
-    /** @param array<string, CacheItemInterface> $items */
+    /**
+     * @param array<string, CacheItemInterface> $items
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     #[\Override]
     public function saveItems(array $items): bool
     {
@@ -234,6 +243,7 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
      * @param list<string> $keys
      * @return array<string, CacheItem>
      * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws RuntimeException
      */
     private function fetchBucket(int $bucket, array $keys): array
     {
@@ -340,6 +350,9 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
         return $this->namespace . ':{' . $this->namespace . '-' . $bucket . '}';
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function recordTagsAreCurrent(CacheRecord $record): bool
     {
         if ($record->tags === []) {
@@ -357,7 +370,12 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
         return true;
     }
 
-    /** @param list<CacheItemInterface> $items */
+    /**
+     * @param list<CacheItemInterface> $items
+     * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     */
     private function saveBucket(int $bucket, array $items): bool
     {
         $generation = $this->namespaceGeneration($bucket);

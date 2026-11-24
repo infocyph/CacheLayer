@@ -46,6 +46,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
 
     /**
      * @throws CacheInvalidArgumentException
+     * @throws \LogicException
      */
     public function __construct(
         private readonly InternalCachePoolInterface $adapter,
@@ -207,6 +208,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
 
     /**
      * @throws CacheInvalidArgumentException
+     * @throws \RuntimeException
      */
     public static function phpFiles(
         string $namespace = 'default',
@@ -315,6 +317,11 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         );
     }
 
+    /**
+     * @throws \RuntimeException
+     * @throws CacheInvalidArgumentException
+     * @throws \Infocyph\CacheLayer\Cache\Lock\UnsupportedPdoLockDriver
+     */
     public static function sqlite(
         string $namespace = 'default',
         ?string $file = null,
@@ -416,6 +423,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
 
     /**
      * @throws CacheBackendException
+     * @throws CacheInvalidArgumentException
      */
     #[\Override]
     public function delete(string $key): bool
@@ -429,6 +437,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
 
     /**
      * @throws \Psr\SimpleCache\InvalidArgumentException
+     * @throws CacheBackendException
      */
     #[\Override]
     public function deleteItem(string $key): bool
@@ -438,6 +447,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
 
     /**
      * @throws CacheBackendException
+     * @throws CacheInvalidArgumentException
      */
     #[\Override]
     public function deleteItems(array $keys): bool
@@ -452,6 +462,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
 
     /**
      * @throws \Psr\Cache\InvalidArgumentException
+     * @throws CacheBackendException
      */
     #[\Override]
     public function deleteMultiple(iterable $keys): bool
@@ -472,6 +483,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
 
     /**
      * @throws \Psr\Cache\InvalidArgumentException
+     * @throws CacheBackendException
      */
     #[\Override]
     public function get(string $key, mixed $default = null): mixed
@@ -490,6 +502,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
 
     /**
      * @throws CacheBackendException
+     * @throws CacheInvalidArgumentException
      */
     #[\Override]
     public function getItem(string $key): CacheItemInterface
@@ -506,6 +519,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
     /**
      * @return iterable<string, CacheItemInterface>
      * @throws CacheBackendException
+     * @throws CacheInvalidArgumentException
      */
     #[\Override]
     public function getItems(array $keys = []): iterable
@@ -539,6 +553,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
 
     /**
      * @throws \Psr\Cache\InvalidArgumentException
+     * @throws CacheBackendException
      */
     #[\Override]
     public function getMultiple(iterable $keys, mixed $default = null): iterable
@@ -557,6 +572,9 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         return $this->hasItem($key);
     }
 
+    /**
+     * @throws CacheBackendException
+     */
     #[\Override]
     public function hasItem(string $key): bool
     {
@@ -571,6 +589,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
 
     /**
      * @throws CacheInvalidArgumentException
+     * @throws CacheBackendException
      */
     #[\Override]
     public function invalidateTag(string $tag): bool
@@ -626,6 +645,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
 
     /**
      * @throws \Psr\SimpleCache\InvalidArgumentException
+     * @throws CacheBackendException
      */
     #[\Override]
     public function offsetSet(mixed $offset, mixed $value): void
@@ -635,6 +655,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
 
     /**
      * @throws \Psr\SimpleCache\InvalidArgumentException
+     * @throws CacheBackendException
      */
     #[\Override]
     public function offsetUnset(mixed $offset): void
@@ -647,6 +668,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
      * @throws CacheInvalidArgumentException
      * @throws \Psr\Cache\InvalidArgumentException
      * @throws CacheBackendException
+     * @throws \Psr\SimpleCache\InvalidArgumentException
      */
     #[\Override]
     public function remember(
@@ -826,6 +848,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
     /**
      * @throws CacheInvalidArgumentException
      * @throws \Psr\SimpleCache\InvalidArgumentException
+     * @throws CacheBackendException
      */
     #[\Override]
     public function setTagged(string $key, mixed $value, array $tags, mixed $ttl = null): bool
@@ -861,6 +884,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
 
     /**
      * @throws CacheInvalidArgumentException
+     * @throws \RuntimeException
      */
     #[\Override]
     public function useRedisLock(?\Redis $client = null, string $prefix = 'cachelayer:lock:'): self
@@ -1020,6 +1044,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
     /**
      * @param array<int|string, string> $generations
      * @throws CacheInvalidArgumentException
+     * @throws CacheBackendException
      */
     private function setTaggedWithGenerations(
         string $key,
@@ -1067,6 +1092,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
     /**
      * @param array<int|string, string> $generations
      * @throws \Psr\SimpleCache\InvalidArgumentException
+     * @throws CacheBackendException
      */
     private function storeResolved(string $key, mixed $value, ?int $ttl, array $generations): void
     {
@@ -1084,7 +1110,10 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         $this->setTaggedWithGenerations($key, $value, $generations, $ttlSeconds);
     }
 
-    /** @param array<int|string, string> $expected */
+    /**
+     * @param array<int|string, string> $expected
+     * @throws CacheBackendException
+     */
     private function tagGenerationsUnchanged(array $expected): bool
     {
         if ($expected === []) {

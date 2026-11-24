@@ -228,6 +228,8 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
 
     /**
      * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws RuntimeException
      */
     #[\Override]
     public function save(CacheItemInterface $item): bool
@@ -248,7 +250,12 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         ]]);
     }
 
-    /** @param array<string, CacheItemInterface> $items */
+    /**
+     * @param array<string, CacheItemInterface> $items
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws RuntimeException
+     */
     #[\Override]
     public function saveItems(array $items): bool
     {

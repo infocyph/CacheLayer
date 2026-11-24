@@ -20,6 +20,8 @@ final class MemoizeBench
     /**
      * @throws \ReflectionException
      * @throws \UnexpectedValueException
+     * @throws \LogicException
+     * @throws \OverflowException
      */
     #[Bench\BeforeMethods(['setUp'])]
     public function benchGlobalMemoizeHit(): int
@@ -41,6 +43,8 @@ final class MemoizeBench
      * @throws \ReflectionException
      * @throws \InvalidArgumentException
      * @throws \UnexpectedValueException
+     * @throws \LogicException
+     * @throws \OverflowException
      */
     #[Bench\BeforeMethods(['setUp'])]
     public function benchObjectMemoizeHit(): int
@@ -61,6 +65,8 @@ final class MemoizeBench
 
     /**
      * @throws \UnexpectedValueException
+     * @throws \LogicException
+     * @throws \OverflowException
      */
     #[Bench\BeforeMethods(['setUp'])]
     public function benchOnceCallSiteLookup(): int

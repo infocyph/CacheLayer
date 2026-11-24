@@ -74,6 +74,7 @@ final class CachePolicyBench
      * @throws \Psr\SimpleCache\InvalidArgumentException
      * @throws \Psr\Cache\InvalidArgumentException
      * @throws \UnexpectedValueException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
      */
     public function benchPlainGet(): int
     {
@@ -90,6 +91,7 @@ final class CachePolicyBench
 
     /**
      * @throws \Psr\SimpleCache\InvalidArgumentException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
      */
     public function benchPlainSet(): int
     {
@@ -100,6 +102,7 @@ final class CachePolicyBench
      * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      * @throws \Psr\Cache\InvalidArgumentException
      * @throws \UnexpectedValueException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
      */
     public function benchRememberContendedTimeout(): int
     {
@@ -141,6 +144,7 @@ final class CachePolicyBench
      * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      * @throws \Psr\Cache\InvalidArgumentException
      * @throws \UnexpectedValueException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
      */
     public function benchRememberHit(): int
     {
@@ -159,6 +163,7 @@ final class CachePolicyBench
      * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      * @throws \Psr\Cache\InvalidArgumentException
      * @throws \UnexpectedValueException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
      */
     public function benchRememberMiss(): int
     {

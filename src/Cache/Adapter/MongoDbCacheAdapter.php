@@ -66,6 +66,9 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return new self($selected, $namespace);
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     #[\Override]
     public function atomicCompareAndSet(
         string $key,
@@ -341,6 +344,8 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
     /**
      * @param array<string, CacheItemInterface> $items
      * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws RuntimeException
      */
     #[\Override]
     public function saveItems(array $items): bool
@@ -408,6 +413,8 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
 
     /**
      * @return array{ns:string, kind:string, payload:mixed, expires:int|null}
+     * @throws \InvalidArgumentException
+     * @throws RuntimeException
      */
     private function atomicReplacement(CacheItemInterface $item, ?int $expiresAt): array
     {
@@ -510,6 +517,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
 
     /**
      * @throws RuntimeException
+     * @throws Throwable
      */
     private function recordTagsAreCurrent(CacheRecord $record): bool
     {

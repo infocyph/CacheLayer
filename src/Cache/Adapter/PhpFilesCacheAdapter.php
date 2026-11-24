@@ -33,6 +33,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
 
     /**
      * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
     #[\Override]
     public function atomicCompareAndSet(string $key, mixed $expected, CacheItemInterface $replacement): bool
@@ -79,6 +80,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
 
     /**
      * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
     #[\Override]
     public function atomicSetIfAbsent(CacheItemInterface $item): bool
@@ -112,6 +114,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
 
     /**
      * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
     #[\Override]
     public function deleteItem(string $key): bool
@@ -202,6 +205,10 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         );
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws RuntimeException
+     */
     #[\Override]
     public function save(CacheItemInterface $item): bool
     {
@@ -212,7 +219,10 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         return $this->persistItem($item);
     }
 
-    /** @param array<string, CacheItemInterface> $items */
+    /**
+     * @param array<string, CacheItemInterface> $items
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     #[\Override]
     public function saveItems(array $items): bool
     {
@@ -293,6 +303,11 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         return $this->withKeyLock($item->getKey(), fn(): bool => $this->persistItemUnlocked($item));
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws RuntimeException
+     */
     private function persistItemUnlocked(CacheItemInterface $item): bool
     {
         $expires = CachePayloadCodec::expirationFromItem($item);

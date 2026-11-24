@@ -41,6 +41,8 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
 
     /**
      * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws RuntimeException
      */
     #[\Override]
     public function atomicCompareAndSet(
@@ -121,6 +123,8 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
 
     /**
      * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws RuntimeException
      */
     #[\Override]
     public function atomicSetIfAbsent(CacheItemInterface $item): bool
@@ -202,6 +206,9 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         return $this->client;
     }
 
+    /**
+     * @throws RuntimeException
+     */
     #[\Override]
     public function getItem(string $key): CacheItem
     {
@@ -233,6 +240,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
     /**
      * @param list<string> $tags
      * @return array<int|string, string>
+     * @throws RuntimeException
      */
     #[\Override]
     public function getTagGenerations(array $tags): array
@@ -261,6 +269,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
      * @param list<string> $keys
      * @return array<string, CacheItem>
      * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws RuntimeException
      */
     #[\Override]
     public function multiFetch(array $keys): array
@@ -323,6 +332,8 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
     /**
      * @throws \Psr\Cache\InvalidArgumentException
      * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws RuntimeException
      */
     #[\Override]
     public function save(CacheItemInterface $item): bool
@@ -346,6 +357,8 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
      * @param array<string, CacheItemInterface> $items
      * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      * @throws \Psr\Cache\InvalidArgumentException
+     * @throws RuntimeException
+     * @throws \InvalidArgumentException
      */
     #[\Override]
     public function saveItems(array $items): bool

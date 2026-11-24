@@ -195,6 +195,9 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         return $cached + $loaded;
     }
 
+    /**
+     * @throws Throwable
+     */
     #[\Override]
     public function hasItem(string $key): bool
     {
@@ -209,6 +212,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
     /**
      * @param list<string> $keys
      * @return array<string, CacheItem>
+     * @throws Throwable
      */
     #[\Override]
     public function multiFetch(array $keys): array
@@ -235,6 +239,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
     /**
      * @param list<string> $tags
      * @return array<int|string, string>
+     * @throws Throwable
      */
     #[\Override]
     public function readTagGenerations(array $tags): array
@@ -265,6 +270,10 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         return $fenced && $stored;
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws Throwable
+     */
     #[\Override]
     public function save(CacheItemInterface $item): bool
     {
@@ -288,7 +297,11 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         return $l1Stored;
     }
 
-    /** @param array<string, CacheItemInterface> $items */
+    /**
+     * @param array<string, CacheItemInterface> $items
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws Throwable
+     */
     #[\Override]
     public function saveItems(array $items): bool
     {

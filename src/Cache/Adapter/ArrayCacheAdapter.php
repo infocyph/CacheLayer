@@ -27,6 +27,11 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
         $this->ns = CacheInput::namespace($namespace);
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws \RuntimeException
+     */
     #[\Override]
     public function atomicCompareAndSet(
         string $key,
@@ -72,6 +77,11 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
         return $this->genericItemFromRecord($key, $record);
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws \RuntimeException
+     */
     #[\Override]
     public function atomicSetIfAbsent(CacheItemInterface $item): bool
     {
@@ -223,7 +233,12 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
         });
     }
 
-    /** @param array<string, CacheItemInterface> $items */
+    /**
+     * @param array<string, CacheItemInterface> $items
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws \RuntimeException
+     */
     #[\Override]
     public function saveItems(array $items): bool
     {

@@ -99,6 +99,7 @@ final readonly class ClusterRuntime
     /**
      * @param array $tags The tags argument.
      * @phpstan-param list<string> $tags
+     * @throws ClusterCacheException
      */
     public function invalidateTags(array $tags): void
     {
@@ -154,6 +155,9 @@ final readonly class ClusterRuntime
         return $total;
     }
 
+    /**
+     * @throws ClusterCacheException
+     */
     public function recoverIfRequired(): bool
     {
         $recovered = $this->recovery->recoverIfRequired();
@@ -166,6 +170,7 @@ final readonly class ClusterRuntime
 
     /**
      * @throws ClusterCacheException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
      */
     public function skipEventAfterClear(string $eventId): void
     {

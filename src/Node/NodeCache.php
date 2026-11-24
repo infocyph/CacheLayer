@@ -45,6 +45,7 @@ final class NodeCache
     /**
      * @throws \Infocyph\CacheLayer\Node\Exception\NodeCacheConfigurationException
      * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \Infocyph\CacheLayer\Node\Exception\NodeCacheStorageException
      */
     public static function maintenance(NodeCacheConfig $config): NodeCacheMaintenance
     {

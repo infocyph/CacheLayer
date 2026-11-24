@@ -198,6 +198,8 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
 
     /**
      * @throws CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws RuntimeException
      */
     #[\Override]
     public function save(CacheItemInterface $item): bool
@@ -218,7 +220,12 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
         return apcu_store($this->map($item->getKey()), $blob, $ttl ?? 0);
     }
 
-    /** @param array<string, CacheItemInterface> $items */
+    /**
+     * @param array<string, CacheItemInterface> $items
+     * @throws CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws RuntimeException
+     */
     #[\Override]
     public function saveItems(array $items): bool
     {
@@ -271,6 +278,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
      * @param array $raw The raw argument.
      * @phpstan-param array<string, CacheItem> $items
      * @phpstan-param array<mixed> $raw
+     * @throws CacheInvalidArgumentException
      */
     private function appendFetchedHit(array &$items, string $key, array $raw): bool
     {

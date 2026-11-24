@@ -26,6 +26,7 @@ final class CacheBulkBench
     /**
      * @param array{size:int} $params
      * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
      */
     public function setUp(array $params): void
     {
@@ -76,6 +77,7 @@ final class CacheBulkBench
      * @param array{size:int} $params
      * @throws \Psr\Cache\InvalidArgumentException
      * @throws \LogicException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
      */
     #[Bench\ParamProviders('provideSizes')]
     #[Bench\BeforeMethods('setUp')]
@@ -92,6 +94,7 @@ final class CacheBulkBench
      * @throws \Psr\SimpleCache\InvalidArgumentException
      * @throws \Psr\Cache\InvalidArgumentException
      * @throws \UnexpectedValueException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
      */
     public function benchSingleMemoryHit(): int
     {
@@ -167,6 +170,7 @@ final class CacheBulkBench
      * @param array{size:int} $params
      * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \InvalidArgumentException
      */
     #[Bench\ParamProviders('provideSizes')]
     public function benchTieredL1FullHit(array $params): int
@@ -188,6 +192,7 @@ final class CacheBulkBench
      * @param array{size:int} $params
      * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \InvalidArgumentException
      */
     #[Bench\ParamProviders('provideSizes')]
     public function benchTieredL3Promotion(array $params): int
@@ -210,6 +215,7 @@ final class CacheBulkBench
      * @param array{size:int} $params
      * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \InvalidArgumentException
      */
     #[Bench\ParamProviders('provideSizes')]
     public function benchTieredPartialHit(array $params): int
@@ -239,6 +245,7 @@ final class CacheBulkBench
 
     /**
      * @throws \Psr\SimpleCache\InvalidArgumentException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
      */
     public function setUpSingleSqlite(): void
     {
@@ -250,6 +257,7 @@ final class CacheBulkBench
     /**
      * @param array{size:int} $params
      * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
      */
     public function setUpSqlite(array $params): void
     {
@@ -265,6 +273,9 @@ final class CacheBulkBench
         $this->cache->setMultiple($this->values, 60);
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     public function tearDownSqlite(): void
     {
         $this->cache = Cache::memory('released');

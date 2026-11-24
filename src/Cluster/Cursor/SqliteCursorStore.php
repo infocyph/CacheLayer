@@ -76,6 +76,9 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
         return is_string($cursor) && $cursor !== '' ? $cursor : null;
     }
 
+    /**
+     * @throws ClusterCacheException
+     */
     #[\Override]
     public function requiresRecovery(): bool
     {

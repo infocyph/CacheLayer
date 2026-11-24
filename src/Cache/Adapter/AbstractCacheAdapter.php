@@ -187,6 +187,9 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         return true;
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     #[\Override]
     public function saveDeferred(CacheItemInterface $item): bool
     {
@@ -311,7 +314,10 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         return $this->genericMiss($key);
     }
 
-    /** @param callable(): bool $onInvalid */
+    /**
+     * @param callable(): bool $onInvalid
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     protected function genericFromBase64WithInvalidator(
         string $key,
         ?string $payload,
@@ -325,7 +331,10 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         );
     }
 
-    /** @param callable(): bool $onInvalid */
+    /**
+     * @param callable(): bool $onInvalid
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     protected function genericFromBlobWithInvalidator(
         string $key,
         ?string $blob,
@@ -382,6 +391,7 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
 
     /**
      * @param callable(CacheItemInterface, array{ttl:int|null, expiresAt:int|null}): bool $writer
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
     protected function saveEncoded(CacheItemInterface $item, callable $writer): bool
     {

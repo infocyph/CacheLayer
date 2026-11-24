@@ -94,6 +94,8 @@ LUA;
 
     /**
      * @throws CacheInvalidArgumentException
+     * @throws InvalidArgumentException
+     * @throws RuntimeException
      */
     #[\Override]
     public function atomicCompareAndSet(
@@ -154,6 +156,8 @@ LUA;
 
     /**
      * @throws CacheInvalidArgumentException
+     * @throws InvalidArgumentException
+     * @throws RuntimeException
      */
     #[\Override]
     public function atomicSetIfAbsent(CacheItemInterface $item): bool
@@ -263,6 +267,7 @@ LUA;
     /**
      * @param list<string> $tags
      * @return array<int|string, string>
+     * @throws RuntimeException
      */
     #[\Override]
     public function getTagGenerations(array $tags): array
@@ -299,6 +304,7 @@ LUA;
      * @phpstan-param list<string> $keys
      * @phpstan-return array<string, CacheItem>
      * @throws CacheInvalidArgumentException
+     * @throws RuntimeException
      */
     #[\Override]
     public function multiFetch(array $keys): array
@@ -354,6 +360,8 @@ LUA;
 
     /**
      * @throws CacheInvalidArgumentException
+     * @throws InvalidArgumentException
+     * @throws RuntimeException
      */
     #[\Override]
     public function save(CacheItemInterface $item): bool
@@ -377,7 +385,12 @@ LUA;
             : $this->redis->setex($this->map($item->getKey()), max(1, $ttl), $blob);
     }
 
-    /** @param array<string, CacheItemInterface> $items */
+    /**
+     * @param array<string, CacheItemInterface> $items
+     * @throws CacheInvalidArgumentException
+     * @throws InvalidArgumentException
+     * @throws RuntimeException
+     */
     #[\Override]
     public function saveItems(array $items): bool
     {

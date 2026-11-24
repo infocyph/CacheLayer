@@ -204,6 +204,7 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
 
     /**
      * @throws NodeCacheStorageException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
     #[\Override]
     public function hasItem(string $key): bool
@@ -292,7 +293,10 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
         return $generations;
     }
 
-    /** @param list<string> $tags */
+    /**
+     * @param list<string> $tags
+     * @throws NodeCacheStorageException
+     */
     #[\Override]
     public function rotateTagGenerations(array $tags): bool
     {
@@ -307,6 +311,8 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
     /**
      * @throws \Psr\Cache\InvalidArgumentException
      * @throws NodeCacheStorageException
+     * @throws \InvalidArgumentException
+     * @throws \RuntimeException
      */
     #[\Override]
     public function save(CacheItemInterface $item): bool
@@ -356,6 +362,8 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
      * @phpstan-param list<CacheItemInterface> $items
      * @throws \Psr\Cache\InvalidArgumentException
      * @throws NodeCacheStorageException
+     * @throws \InvalidArgumentException
+     * @throws \RuntimeException
      */
     public function saveMany(array $items): bool
     {

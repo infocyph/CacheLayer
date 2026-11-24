@@ -62,6 +62,11 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         shm_detach($this->segment);
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws RuntimeException
+     */
     #[\Override]
     public function atomicCompareAndSet(
         string $key,
@@ -94,6 +99,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
 
     /**
      * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws RuntimeException
      */
     #[\Override]
     public function atomicGetAndDelete(string $key): CacheItemInterface
@@ -105,6 +111,11 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         return $this->withExclusiveLock(fn(): CacheItemInterface => $this->consumeRecord($key, $mapped));
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws RuntimeException
+     */
     #[\Override]
     public function atomicSetIfAbsent(CacheItemInterface $item): bool
     {
@@ -132,6 +143,9 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         });
     }
 
+    /**
+     * @throws RuntimeException
+     */
     #[\Override]
     public function clear(): bool
     {
@@ -146,6 +160,9 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         );
     }
 
+    /**
+     * @throws RuntimeException
+     */
     #[\Override]
     public function deleteItem(string $key): bool
     {
@@ -163,6 +180,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
     /**
      * @param array $keys The keys argument.
      * @phpstan-param array<array-key, string> $keys
+     * @throws RuntimeException
      */
     #[\Override]
     public function deleteItems(array $keys): bool
@@ -176,6 +194,9 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         return $this->withExclusiveLock(fn(): bool => $this->updateStore([], $mappedKeys));
     }
 
+    /**
+     * @throws RuntimeException
+     */
     #[\Override]
     public function getItem(string $key): CacheItem
     {
@@ -198,6 +219,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
     /**
      * @param list<string> $tags
      * @return array<int|string, string>
+     * @throws RuntimeException
      */
     #[\Override]
     public function getTagGenerations(array $tags): array
@@ -214,6 +236,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
     /**
      * @param list<string> $keys
      * @return array<string, CacheItem>
+     * @throws RuntimeException
      */
     #[\Override]
     public function multiFetch(array $keys): array
@@ -224,6 +247,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
     /**
      * @param list<string> $tags
      * @return array<int|string, string>
+     * @throws RuntimeException
      */
     #[\Override]
     public function readTagGenerations(array $tags): array
@@ -270,7 +294,12 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         });
     }
 
-    /** @param array<string, CacheItemInterface> $items */
+    /**
+     * @param array<string, CacheItemInterface> $items
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws RuntimeException
+     */
     #[\Override]
     public function saveItems(array $items): bool
     {
@@ -292,7 +321,10 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         return $this->withExclusiveLock(fn(): bool => $this->updateStore($records, $expired));
     }
 
-    /** @param array<int|string, string> $generations */
+    /**
+     * @param array<int|string, string> $generations
+     * @throws RuntimeException
+     */
     #[\Override]
     public function storeTagGenerations(array $generations): bool
     {

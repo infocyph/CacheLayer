@@ -67,6 +67,9 @@ final class OnceMemoizer
             . ':' . $this->callbackFingerprint($callback);
     }
 
+    /**
+     * @throws \LogicException
+     */
     private function callbackFingerprint(callable $callback): string
     {
         if ($callback instanceof Closure) {

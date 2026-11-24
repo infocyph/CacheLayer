@@ -61,6 +61,11 @@ end
 return 1
 LUA;
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws \RuntimeException
+     */
     public function atomicCompareAndSet(
         string $key,
         mixed $expected,
@@ -138,6 +143,9 @@ LUA;
         return $this->genericItemFromRecord($key, $record);
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     public function atomicSetIfAbsent(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
@@ -160,6 +168,7 @@ LUA;
 
     /**
      * @return array{bucket:int,generationKey:string,dataKey:string,generation:string,existing:mixed}
+     * @throws \RuntimeException
      */
     private function atomicReadState(string $key): array
     {
@@ -180,6 +189,8 @@ LUA;
 
     /**
      * @param array{ttl:int|null,expiresAt:int|null} $expiration
+     * @throws \InvalidArgumentException
+     * @throws \RuntimeException
      */
     private function atomicSetIfAbsentAttempt(CacheItemInterface $item, array $expiration): int
     {

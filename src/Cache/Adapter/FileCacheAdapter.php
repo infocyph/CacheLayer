@@ -25,6 +25,7 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
 
     /**
      * @throws CacheInvalidArgumentException
+     * @throws RuntimeException
      */
     public function __construct(string $namespace = 'default', ?string $baseDir = null)
     {
@@ -33,6 +34,7 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
 
     /**
      * @throws RuntimeException
+     * @throws CacheInvalidArgumentException
      */
     #[\Override]
     public function atomicCompareAndSet(string $key, mixed $expected, CacheItemInterface $replacement): bool
@@ -79,6 +81,7 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
 
     /**
      * @throws RuntimeException
+     * @throws CacheInvalidArgumentException
      */
     #[\Override]
     public function atomicSetIfAbsent(CacheItemInterface $item): bool
@@ -112,6 +115,7 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
 
     /**
      * @throws RuntimeException
+     * @throws CacheInvalidArgumentException
      */
     #[\Override]
     public function deleteItem(string $key): bool
@@ -192,7 +196,10 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
         return $items;
     }
 
-    /** @param list<string> $tags */
+    /**
+     * @param list<string> $tags
+     * @throws RuntimeException
+     */
     #[\Override]
     public function rotateTagGenerations(array $tags): bool
     {
@@ -208,6 +215,7 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
 
     /**
      * @throws CacheInvalidArgumentException
+     * @throws RuntimeException
      */
     #[\Override]
     public function save(CacheItemInterface $item): bool
@@ -219,7 +227,10 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
         return $this->persistItem($item);
     }
 
-    /** @param array<string, CacheItemInterface> $items */
+    /**
+     * @param array<string, CacheItemInterface> $items
+     * @throws CacheInvalidArgumentException
+     */
     #[\Override]
     public function saveItems(array $items): bool
     {
@@ -317,6 +328,11 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
         return $this->withKeyLock($item->getKey(), fn(): bool => $this->persistItemUnlocked($item));
     }
 
+    /**
+     * @throws CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws RuntimeException
+     */
     private function persistItemUnlocked(CacheItemInterface $item): bool
     {
         $expires = CachePayloadCodec::expirationFromItem($item);
