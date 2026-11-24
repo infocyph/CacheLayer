@@ -253,11 +253,11 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
      */
     private function copyItem(CacheItemInterface $source): CacheItem
     {
-        $ttl = $source instanceof CacheItem ? $source->ttlSeconds() : null;
+        $expiresAt = $source instanceof CacheItem ? $source->expirationTimestamp() : null;
         $tags = $source instanceof CacheItem ? $source->getTagGenerations() : [];
 
         return new CacheItem($this, $source->getKey(), $source->get(), true)
-            ->expiresAfter($ttl)
+            ->expiresAt(CachePayloadCodec::toDateTime($expiresAt))
             ->setTagGenerations($tags);
     }
 
@@ -356,7 +356,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
             $key = $item->getKey();
             $target = $pool->createItem($key)->set($item->get());
             if ($target instanceof CacheItem && $item instanceof CacheItem) {
-                $target->expiresAfter($item->ttlSeconds())
+                $target->expiresAt(CachePayloadCodec::toDateTime($item->expirationTimestamp()))
                     ->setTagGenerations($item->getTagGenerations());
             }
             $targets["key:\0" . $key] = $target;
@@ -369,7 +369,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
     {
         $target = $pool->createItem($item->getKey())->set($item->get());
         if ($target instanceof CacheItem && $item instanceof CacheItem) {
-            $target->expiresAfter($item->ttlSeconds())
+            $target->expiresAt(CachePayloadCodec::toDateTime($item->expirationTimestamp()))
                 ->setTagGenerations($item->getTagGenerations());
         }
 

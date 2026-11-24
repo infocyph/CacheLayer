@@ -231,7 +231,6 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
             return false;
         }
 
-        $now = time();
         foreach ($items as $item) {
             $expiration = CachePayloadCodec::expirationFromItem($item);
             if ($expiration['ttl'] !== null && $expiration['ttl'] <= 0) {
@@ -239,8 +238,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
 
                 continue;
             }
-            $expiresAt = $expiration['ttl'] === null ? null : $now + $expiration['ttl'];
-            $this->store[$this->map($item->getKey())] = $this->encodeItem($item, $expiresAt);
+            $this->store[$this->map($item->getKey())] = $this->encodeItem($item, $expiration['expiresAt']);
         }
 
         return true;

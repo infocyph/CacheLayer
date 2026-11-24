@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Infocyph\CacheLayer\Node\Adapter;
 
 use Infocyph\CacheLayer\Cache\Adapter\AbstractCacheAdapter;
+use Infocyph\CacheLayer\Cache\Adapter\CachePayloadCodec;
 use Infocyph\CacheLayer\Cache\Adapter\InternalCachePoolInterface;
 use Infocyph\CacheLayer\Cache\Adapter\TagGenerationCacheInterface;
 use Infocyph\CacheLayer\Cache\CacheOptions;
@@ -365,7 +366,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
     {
         $target = $pool->createItem($item->getKey())->set($item->get());
         if ($item instanceof CacheItem) {
-            $target->expiresAfter($item->ttlSeconds());
+            $target->expiresAt(CachePayloadCodec::toDateTime($item->expirationTimestamp()));
             if ($target instanceof CacheItem) {
                 $target->setTagGenerations($item->getTagGenerations());
             }
@@ -415,11 +416,11 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
      */
     private function nodeItem(CacheItemInterface $item): CacheItem
     {
-        $ttl = $item instanceof CacheItem ? $item->ttlSeconds() : null;
+        $expiresAt = $item instanceof CacheItem ? $item->expirationTimestamp() : null;
         $tags = $item instanceof CacheItem ? $item->getTagGenerations() : [];
 
         return new CacheItem($this, $item->getKey(), $item->get(), true)
-            ->expiresAfter($ttl)
+            ->expiresAt(CachePayloadCodec::toDateTime($expiresAt))
             ->setTagGenerations($tags);
     }
 

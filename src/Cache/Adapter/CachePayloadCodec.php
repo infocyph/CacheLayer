@@ -7,6 +7,7 @@ namespace Infocyph\CacheLayer\Cache\Adapter;
 use Closure;
 use DateTimeImmutable;
 use DateTimeInterface;
+use Infocyph\CacheLayer\Cache\CacheInput;
 use Infocyph\CacheLayer\Cache\CacheOptions;
 use Infocyph\CacheLayer\Cache\CacheRecord;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
@@ -32,14 +33,17 @@ final readonly class CachePayloadCodec
      */
     public function __construct(private CacheOptions $options = new CacheOptions()) {}
 
-    /** @return array{ttl:int|null,expiresAt:int|null} */
+    /**
+     * @return array{ttl:int|null,expiresAt:int|null}
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     public static function expirationFromItem(CacheItemInterface $item): array
     {
-        $ttl = $item instanceof CacheItem ? $item->ttlSeconds() : null;
+        $expiresAt = $item instanceof CacheItem ? $item->expirationTimestamp() : null;
 
         return [
-            'ttl' => $ttl,
-            'expiresAt' => $ttl === null ? null : time() + $ttl,
+            'ttl' => $expiresAt === null ? null : CacheInput::relativeTtl($expiresAt, time()),
+            'expiresAt' => $expiresAt,
         ];
     }
 

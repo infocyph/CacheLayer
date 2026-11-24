@@ -623,3 +623,15 @@ test('Redis bulk persistence does not report success when expired entry deletion
     $item = $adapter->createItem('expired')->set('old')->expiresAfter(-1);
     expect($adapter->saveItems(['expired' => $item]))->toBeFalse();
 });
+
+test('Redis counter deletion preserves missing-key success and reports backend refusal', function () use (&$redisFixtureRedisClient): void {
+    $counters = AtomicCounters::redis('delete-contract', client: $redisFixtureRedisClient);
+    $counters->increment('counter');
+    expect($counters->delete('counter'))->toBeTrue()
+        ->and($counters->get('counter'))->toBeNull()
+        ->and($counters->delete('counter'))->toBeTrue();
+
+    $client = $this->createMock(Redis::class);
+    $client->method('del')->willReturn(false);
+    expect(AtomicCounters::redis('delete-contract', client: $client)->delete('counter'))->toBeFalse();
+});

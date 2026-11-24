@@ -978,7 +978,10 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
             return $ttl;
         }
 
-        return max(1, $ttl - random_int(0, max(1, intdiv($ttl * self::TTL_JITTER_PERCENT, 100))));
+        $maximumJitter = intdiv($ttl, 100) * self::TTL_JITTER_PERCENT
+            + intdiv(($ttl % 100) * self::TTL_JITTER_PERCENT, 100);
+
+        return max(1, $ttl - random_int(0, max(1, $maximumJitter)));
     }
 
     private function metric(string $name, int $amount = 1): void
