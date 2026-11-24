@@ -15,6 +15,10 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
 {
     private readonly string $ns;
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws RuntimeException
+     */
     public function __construct(
         private readonly object $collection,
         string $namespace = 'default',
@@ -42,6 +46,9 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         }
     }
 
+    /**
+     * @throws RuntimeException
+     */
     public static function fromClient(
         object $client,
         string $database = 'cachelayer',
@@ -193,6 +200,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
     /**
      * @param list<string> $tags
      * @return array<int|string, string>
+     * @throws RuntimeException
      */
     #[\Override]
     public function getTagGenerations(array $tags): array
@@ -226,6 +234,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
      * @param array $keys The keys argument.
      * @phpstan-param list<string> $keys
      * @phpstan-return array<string, CacheItem>
+     * @throws RuntimeException
      */
     #[\Override]
     public function multiFetch(array $keys): array
@@ -261,6 +270,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
     /**
      * @param list<string> $tags
      * @return array<int|string, string>
+     * @throws RuntimeException
      */
     #[\Override]
     public function readTagGenerations(array $tags): array
@@ -320,7 +330,10 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         });
     }
 
-    /** @param array<string, CacheItemInterface> $items */
+    /**
+     * @param array<string, CacheItemInterface> $items
+     * @throws \Psr\Cache\InvalidArgumentException
+     */
     #[\Override]
     public function saveItems(array $items): bool
     {
@@ -420,6 +433,9 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return $value;
     }
 
+    /**
+     * @throws Throwable
+     */
     private function initializeTagGeneration(string $tag): void
     {
         $candidate = self::newGeneration();
@@ -501,7 +517,10 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return true;
     }
 
-    /** @param array{ns:string, kind:string, payload:mixed, expires:int|null} $replacement */
+    /**
+     * @param array{ns:string, kind:string, payload:mixed, expires:int|null} $replacement
+     * @throws Throwable
+     */
     private function tryAtomicInsert(string $id, array $replacement): bool
     {
         try {

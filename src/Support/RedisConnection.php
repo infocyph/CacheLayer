@@ -14,6 +14,9 @@ final class RedisConnection
 
     private const float READ_TIMEOUT_SECONDS = 1.0;
 
+    /**
+     * @throws RuntimeException
+     */
     public static function connect(#[\SensitiveParameter] string $dsn): \Redis
     {
         [$host, $port, $database, $credentials] = self::parseDsn($dsn);
@@ -40,6 +43,7 @@ final class RedisConnection
      * @param \Redis $connection The connected client.
      * @param string|array|null $credentials The optional Redis credentials.
      * @phpstan-param string|array{string, string}|null $credentials
+     * @throws RuntimeException
      */
     private static function authenticate(\Redis $connection, #[\SensitiveParameter] string|array|null $credentials): void
     {
@@ -72,6 +76,7 @@ final class RedisConnection
     /**
      * @param string $dsn The Redis-compatible DSN.
      * @phpstan-return array{string, int, int|null, string|array{string, string}|null}
+     * @throws InvalidArgumentException
      */
     private static function parseDsn(#[\SensitiveParameter] string $dsn): array
     {
@@ -112,6 +117,7 @@ final class RedisConnection
     /**
      * @param string $dsn The Redis-compatible DSN.
      * @phpstan-return array<string, int|string>
+     * @throws InvalidArgumentException
      */
     private static function parseDsnParts(#[\SensitiveParameter] string $dsn): array
     {

@@ -11,6 +11,9 @@ use Infocyph\CacheLayer\Cluster\Exception\ClusterTransportException;
 
 final readonly class RedisStreamInvalidationTransport implements InvalidationTransportInterface
 {
+    /**
+     * @throws ClusterTransportException
+     */
     public function __construct(
         private \Redis $client,
         private string $prefix = 'cachelayer:invalidation:',
@@ -24,6 +27,10 @@ final readonly class RedisStreamInvalidationTransport implements InvalidationTra
         }
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Cluster\Exception\ClusterCacheException
+     * @throws ClusterTransportException
+     */
     #[\Override]
     public function consumeAfter(string $cluster, ?string $cursor, int $limit): InvalidationBatch
     {
@@ -75,6 +82,9 @@ final readonly class RedisStreamInvalidationTransport implements InvalidationTra
         return $this->boundary($cluster, false);
     }
 
+    /**
+     * @throws ClusterTransportException
+     */
     #[\Override]
     public function publish(InvalidationEvent $event): string
     {
@@ -105,6 +115,9 @@ final readonly class RedisStreamInvalidationTransport implements InvalidationTra
         return $id;
     }
 
+    /**
+     * @throws ClusterTransportException
+     */
     private function boundary(string $cluster, bool $newest): ?string
     {
         try {
@@ -154,6 +167,8 @@ final readonly class RedisStreamInvalidationTransport implements InvalidationTra
      * @param string $id The ID argument.
      * @param array $fields The fields argument.
      * @phpstan-param array<mixed, mixed> $fields
+     * @throws ClusterTransportException
+     * @throws \Infocyph\CacheLayer\Cluster\Exception\ClusterCacheException
      */
     private function eventFromFields(string $id, array $fields): InvalidationEvent
     {
@@ -188,6 +203,7 @@ final readonly class RedisStreamInvalidationTransport implements InvalidationTra
      * @param array $fields The normalized stream fields.
      * @param string $name The required field name.
      * @phpstan-param array<string, mixed> $fields
+     * @throws ClusterTransportException
      */
     private function field(array $fields, string $name): string
     {
@@ -202,6 +218,7 @@ final readonly class RedisStreamInvalidationTransport implements InvalidationTra
      * @param string $id The ID argument.
      * @return array The ID parts.
      * @phpstan-return array{string, string}
+     * @throws ClusterTransportException
      */
     private function idParts(string $id): array
     {
@@ -216,6 +233,9 @@ final readonly class RedisStreamInvalidationTransport implements InvalidationTra
         ];
     }
 
+    /**
+     * @throws ClusterTransportException
+     */
     private function stream(string $cluster): string
     {
         if ($cluster === '') {

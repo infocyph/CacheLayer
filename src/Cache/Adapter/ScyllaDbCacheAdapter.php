@@ -24,6 +24,10 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
     /** @var array<string, mixed> */
     private array $preparedStatements = [];
 
+    /**
+     * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     public function __construct(
         private readonly object $session,
         string $keyspace = 'cachelayer',
@@ -126,6 +130,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
     /**
      * @param list<string> $tags
      * @return array<int|string, string>
+     * @throws RuntimeException
      */
     #[\Override]
     public function getTagGenerations(array $tags): array
@@ -238,7 +243,10 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
         });
     }
 
-    /** @param array<string, CacheItemInterface> $items */
+    /**
+     * @param array<string, CacheItemInterface> $items
+     * @throws \Psr\Cache\InvalidArgumentException
+     */
     #[\Override]
     public function saveItems(array $items): bool
     {
@@ -290,6 +298,9 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
         return true;
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private static function validateIdentifier(string $value, string $label): string
     {
         if (!preg_match('/^[A-Za-z][A-Za-z0-9_]*$/', $value)) {
@@ -308,6 +319,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
      * @param string $method The method argument.
      * @param array $arguments The arguments argument.
      * @phpstan-param array<int, mixed> $arguments
+     * @throws RuntimeException
      */
     private function callSession(string $method, array $arguments): mixed
     {

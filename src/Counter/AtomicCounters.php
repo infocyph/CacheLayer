@@ -10,6 +10,9 @@ use InvalidArgumentException;
 
 final class AtomicCounters
 {
+    /**
+     * @throws AtomicCounterException
+     */
     public static function redis(
         string $namespace = 'default',
         #[\SensitiveParameter]
@@ -32,6 +35,9 @@ final class AtomicCounters
         return self::redis($namespace, $dsn, $client);
     }
 
+    /**
+     * @throws AtomicCounterException
+     */
     private static function connect(#[\SensitiveParameter] string $dsn): \Redis
     {
         try {

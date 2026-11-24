@@ -22,6 +22,9 @@ final readonly class InvalidationConsumer
         private ClusterStatusTracker $status,
     ) {}
 
+    /**
+     * @throws Throwable
+     */
     public function consume(int $limit = 1_000): int
     {
         if ($limit < 1) {

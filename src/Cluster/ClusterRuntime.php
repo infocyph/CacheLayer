@@ -51,6 +51,9 @@ final readonly class ClusterRuntime
         return $this->consumer->consume($limit ?? $this->consumerBatchSize);
     }
 
+    /**
+     * @throws ClusterCacheException
+     */
     public function drain(?int $limit = null, int $maxBatches = 100): int
     {
         $limit ??= $this->consumerBatchSize;
@@ -89,6 +92,9 @@ final readonly class ClusterRuntime
         $this->coordinator->invalidateTags($tags);
     }
 
+    /**
+     * @throws ClusterCacheException
+     */
     public function outbox(PDO $connection): ClusterOutbox
     {
         if (!$this->transport instanceof TransactionalInvalidationTransportInterface) {
@@ -105,6 +111,9 @@ final readonly class ClusterRuntime
         );
     }
 
+    /**
+     * @throws ClusterCacheException
+     */
     public function poll(
         ?int $limit = null,
         int $cycles = 1,
@@ -138,6 +147,9 @@ final readonly class ClusterRuntime
         return $recovered;
     }
 
+    /**
+     * @throws ClusterCacheException
+     */
     public function skipEventAfterClear(string $eventId): void
     {
         ClusterInput::eventId($eventId);

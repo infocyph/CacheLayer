@@ -319,6 +319,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
      * @param callable(): T $operation
      * @param T $fallback
      * @return T
+     * @throws Throwable
      */
     private function attempt(callable $operation, mixed $fallback, string $failureMetric): mixed
     {

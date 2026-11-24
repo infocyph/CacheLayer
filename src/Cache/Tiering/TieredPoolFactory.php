@@ -50,7 +50,10 @@ final class TieredPoolFactory
         );
     }
 
-    /** @throws CacheInvalidArgumentException */
+    /**
+     * @throws CacheInvalidArgumentException
+     * @throws \RuntimeException
+     */
     private static function buildScyllaSession(string $keyspace): object
     {
         if (!OptionalCassandra::available()) {

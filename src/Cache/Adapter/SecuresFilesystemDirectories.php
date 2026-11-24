@@ -12,6 +12,9 @@ use UnexpectedValueException;
 
 trait SecuresFilesystemDirectories
 {
+    /**
+     * @throws RuntimeException
+     */
     protected function assertPathNotSymlink(string $path, string $label): void
     {
         if (FilesystemTrust::containsSymlink($path)) {
@@ -19,6 +22,9 @@ trait SecuresFilesystemDirectories
         }
     }
 
+    /**
+     * @throws RuntimeException
+     */
     protected function assertSecureDirectory(string $path, string $label): void
     {
         $this->assertPathNotSymlink($path, $label);

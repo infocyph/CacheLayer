@@ -21,6 +21,8 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
 
     /**
      * @param list<array{0:string, 1:int, 2:int}> $servers
+     * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
     public function __construct(
         string $namespace = 'default',
@@ -37,6 +39,9 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         }
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     #[\Override]
     public function atomicCompareAndSet(
         string $key,
@@ -111,6 +116,9 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         return $this->genericItemFromRecord($key, $record);
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     #[\Override]
     public function atomicSetIfAbsent(CacheItemInterface $item): bool
     {
@@ -308,6 +316,10 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         return $generations === [] || $this->client->setMulti($generations);
     }
 
+    /**
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     #[\Override]
     public function save(CacheItemInterface $item): bool
     {
@@ -326,7 +338,11 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         );
     }
 
-    /** @param array<string, CacheItemInterface> $items */
+    /**
+     * @param array<string, CacheItemInterface> $items
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \Psr\Cache\InvalidArgumentException
+     */
     #[\Override]
     public function saveItems(array $items): bool
     {
@@ -393,6 +409,9 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         return $this->namespace . ':m:generation';
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function initializeGeneration(string $key, mixed $observed, string $failureMessage): string
     {
         $generation = self::normalizeGeneration($observed);

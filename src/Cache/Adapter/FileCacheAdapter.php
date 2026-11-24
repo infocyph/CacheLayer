@@ -133,6 +133,7 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
     /**
      * @param list<string> $tags
      * @return array<int|string, string>
+     * @throws RuntimeException
      */
     #[\Override]
     public function getTagGenerations(array $tags): array
@@ -162,6 +163,7 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
     /**
      * @param list<string> $keys
      * @return array<string, CacheItem>
+     * @throws \Psr\Cache\InvalidArgumentException
      */
     #[\Override]
     public function multiFetch(array $keys): array
@@ -188,6 +190,9 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
         return true;
     }
 
+    /**
+     * @throws CacheInvalidArgumentException
+     */
     #[\Override]
     public function save(CacheItemInterface $item): bool
     {
@@ -214,6 +219,9 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
         return $ok;
     }
 
+    /**
+     * @throws CacheInvalidArgumentException
+     */
     private function createDirectory(string $ns, ?string $baseDir): void
     {
         $baseDir = rtrim($baseDir ?? $this->defaultBaseDirectory(), DIRECTORY_SEPARATOR);
@@ -244,6 +252,9 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
         return $this->deleteFile($file);
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function ensureBaseDirectoryExists(string $baseDir): void
     {
         $this->assertPathNotSymlink($baseDir, 'Cache base directory');
@@ -256,6 +267,9 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
         $this->assertSecureDirectory($baseDir, 'Cache base directory');
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function ensureCacheDirectoryExists(string $cacheDir): void
     {
         $this->assertPathNotSymlink($cacheDir, 'Cache directory');
@@ -341,6 +355,9 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
         return true;
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function throwCreationError(string $prefix): void
     {
         $err = error_get_last()['message'] ?? 'unknown error';
@@ -352,6 +369,7 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
      * @template T
      * @param callable(): T $callback
      * @return T
+     * @throws RuntimeException
      */
     private function withKeyLock(string $key, callable $callback): mixed
     {

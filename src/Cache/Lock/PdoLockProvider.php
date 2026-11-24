@@ -17,6 +17,9 @@ final class PdoLockProvider implements LockProviderInterface
 
     private int $retrySleepMicros;
 
+    /**
+     * @throws UnsupportedPdoLockDriver
+     */
     public function __construct(
         private \PDO $pdo,
         private string $prefix = 'cachelayer:lock:',
@@ -48,6 +51,9 @@ final class PdoLockProvider implements LockProviderInterface
         return in_array(strtolower($driver), ['mysql', 'mariadb', 'pgsql'], true);
     }
 
+    /**
+     * @throws \InvalidArgumentException
+     */
     #[\Override]
     public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): ?LockHandle
     {
@@ -66,6 +72,9 @@ final class PdoLockProvider implements LockProviderInterface
         };
     }
 
+    /**
+     * @throws \InvalidArgumentException
+     */
     #[\Override]
     public function refresh(?LockHandle $handle, float $leaseSeconds): bool
     {

@@ -30,6 +30,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
      *
      * @throws RuntimeException If the APCu extension is not enabled.
      * @param string $namespace A namespace prefix to avoid key collisions.
+     * @throws CacheInvalidArgumentException
      */
     public function __construct(string $namespace = 'default')
     {
@@ -99,6 +100,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
     /**
      * @param list<string> $tags
      * @return array<int|string, string>
+     * @throws RuntimeException
      */
     #[\Override]
     public function getTagGenerations(array $tags): array
@@ -193,6 +195,9 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
         return $generations === [] || apcu_store($generations) === [];
     }
 
+    /**
+     * @throws CacheInvalidArgumentException
+     */
     #[\Override]
     public function save(CacheItemInterface $item): bool
     {

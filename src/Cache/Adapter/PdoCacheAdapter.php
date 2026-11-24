@@ -32,6 +32,10 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
 
     private readonly string $table;
 
+    /**
+     * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     public function __construct(
         string $namespace = 'default',
         #[\SensitiveParameter]
@@ -71,6 +75,10 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         }
     }
 
+    /**
+     * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     public static function defaultSqliteFileForNamespace(string $namespace): string
     {
         $directory = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR)
@@ -181,6 +189,9 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         return $items;
     }
 
+    /**
+     * @throws RuntimeException
+     */
     public function pruneExpired(int $limit = 1000): int
     {
         if ($limit < 1) {
@@ -214,6 +225,9 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         return $this->upsertRows($rows);
     }
 
+    /**
+     * @throws \Psr\Cache\InvalidArgumentException
+     */
     #[\Override]
     public function save(CacheItemInterface $item): bool
     {
@@ -260,6 +274,9 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         return $this->deleteByKind(self::KIND_DATA, $expired) && $this->upsertRows($rows);
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private static function assertSqliteTarget(string $dsn): void
     {
         if (!str_starts_with($dsn, 'sqlite:')) {
@@ -394,7 +411,10 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         )->execute($parameters);
     }
 
-    /** @param list<array{0:string, 1:string, 2:string, 3:int|null}> $rows */
+    /**
+     * @param list<array{0:string, 1:string, 2:string, 3:int|null}> $rows
+     * @throws PDOException
+     */
     private function upsertGenericRows(array $rows): bool
     {
         $this->pdo->beginTransaction();

@@ -55,6 +55,9 @@ final class CallableFingerprint
         return self::$objects[$object] ??= $object::class . '#' . ++self::$nextObjectId;
     }
 
+    /**
+     * @throws \InvalidArgumentException
+     */
     public static function value(mixed $value): mixed
     {
         BoundedValueTraversal::assertSafe($value);

@@ -22,7 +22,11 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
 
     private readonly string $namespace;
 
-    /** @param list<string> $seeds */
+    /**
+     * @param list<string> $seeds
+     * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     public function __construct(
         string $namespace = 'default',
         array $seeds = ['127.0.0.1:6379'],
@@ -167,6 +171,9 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
         return true;
     }
 
+    /**
+     * @throws \Psr\Cache\InvalidArgumentException
+     */
     #[\Override]
     public function save(CacheItemInterface $item): bool
     {
@@ -280,6 +287,9 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
         return $groups;
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function initializeGeneration(string $key, mixed $observed, string $failureMessage): string
     {
         $generation = self::normalizeGeneration($observed);

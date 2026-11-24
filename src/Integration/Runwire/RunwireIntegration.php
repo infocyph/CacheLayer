@@ -37,6 +37,9 @@ final class RunwireIntegration
         self::$runtime = $runtime;
     }
 
+    /**
+     * @throws \Infocyph\Runwire\Exception\CancelledException
+     */
     public static function checkpoint(): void
     {
         $context = self::current();
@@ -83,6 +86,10 @@ final class RunwireIntegration
         }
     }
 
+    /**
+     * @throws \LogicException
+     * @throws \OverflowException
+     */
     public static function memoizer(): ?Memoizer
     {
         $context = self::current();
@@ -107,6 +114,10 @@ final class RunwireIntegration
         return Memoizer::instance();
     }
 
+    /**
+     * @throws \LogicException
+     * @throws \OverflowException
+     */
     public static function onceMemoizer(): ?OnceMemoizer
     {
         $context = self::current();
@@ -191,6 +202,11 @@ final class RunwireIntegration
         }
     }
 
+    /**
+     * @throws \InvalidArgumentException
+     * @throws \LogicException
+     * @throws \Throwable
+     */
     public static function sleep(float $seconds): void
     {
         if ($seconds <= 0.0) {

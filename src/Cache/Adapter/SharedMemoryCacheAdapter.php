@@ -27,6 +27,10 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
 
     private readonly string $tokenFile;
 
+    /**
+     * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     public function __construct(
         string $namespace = 'default',
         int $segmentSize = 16_777_216,
@@ -303,6 +307,9 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         });
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function attachSegment(int $segmentSize): \SysvSharedMemory
     {
         if (!function_exists('ftok')) {
@@ -336,6 +343,9 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
             : null;
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function consumeRecord(string $key, string $mapped): CacheItemInterface
     {
         $store = $this->loadStore();
@@ -356,6 +366,9 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         return $this->genericItemFromRecord($key, $record);
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function createTokenFile(): string
     {
         $directory = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR)
@@ -406,6 +419,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
     /**
      * @param list<string> $tags
      * @return array<int|string, string>
+     * @throws RuntimeException
      */
     private function initializeTagGenerations(array $tags): array
     {
@@ -431,6 +445,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
 
     /**
      * @phpstan-return array<string, string>
+     * @throws RuntimeException
      */
     private function loadStore(): array
     {
@@ -467,7 +482,10 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         return $this->ns . ':m:tag:' . $tag;
     }
 
-    /** @phpstan-return resource */
+    /**
+     * @phpstan-return resource
+     * @throws RuntimeException
+     */
     private function openLockHandle(): mixed
     {
         $this->assertPathNotSymlink($this->tokenFile, 'Shared-memory token file');
@@ -486,6 +504,9 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         return hash('xxh128', self::class . "\0" . $this->ns . "\0" . $this->tokenFile);
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function prepareDirectory(string $directory): void
     {
         $this->assertPathNotSymlink($directory, 'Shared-memory cache directory');
@@ -554,6 +575,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
      * @param callable $callback The operation to run while locked.
      * @phpstan-param callable(): T $callback
      * @phpstan-return T
+     * @throws RuntimeException
      */
     private function withLock(int $operation, callable $callback): mixed
     {

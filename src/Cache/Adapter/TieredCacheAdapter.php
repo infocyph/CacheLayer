@@ -16,7 +16,10 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
 {
     private bool $l1Readable = true;
 
-    /** @param list<InternalCachePoolInterface> $pools */
+    /**
+     * @param list<InternalCachePoolInterface> $pools
+     * @throws InvalidArgumentException
+     */
     public function __construct(
         private readonly array $pools,
         private readonly bool $writeToL1 = true,
@@ -146,6 +149,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
     /**
      * @param list<string> $tags
      * @return array<int|string, string>
+     * @throws LogicException
      */
     #[\Override]
     public function getTagGenerations(array $tags): array
@@ -269,7 +273,10 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         return [$hits, $misses];
     }
 
-    /** @param list<string> $keys */
+    /**
+     * @param list<string> $keys
+     * @throws \Psr\Cache\InvalidArgumentException
+     */
     private function invalidateSkippedL1(array $keys, bool $written): bool
     {
         if (count($this->pools) === 1) {

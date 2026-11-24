@@ -18,6 +18,7 @@ final class PdoTagGenerationStore
     /**
      * @param list<string> $tags
      * @return array<int|string, string>
+     * @throws RuntimeException
      */
     public static function getOrInitialize(
         PDO $pdo,
@@ -93,6 +94,9 @@ final class PdoTagGenerationStore
         return $stored;
     }
 
+    /**
+     * @throws PDOException
+     */
     private static function insertIfMissing(
         PDO $pdo,
         string $driver,

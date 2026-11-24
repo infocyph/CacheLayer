@@ -27,6 +27,9 @@ final readonly class CachePayloadCodec
 
     private const string SIGNATURE_PURPOSE = 'cache-record:v3';
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     public function __construct(private CacheOptions $options = new CacheOptions()) {}
 
     /** @return array{ttl:int|null,expiresAt:int|null} */
@@ -88,6 +91,8 @@ final readonly class CachePayloadCodec
 
     /**
      * @param array<int|string, string> $tags
+     * @throws InvalidArgumentException
+     * @throws RuntimeException
      */
     public function encode(
         mixed $value,
@@ -134,6 +139,9 @@ final readonly class CachePayloadCodec
         return is_string($value) && strlen($value) === 32 && ctype_xdigit($value);
     }
 
+    /**
+     * @throws InvalidArgumentException
+     */
     private function assertNativeValueSupported(mixed $value): void
     {
         if ($value instanceof Closure) {
@@ -153,6 +161,9 @@ final readonly class CachePayloadCodec
         }
     }
 
+    /**
+     * @throws InvalidArgumentException
+     */
     private function attachSignature(
         string $payload,
         ?string $storageIdentity,
@@ -220,7 +231,10 @@ final readonly class CachePayloadCodec
         return ['valid' => true, 'value' => $value];
     }
 
-    /** @return array{0:'closure'|'native', 1:mixed} */
+    /**
+     * @return array{0:'closure'|'native', 1:mixed}
+     * @throws InvalidArgumentException
+     */
     private function encodeValue(mixed $value): array
     {
         if ($value instanceof Closure) {

@@ -24,6 +24,9 @@ LUA;
 
     private string $namespace;
 
+    /**
+     * @throws AtomicCounterException
+     */
     public function __construct(
         private \Redis $client,
         string $namespace = 'default',
@@ -39,6 +42,9 @@ LUA;
         }
     }
 
+    /**
+     * @throws AtomicCounterException
+     */
     #[\Override]
     public function decrement(string $key, int $by = 1, ?int $ttlSeconds = null): AtomicCounterValue
     {
@@ -55,6 +61,9 @@ LUA;
         return $this->client->del($this->map($key)) !== false;
     }
 
+    /**
+     * @throws AtomicCounterException
+     */
     #[\Override]
     public function get(string $key): ?int
     {
@@ -70,6 +79,9 @@ LUA;
         return $this->parseInteger($value);
     }
 
+    /**
+     * @throws AtomicCounterException
+     */
     #[\Override]
     public function increment(string $key, int $by = 1, ?int $ttlSeconds = null): AtomicCounterValue
     {
@@ -80,6 +92,9 @@ LUA;
         return $this->change($key, $by, $ttlSeconds);
     }
 
+    /**
+     * @throws AtomicCounterException
+     */
     private function change(string $key, int $by, ?int $ttlSeconds): AtomicCounterValue
     {
         $ttl = $this->normalizeTtl($ttlSeconds);
@@ -106,6 +121,9 @@ LUA;
         return new AtomicCounterValue($this->parseInteger($result[0]), $initialized);
     }
 
+    /**
+     * @throws AtomicCounterException
+     */
     private function map(string $key): string
     {
         try {
@@ -117,6 +135,9 @@ LUA;
         return self::COUNTER_PREFIX . $this->namespace . ':' . $key;
     }
 
+    /**
+     * @throws AtomicCounterException
+     */
     private function normalizeTtl(?int $ttlSeconds): int
     {
         if ($ttlSeconds === null) {
@@ -130,6 +151,9 @@ LUA;
         return $ttlSeconds;
     }
 
+    /**
+     * @throws AtomicCounterException
+     */
     private function parseInteger(string $value): int
     {
         if (preg_match('/^-?\d+$/D', $value) !== 1) {

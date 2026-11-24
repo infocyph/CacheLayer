@@ -25,6 +25,9 @@ final readonly class FileLockProvider implements LockProviderInterface
         $this->retrySleepMicros = max(1_000, $retrySleepMicros);
     }
 
+    /**
+     * @throws \InvalidArgumentException
+     */
     #[\Override]
     public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): ?LockHandle
     {
@@ -73,6 +76,9 @@ final readonly class FileLockProvider implements LockProviderInterface
         return new LockHandle($path, $token, $handle, $leaseSeconds);
     }
 
+    /**
+     * @throws \InvalidArgumentException
+     */
     #[\Override]
     public function refresh(?LockHandle $handle, float $leaseSeconds): bool
     {

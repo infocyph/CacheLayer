@@ -6,6 +6,9 @@ namespace Infocyph\CacheLayer\Cache\Adapter;
 
 final class ValkeyCacheAdapter extends RedisCacheAdapter
 {
+    /**
+     * @throws \RuntimeException
+     */
     public function __construct(
         string $namespace = 'default',
         #[\SensitiveParameter]

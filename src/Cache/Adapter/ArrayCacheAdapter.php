@@ -19,6 +19,9 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
     /** @var array<string, string> */
     private array $store = [];
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     public function __construct(string $namespace = 'default')
     {
         $this->ns = CacheInput::namespace($namespace);

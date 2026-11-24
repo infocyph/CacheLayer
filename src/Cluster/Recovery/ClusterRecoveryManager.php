@@ -58,6 +58,9 @@ final readonly class ClusterRecoveryManager
         return false;
     }
 
+    /**
+     * @throws ClusterCacheException
+     */
     private function clearLocalCache(): void
     {
         if (!$this->cache->clear()) {

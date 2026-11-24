@@ -26,11 +26,17 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
     /** @var array<string, array<int|string, string>> */
     private array $weakTags = [];
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     public function __construct(string $namespace = 'default')
     {
         $this->ns = CacheInput::namespace($namespace);
     }
 
+    /**
+     * @throws \Psr\Cache\InvalidArgumentException
+     */
     #[\Override]
     public function atomicCompareAndSet(
         string $key,
@@ -54,6 +60,9 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return $this->persistItem($replacement, $expiration);
     }
 
+    /**
+     * @throws \Psr\Cache\InvalidArgumentException
+     */
     #[\Override]
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
@@ -69,6 +78,9 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return $current;
     }
 
+    /**
+     * @throws \Psr\Cache\InvalidArgumentException
+     */
     #[\Override]
     public function atomicSetIfAbsent(CacheItemInterface $item): bool
     {
@@ -222,7 +234,10 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return $this->saveEncoded($item, $this->persistItem(...));
     }
 
-    /** @param array<string, CacheItemInterface> $items */
+    /**
+     * @param array<string, CacheItemInterface> $items
+     * @throws \Psr\Cache\InvalidArgumentException
+     */
     #[\Override]
     public function saveItems(array $items): bool
     {

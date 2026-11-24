@@ -15,6 +15,7 @@ final class CacheItem implements CacheItemInterface
 {
     /**
      * @param array<int|string, string> $tags
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
     public function __construct(
         private readonly InternalCachePoolInterface $pool,

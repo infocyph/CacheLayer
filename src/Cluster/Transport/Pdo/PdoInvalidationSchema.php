@@ -14,6 +14,9 @@ final class PdoInvalidationSchema
 
     public const string LOCK_TABLE = 'cachelayer_invalidation_clusters';
 
+    /**
+     * @throws ClusterTransportException
+     */
     public static function install(PDO $connection, bool $allowSqliteForTesting = false): void
     {
         $driver = self::driver($connection, $allowSqliteForTesting);
@@ -59,6 +62,9 @@ final class PdoInvalidationSchema
             . ', created_at BIGINT NOT NULL)';
     }
 
+    /**
+     * @throws PDOException
+     */
     private static function createIndex(PDO $connection, string $driver): void
     {
         $ifNotExists = $driver === 'mysql' ? '' : ' IF NOT EXISTS';
@@ -86,6 +92,9 @@ final class PdoInvalidationSchema
             . 'cluster_name ' . $identity . ' NOT NULL PRIMARY KEY)';
     }
 
+    /**
+     * @throws ClusterTransportException
+     */
     private static function driver(PDO $connection, bool $allowSqliteForTesting): string
     {
         $driver = $connection->getAttribute(PDO::ATTR_DRIVER_NAME);

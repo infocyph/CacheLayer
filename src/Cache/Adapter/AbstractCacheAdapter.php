@@ -51,7 +51,10 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
     #[\Override]
     abstract public function saveItems(array $items): bool;
 
-    /** @internal */
+    /**
+     * @internal
+     * @throws \LogicException
+     */
     public function assertOptionsCompatible(CacheOptions $options): void
     {
         if ($this->options !== null && $this->options != $options) {
@@ -59,7 +62,10 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         }
     }
 
-    /** @internal */
+    /**
+     * @internal
+     * @throws \LogicException
+     */
     public function assertStorageIdentityCompatible(string $storageIdentity): void
     {
         if ($this->storageIdentity !== null && $this->storageIdentity !== $storageIdentity) {
@@ -104,6 +110,9 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         $this->storageIdentity ??= $storageIdentity;
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     #[\Override]
     public function createItem(string $key): CacheItemInterface
     {
@@ -233,6 +242,9 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         return clone $pending;
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     protected function discardDeferredKey(string $key): void
     {
         CacheInput::key($key);
@@ -243,7 +255,10 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         unset($this->deferred[$this->deferredKey($key)]);
     }
 
-    /** @param array<array-key, string> $keys */
+    /**
+     * @param array<array-key, string> $keys
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     protected function discardDeferredKeys(array $keys): void
     {
         $keys = CacheInput::keys($keys);
@@ -308,6 +323,9 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         );
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     protected function genericItemFromRecord(string $key, CacheRecord $record): CacheItem
     {
         CacheInput::key($key);
@@ -326,6 +344,9 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         );
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     protected function genericMiss(string $key): CacheItem
     {
         CacheInput::key($key);

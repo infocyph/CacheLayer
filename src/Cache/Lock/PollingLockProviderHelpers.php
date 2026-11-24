@@ -8,6 +8,9 @@ use Throwable;
 
 trait PollingLockProviderHelpers
 {
+    /**
+     * @throws \InvalidArgumentException
+     */
     protected static function leaseMilliseconds(float $leaseSeconds): int
     {
         if (!is_finite($leaseSeconds) || $leaseSeconds <= 0.0) {
@@ -22,6 +25,9 @@ trait PollingLockProviderHelpers
         return max(1, (int) $milliseconds);
     }
 
+    /**
+     * @throws \InvalidArgumentException
+     */
     protected static function leaseSeconds(float $leaseSeconds): int
     {
         if (!is_finite($leaseSeconds) || $leaseSeconds <= 0.0) {
@@ -48,6 +54,7 @@ trait PollingLockProviderHelpers
      * @param float $leaseSeconds The lease seconds argument.
      * @param callable $attemptAcquire The attempt acquire argument.
      * @phpstan-param callable(string,string):bool $attemptAcquire
+     * @throws \InvalidArgumentException
      */
     protected function acquireWithRetry(
         string $prefix,

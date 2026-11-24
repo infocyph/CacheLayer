@@ -17,6 +17,9 @@ final class ClusterOutbox
 
     private bool $localInvalidationApplied = false;
 
+    /**
+     * @throws ClusterCacheException
+     */
     public function __construct(
         private readonly PDO $connection,
         private readonly TransactionalInvalidationTransportInterface $transport,
@@ -30,6 +33,9 @@ final class ClusterOutbox
         }
     }
 
+    /**
+     * @throws ClusterCacheException
+     */
     public function applyLocally(): void
     {
         if ($this->connection->inTransaction()) {
@@ -46,16 +52,25 @@ final class ClusterOutbox
         $this->localInvalidationApplied = true;
     }
 
+    /**
+     * @throws ClusterCacheException
+     */
     public function clearNamespace(): void
     {
         $this->publish(InvalidationEvent::namespace($this->cluster, $this->namespace, $this->outboxOrigin()));
     }
 
+    /**
+     * @throws ClusterCacheException
+     */
     public function invalidateKey(string $key): void
     {
         $this->publish(InvalidationEvent::key($this->cluster, $this->namespace, $key, $this->outboxOrigin()));
     }
 
+    /**
+     * @throws ClusterCacheException
+     */
     public function invalidateTag(string $tag): void
     {
         $this->publish(InvalidationEvent::tag($this->cluster, $this->namespace, $tag, $this->outboxOrigin()));

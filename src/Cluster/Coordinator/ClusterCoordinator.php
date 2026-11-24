@@ -20,18 +20,27 @@ final readonly class ClusterCoordinator
         private bool $invalidateLocallyFirst = true,
     ) {}
 
+    /**
+     * @throws ClusterCacheException
+     */
     public function clearNamespace(): void
     {
         $event = InvalidationEvent::namespace($this->cluster, $this->namespace, $this->nodeId);
         $this->coordinate($event, fn(): bool => $this->cache->clear());
     }
 
+    /**
+     * @throws ClusterCacheException
+     */
     public function invalidateKey(string $key): void
     {
         $event = InvalidationEvent::key($this->cluster, $this->namespace, $key, $this->nodeId);
         $this->coordinate($event, fn(): bool => $this->cache->delete($key));
     }
 
+    /**
+     * @throws ClusterCacheException
+     */
     public function invalidateTag(string $tag): void
     {
         $event = InvalidationEvent::tag($this->cluster, $this->namespace, $tag, $this->nodeId);
@@ -68,6 +77,9 @@ final readonly class ClusterCoordinator
         $this->invalidate($invalidate);
     }
 
+    /**
+     * @throws ClusterCacheException
+     */
     private function invalidate(callable $invalidate): void
     {
         if (!$invalidate()) {

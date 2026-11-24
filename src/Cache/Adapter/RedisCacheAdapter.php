@@ -76,6 +76,7 @@ LUA;
      * @param string $namespace A namespace prefix to avoid key collisions.
      * @param string $dsn The Redis connection DSN (e.g., 'redis://127.0.0.1:6379').
      * @param \Redis|null $client Optional pre-configured Redis client instance.
+     * @throws CacheInvalidArgumentException
      */
     public function __construct(
         string $namespace = 'default',
@@ -91,6 +92,9 @@ LUA;
         $this->redis = $client ?? $this->connect($dsn);
     }
 
+    /**
+     * @throws CacheInvalidArgumentException
+     */
     #[\Override]
     public function atomicCompareAndSet(
         string $key,
@@ -145,6 +149,9 @@ LUA;
         return $this->genericItemFromRecord($key, $record);
     }
 
+    /**
+     * @throws CacheInvalidArgumentException
+     */
     #[\Override]
     public function atomicSetIfAbsent(CacheItemInterface $item): bool
     {
@@ -346,6 +353,9 @@ LUA;
         return $this->redis->mset($generations);
     }
 
+    /**
+     * @throws CacheInvalidArgumentException
+     */
     #[\Override]
     public function save(CacheItemInterface $item): bool
     {
@@ -406,6 +416,9 @@ LUA;
         return $ok && $this->saveExpiring($expiring);
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function connect(#[\SensitiveParameter] string $dsn): \Redis
     {
         try {
@@ -415,6 +428,9 @@ LUA;
         }
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function initializeTagGeneration(string $tag, mixed $observed): string
     {
         $candidate = self::newGeneration();

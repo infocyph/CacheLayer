@@ -30,6 +30,7 @@ if (!function_exists('remember')) {
      * @param array<array-key, mixed> $params
      *
      * @throws ReflectionException
+     * @throws InvalidArgumentException
      */
     function remember(?object $object = null, ?callable $callable = null, array $params = []): mixed
     {

@@ -38,6 +38,10 @@ final class AtomicCache implements AtomicCacheInterface
         return new self($adapter, $options, $metrics);
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws CacheBackendException
+     */
     #[\Override]
     public function compareAndSet(
         string $key,
@@ -64,6 +68,10 @@ final class AtomicCache implements AtomicCacheInterface
         return $stored;
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws CacheBackendException
+     */
     #[\Override]
     public function getAndDelete(string $key, mixed $default = null): mixed
     {
@@ -83,6 +91,10 @@ final class AtomicCache implements AtomicCacheInterface
         return $item->get();
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws CacheBackendException
+     */
     #[\Override]
     public function setIfAbsent(
         string $key,

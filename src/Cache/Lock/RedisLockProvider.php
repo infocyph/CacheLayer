@@ -74,6 +74,9 @@ LUA;
         );
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function assertRedisExtensionLoaded(): void
     {
         if (!class_exists(\Redis::class)) {

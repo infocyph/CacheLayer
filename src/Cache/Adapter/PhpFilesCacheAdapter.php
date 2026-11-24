@@ -132,6 +132,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
     /**
      * @param list<string> $tags
      * @return array<int|string, string>
+     * @throws RuntimeException
      */
     #[\Override]
     public function getTagGenerations(array $tags): array
@@ -161,6 +162,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
     /**
      * @param list<string> $keys
      * @return array<string, CacheItem>
+     * @throws \Psr\Cache\InvalidArgumentException
      */
     #[\Override]
     public function multiFetch(array $keys): array
@@ -209,6 +211,10 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         return $ok;
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws RuntimeException
+     */
     private function createDirectory(string $ns, ?string $baseDir): void
     {
         $baseDir = rtrim($baseDir ?? $this->defaultBaseDirectory(), DIRECTORY_SEPARATOR);
@@ -337,6 +343,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
      * @template T
      * @param callable(): T $callback
      * @return T
+     * @throws RuntimeException
      */
     private function withKeyLock(string $key, callable $callback): mixed
     {

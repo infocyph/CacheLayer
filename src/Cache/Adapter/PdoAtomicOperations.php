@@ -175,6 +175,8 @@ trait PdoAtomicOperations
      * @template T
      * @param callable(): T $callback
      * @return T
+     * @throws RuntimeException
+     * @throws Throwable
      */
     private function atomicTransaction(callable $callback): mixed
     {

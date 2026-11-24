@@ -48,6 +48,9 @@ final class NodeCache
         );
     }
 
+    /**
+     * @throws \RuntimeException
+     */
     private static function createApcuAdapter(
         NodeCacheConfig $config,
         string $storageIdentity,

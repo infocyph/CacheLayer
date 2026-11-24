@@ -12,6 +12,9 @@ use PDOException;
 
 final class NodeSqliteConnection
 {
+    /**
+     * @throws NodeCacheConfigurationException
+     */
     public static function create(NodeCacheConfig $config): PDO
     {
         self::prepareDirectory($config->sqliteFile);
@@ -39,6 +42,9 @@ final class NodeSqliteConnection
         return $connection;
     }
 
+    /**
+     * @throws NodeCacheConfigurationException
+     */
     private static function assertSecureDirectory(string $directory): void
     {
         if (!is_writable($directory)) {
@@ -51,6 +57,9 @@ final class NodeSqliteConnection
         }
     }
 
+    /**
+     * @throws NodeCacheConfigurationException
+     */
     private static function assertSecureFile(string $file): void
     {
         if (!is_file($file)) {
@@ -63,6 +72,9 @@ final class NodeSqliteConnection
         }
     }
 
+    /**
+     * @throws NodeCacheConfigurationException
+     */
     private static function assertTrustedFilePath(string $file): void
     {
         if (FilesystemTrust::containsSymlink($file)) {
@@ -73,6 +85,9 @@ final class NodeSqliteConnection
         }
     }
 
+    /**
+     * @throws NodeCacheConfigurationException
+     */
     private static function ensureDirectory(string $directory): void
     {
         if (!is_dir($directory) && !mkdir($directory, 0750, true) && !is_dir($directory)) {
