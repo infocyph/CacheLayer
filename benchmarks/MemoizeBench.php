@@ -7,6 +7,7 @@ namespace Infocyph\CacheLayer\Benchmarks;
 use Infocyph\CacheLayer\Memoize\Memoizer;
 use PhpBench\Attributes as Bench;
 
+/** @api PHPBench discovers this benchmark entry point through attributes. */
 #[Bench\Iterations(5)]
 #[Bench\Revs(5000)]
 final class MemoizeBench
@@ -16,18 +17,31 @@ final class MemoizeBench
         Memoizer::instance()->flush();
     }
 
+    /**
+     * @throws \ReflectionException
+     * @throws \UnexpectedValueException
+     */
     #[Bench\BeforeMethods(['setUp'])]
     public function benchGlobalMemoizeHit(): int
     {
         $fn = static fn(int $v): int => $v * 2;
         $sum = 0;
         for ($i = 0; $i < 100; $i++) {
-            $sum += memoize($fn, [7]);
+            $value = memoize($fn, [7]);
+            if (!is_int($value)) {
+                throw new \UnexpectedValueException('The benchmark expected an integer memoized result.');
+            }
+            $sum += $value;
         }
 
         return $sum;
     }
 
+    /**
+     * @throws \ReflectionException
+     * @throws \InvalidArgumentException
+     * @throws \UnexpectedValueException
+     */
     #[Bench\BeforeMethods(['setUp'])]
     public function benchObjectMemoizeHit(): int
     {
@@ -35,18 +49,29 @@ final class MemoizeBench
         $fn = static fn(): int => 21;
         $sum = 0;
         for ($i = 0; $i < 100; $i++) {
-            $sum += remember($obj, $fn);
+            $value = remember($obj, $fn);
+            if (!is_int($value)) {
+                throw new \UnexpectedValueException('The benchmark expected an integer memoized result.');
+            }
+            $sum += $value;
         }
 
         return $sum;
     }
 
+    /**
+     * @throws \UnexpectedValueException
+     */
     #[Bench\BeforeMethods(['setUp'])]
     public function benchOnceCallSiteLookup(): int
     {
         $sum = 0;
         for ($index = 0; $index < 100; $index++) {
-            $sum += once(static fn(): int => 21);
+            $value = once(static fn(): int => 21);
+            if (!is_int($value)) {
+                throw new \UnexpectedValueException('The benchmark expected an integer memoized result.');
+            }
+            $sum += $value;
         }
 
         return $sum;

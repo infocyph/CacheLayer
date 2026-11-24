@@ -12,6 +12,7 @@ use Infocyph\CacheLayer\Cache\Lock\LockHandle;
 use Infocyph\CacheLayer\Cache\Lock\LockProviderInterface;
 use PhpBench\Attributes as Bench;
 
+/** @api PHPBench discovers this benchmark entry point through attributes. */
 #[Bench\Iterations(5)]
 #[Bench\Revs(500)]
 final class CachePolicyBench
@@ -23,16 +24,33 @@ final class CachePolicyBench
         $this->payload = str_repeat('cachelayer-payload-', 256);
     }
 
-    /** @param array{threshold:int} $params */
+    /**
+     * @param array{threshold:int} $params
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws \RuntimeException
+     * @throws \UnexpectedValueException
+     */
     #[Bench\ParamProviders('provideCompressionThresholds')]
     public function benchCompressedCodec(array $params): int
     {
         $codec = new CachePayloadCodec(new CacheOptions(compressionThreshold: $params['threshold']));
         $record = $codec->decode($codec->encode($this->payload, null));
 
-        return strlen((string) $record?->value);
+        $value = $record?->value;
+        if (!is_string($value)) {
+            throw new \UnexpectedValueException('The benchmark expected a decoded string.');
+        }
+
+        return strlen($value);
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws \RuntimeException
+     * @throws \UnexpectedValueException
+     */
     public function benchHmacCodec(): int
     {
         $codec = new CachePayloadCodec(new CacheOptions(integrityKey: 'benchmark-secret'));
@@ -44,22 +62,45 @@ final class CachePolicyBench
         );
         $record = $codec->decode($payload, 'benchmark', 'payload');
 
-        return strlen((string) $record?->value);
+        $value = $record?->value;
+        if (!is_string($value)) {
+            throw new \UnexpectedValueException('The benchmark expected a decoded string.');
+        }
+
+        return strlen($value);
     }
 
+    /**
+     * @throws \Psr\SimpleCache\InvalidArgumentException
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \UnexpectedValueException
+     */
     public function benchPlainGet(): int
     {
         $cache = Cache::memory('plain-get');
         $cache->set('hot', 42);
 
-        return (int) $cache->get('hot');
+        $value = $cache->get('hot');
+        if (!is_int($value)) {
+            throw new \UnexpectedValueException('The benchmark expected an integer cache hit.');
+        }
+
+        return $value;
     }
 
+    /**
+     * @throws \Psr\SimpleCache\InvalidArgumentException
+     */
     public function benchPlainSet(): int
     {
         return Cache::memory('plain-set')->set('key', 42) ? 1 : 0;
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \UnexpectedValueException
+     */
     public function benchRememberContendedTimeout(): int
     {
         $lock = new class implements LockProviderInterface {
@@ -87,45 +128,98 @@ final class CachePolicyBench
         };
         $cache = new Cache(new ArrayCacheAdapter('contended'), $lock);
 
-        return (int) $cache->remember('cold', static fn(): int => 42, 60);
+        $value = $cache->remember('cold', static fn(): int => 42, 60);
+        if (!is_int($value)) {
+            throw new \UnexpectedValueException('The benchmark expected an integer cache hit.');
+        }
+
+        return $value;
     }
 
+    /**
+     * @throws \Psr\SimpleCache\InvalidArgumentException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \UnexpectedValueException
+     */
     public function benchRememberHit(): int
     {
         $cache = Cache::memory('remember-hit');
         $cache->set('hot', 42);
 
-        return (int) $cache->remember('hot', static fn(): int => 0, 60);
+        $value = $cache->remember('hot', static fn(): int => 0, 60);
+        if (!is_int($value)) {
+            throw new \UnexpectedValueException('The benchmark expected an integer cache hit.');
+        }
+
+        return $value;
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \UnexpectedValueException
+     */
     public function benchRememberMiss(): int
     {
         $cache = Cache::memory('remember-miss');
 
-        return (int) $cache->remember('cold', static fn(): int => 42, 60);
+        $value = $cache->remember('cold', static fn(): int => 42, 60);
+        if (!is_int($value)) {
+            throw new \UnexpectedValueException('The benchmark expected an integer cache hit.');
+        }
+
+        return $value;
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \Psr\SimpleCache\InvalidArgumentException
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \UnexpectedValueException
+     */
     public function benchTaggedGet(): int
     {
         $cache = Cache::memory('tagged-get');
         $cache->setTagged('hot', 42, ['group']);
 
-        return (int) $cache->get('hot');
+        $value = $cache->get('hot');
+        if (!is_int($value)) {
+            throw new \UnexpectedValueException('The benchmark expected an integer cache hit.');
+        }
+
+        return $value;
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \Psr\SimpleCache\InvalidArgumentException
+     */
     public function benchTaggedSet(): int
     {
         return Cache::memory('tagged-set')->setTagged('key', 42, ['group']) ? 1 : 0;
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws \RuntimeException
+     * @throws \UnexpectedValueException
+     */
     public function benchUnsignedCodec(): int
     {
         $codec = new CachePayloadCodec();
         $record = $codec->decode($codec->encode($this->payload, null));
 
-        return strlen((string) $record?->value);
+        $value = $record?->value;
+        if (!is_string($value)) {
+            throw new \UnexpectedValueException('The benchmark expected a decoded string.');
+        }
+
+        return strlen($value);
     }
 
+    /** @return iterable<string, array{threshold:int}> */
     public function provideCompressionThresholds(): iterable
     {
         yield '512 bytes' => ['threshold' => 512];
