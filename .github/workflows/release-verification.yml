@@ -253,14 +253,16 @@ jobs:
             sleep 2
           done
           docker exec cachelayer-scylla cqlsh -e "CREATE KEYSPACE IF NOT EXISTS cachelayer WITH replication = {'class':'NetworkTopologyStrategy','datacenter1':1};"
-      - name: Install pinned Scylla PHP CQL driver
+      - name: Install matching Ubuntu Scylla PHP CQL driver
         shell: bash
         run: |
           set -euo pipefail
+          source /etc/os-release
           sudo apt-get update
           sudo apt-get install -y libuv1-dev libgmp10
           mkdir -p .ci/scylla-driver
-          curl -fsSL https://github.com/he4rt/scylladb-php-driver/releases/download/v1.5.1/manylinux_2_28_x86_64-php${{ matrix.php }}-nts-cassandra.tar.gz -o .ci/scylla-driver/driver.tar.gz
+          asset="ubuntu-${VERSION_ID}-php${{ matrix.php }}-nts-cassandra.tar.gz"
+          curl -fsSL --retry 3 "https://github.com/he4rt/scylladb-php-driver/releases/latest/download/$asset" -o .ci/scylla-driver/driver.tar.gz
           tar -xzf .ci/scylla-driver/driver.tar.gz -C .ci/scylla-driver
           php -d "extension=$PWD/.ci/scylla-driver/cassandra.so" -r 'if (!class_exists("Cassandra")) { throw new RuntimeException("Cassandra extension did not load."); }'
       - name: Exercise CacheLayer against real CQL
