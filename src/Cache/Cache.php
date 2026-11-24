@@ -334,6 +334,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
      * @throws \RuntimeException
      * @throws CacheInvalidArgumentException
      * @throws \Infocyph\CacheLayer\Cache\Lock\UnsupportedPdoLockDriver
+     * @throws \LogicException
      */
     public static function sqlite(
         string $namespace = 'default',
@@ -581,6 +582,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
 
     /**
      * @throws CacheBackendException
+     * @throws CacheInvalidArgumentException
      */
     #[\Override]
     public function has(string $key): bool
@@ -643,6 +645,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
     /**
      * @throws \Psr\SimpleCache\InvalidArgumentException
      * @throws \Psr\Cache\InvalidArgumentException
+     * @throws CacheBackendException
      */
     #[\Override]
     public function offsetExists(mixed $offset): bool

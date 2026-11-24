@@ -59,7 +59,9 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         parent::__destruct();
         $handle = $this->lockHandle;
         fclose($handle);
-        shm_detach($this->segment);
+        if (!shm_detach($this->segment)) {
+            error_log('Unable to detach the shared-memory cache segment.');
+        }
     }
 
     /**
@@ -232,6 +234,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
 
     /**
      * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
     #[\Override]
     public function hasItem(string $key): bool
@@ -543,7 +546,9 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
             return $lockHandle;
         }
 
-        shm_detach($this->segment);
+        if (!shm_detach($this->segment)) {
+            throw new RuntimeException('Unable to open the shared-memory lock file or detach its segment.');
+        }
 
         throw new RuntimeException('Unable to open the shared-memory lock file');
     }

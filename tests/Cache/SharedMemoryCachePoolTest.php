@@ -152,10 +152,10 @@ test('shared memory atomic claim has one winner under process contention', funct
             $workerCache = Cache::sharedMemory($namespace);
             $atomic = $workerCache->atomic();
             $won = $atomic?->setIfAbsent('claim', $worker, 30) === true;
-            if (file_put_contents($directory . '/' . $worker, $won ? '1' : '0') === false) {
-                exit(2);
-            }
-            exit(0);
+            $written = file_put_contents($directory . '/' . $worker, $won ? '1' : '0');
+            pcntl_exec(PHP_BINARY, ['-r', $written === 1 ? '' : 'throw new RuntimeException("Unable to write contender result.");']);
+
+            throw new RuntimeException('Unable to terminate shared-memory contender.');
         }
         if ($pid < 0) {
             throw new RuntimeException('Unable to fork a cache contention process.');
@@ -165,7 +165,7 @@ test('shared memory atomic claim has one winner under process contention', funct
 
     foreach ($children as $pid) {
         $status = 0;
-        if (pcntl_waitpid($pid, $status) !== $pid || !is_int($status) || !pcntl_wifexited($status)) {
+        if (pcntl_waitpid($pid, $status) !== $pid || !pcntl_wifexited($status)) {
             throw new RuntimeException('Shared-memory contender did not exit normally.');
         }
         expect(pcntl_wexitstatus($status))->toBe(0);

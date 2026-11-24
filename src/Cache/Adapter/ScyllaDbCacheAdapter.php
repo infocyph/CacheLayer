@@ -110,6 +110,9 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
         return true;
     }
 
+    /**
+     * @throws RuntimeException
+     */
     #[\Override]
     public function getItem(string $key): CacheItem
     {
@@ -177,6 +180,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
      * @param array $keys The keys argument.
      * @phpstan-param list<string> $keys
      * @phpstan-return array<string, CacheItem>
+     * @throws RuntimeException
      */
     #[\Override]
     public function multiFetch(array $keys): array

@@ -135,6 +135,7 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
 
     /**
      * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
     #[\Override]
     public function hasItem(string $key): bool

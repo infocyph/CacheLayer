@@ -20,9 +20,6 @@ final class CallableFingerprint
     /** @var WeakMap<object, string>|null */
     private static ?WeakMap $objects = null;
 
-    /**
-     * @throws \LogicException
-     */
     public static function callable(callable $callable): string
     {
         if ($callable instanceof Closure) {
@@ -34,15 +31,11 @@ final class CallableFingerprint
         if (is_string($callable)) {
             return 'string:' . $callable;
         }
-        if (is_array($callable)) {
-            $target = is_object($callable[0])
-                ? self::objectIdentity($callable[0])
-                : 'class:' . $callable[0];
+        $target = is_object($callable[0])
+            ? self::objectIdentity($callable[0])
+            : 'class:' . $callable[0];
 
-            return 'array:' . $target . '::' . $callable[1];
-        }
-
-        throw new \LogicException('Unsupported callable representation.');
+        return 'array:' . $target . '::' . $callable[1];
     }
 
     public static function flush(): void

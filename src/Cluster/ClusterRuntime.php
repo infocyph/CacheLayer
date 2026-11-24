@@ -157,6 +157,7 @@ final readonly class ClusterRuntime
 
     /**
      * @throws ClusterCacheException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
      */
     public function recoverIfRequired(): bool
     {

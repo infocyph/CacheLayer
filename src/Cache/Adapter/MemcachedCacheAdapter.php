@@ -262,6 +262,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
 
     /**
      * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
     #[\Override]
     public function hasItem(string $key): bool

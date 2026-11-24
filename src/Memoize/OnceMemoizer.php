@@ -52,9 +52,6 @@ final class OnceMemoizer
         return $value;
     }
 
-    /**
-     * @throws \LogicException
-     */
     private function cacheKey(callable $callback, int $callerOffset): string
     {
         $bt = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 4 + $callerOffset);
@@ -70,9 +67,6 @@ final class OnceMemoizer
             . ':' . $this->callbackFingerprint($callback);
     }
 
-    /**
-     * @throws \LogicException
-     */
     private function callbackFingerprint(callable $callback): string
     {
         if ($callback instanceof Closure) {

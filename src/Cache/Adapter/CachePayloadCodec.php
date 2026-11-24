@@ -28,10 +28,13 @@ final readonly class CachePayloadCodec
 
     private const string SIGNATURE_PURPOSE = 'cache-record:v3';
 
-    /**
-     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
-     */
-    public function __construct(private CacheOptions $options = new CacheOptions()) {}
+    private CacheOptions $options;
+
+    /** @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException */
+    public function __construct(?CacheOptions $options = null)
+    {
+        $this->options = $options ?? new CacheOptions();
+    }
 
     /**
      * @return array{ttl:int|null,expiresAt:int|null}

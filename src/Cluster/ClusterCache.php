@@ -22,6 +22,7 @@ final class ClusterCache
      * @throws \RuntimeException
      * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      * @throws \Infocyph\CacheLayer\Cluster\Exception\ClusterCacheException
+     * @throws \LogicException
      */
     public static function create(
         NodeCacheConfig $node,
