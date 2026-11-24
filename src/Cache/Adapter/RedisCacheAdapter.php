@@ -420,12 +420,8 @@ LUA;
             return false;
         }
 
-        $ok = $plain === [] || $this->redis->mset($plain);
-        if ($expiring === []) {
-            return $ok;
-        }
-
-        return $ok && $this->saveExpiring($expiring);
+        return ($plain === [] || $this->redis->mset($plain) === true)
+            && ($expiring === [] || $this->saveExpiring($expiring));
     }
 
     private static function deleteSucceeded(mixed $result): bool

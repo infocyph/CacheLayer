@@ -436,7 +436,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
     }
 
     /**
-     * @throws \Psr\SimpleCache\InvalidArgumentException
+     * @throws CacheInvalidArgumentException
      * @throws CacheBackendException
      */
     #[\Override]

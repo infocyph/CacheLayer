@@ -35,7 +35,7 @@ final class Memoizer
         return self::$instance ??= new self();
     }
 
-    /** @internal Create lifecycle-isolated memoization state. */
+    /** Create independent memoization state without using the process singleton. */
     public static function isolated(): self
     {
         return new self();
