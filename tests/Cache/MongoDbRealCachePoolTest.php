@@ -15,42 +15,52 @@ if (!class_exists(MongoDB\Client::class)) {
     throw new RuntimeException('mongodb/mongodb is required for the configured MongoDB integration matrix.');
 }
 
-beforeEach(function () use ($mongoDsn, $mongoDatabase) {
+$mongoRealFixture = new class {
+    public \MongoDB\Client $mongoClient;
+
+    public \MongoDB\Collection $mongoCollection;
+
+    public Cache $mongoCache;
+};
+
+beforeEach(function () use ($mongoDsn, $mongoDatabase, $mongoRealFixture): void {
     $client = new MongoDB\Client($mongoDsn);
     $client->selectDatabase($mongoDatabase)->command(['ping' => 1]);
 
     $collectionName = 'cachelayer_real_' . getmypid() . '_' . bin2hex(random_bytes(4));
-    $this->mongoClient = $client;
-    $this->mongoCollection = $client->selectCollection($mongoDatabase, $collectionName);
-    $this->mongoCache = new Cache(new MongoDbCacheAdapter($this->mongoCollection, 'mongo-real'));
+    $mongoRealFixture->mongoClient = $client;
+    $mongoRealFixture->mongoCollection = $client->selectCollection($mongoDatabase, $collectionName);
+    $mongoRealFixture->mongoCache = new Cache(new MongoDbCacheAdapter($mongoRealFixture->mongoCollection, 'mongo-real'));
 });
 
-afterEach(function () {
-    $this->mongoCollection->drop();
+afterEach(function () use ($mongoRealFixture): void {
+    if (isset($mongoRealFixture->mongoCollection)) {
+        $mongoRealFixture->mongoCollection->drop();
+    }
 });
 
-test('real MongoDB stores, expires, tags, and clears cache records', function () {
-    expect($this->mongoCache->set('value', ['ok' => true], 30))->toBeTrue()
-        ->and($this->mongoCache->get('value'))->toBe(['ok' => true])
-        ->and($this->mongoCache->setTagged('tagged', 'v1', ['group'], 30))->toBeTrue()
-        ->and($this->mongoCache->get('tagged'))->toBe('v1')
-        ->and($this->mongoCache->invalidateTag('group'))->toBeTrue()
-        ->and($this->mongoCache->get('tagged'))->toBeNull()
-        ->and($this->mongoCache->set('clear-me', 'value'))->toBeTrue()
-        ->and($this->mongoCache->clear())->toBeTrue()
-        ->and($this->mongoCache->get('clear-me'))->toBeNull();
+test('real MongoDB stores, expires, tags, and clears cache records', function () use ($mongoRealFixture): void {
+    expect($mongoRealFixture->mongoCache->set('value', ['ok' => true], 30))->toBeTrue()
+        ->and($mongoRealFixture->mongoCache->get('value'))->toBe(['ok' => true])
+        ->and($mongoRealFixture->mongoCache->setTagged('tagged', 'v1', ['group'], 30))->toBeTrue()
+        ->and($mongoRealFixture->mongoCache->get('tagged'))->toBe('v1')
+        ->and($mongoRealFixture->mongoCache->invalidateTag('group'))->toBeTrue()
+        ->and($mongoRealFixture->mongoCache->get('tagged'))->toBeNull()
+        ->and($mongoRealFixture->mongoCache->set('clear-me', 'value'))->toBeTrue()
+        ->and($mongoRealFixture->mongoCache->clear())->toBeTrue()
+        ->and($mongoRealFixture->mongoCache->get('clear-me'))->toBeNull();
 
-    expect($this->mongoCache->set('expires', 'soon', 1))->toBeTrue();
+    expect($mongoRealFixture->mongoCache->set('expires', 'soon', 1))->toBeTrue();
     usleep(2_000_000);
-    expect($this->mongoCache->get('expires'))->toBeNull();
+    expect($mongoRealFixture->mongoCache->get('expires'))->toBeNull();
 });
 
-test('real MongoDB atomic claim has exactly one process winner', function () use ($mongoDsn, $mongoDatabase) {
+test('real MongoDB atomic claim has exactly one process winner', function () use ($mongoDsn, $mongoDatabase, $mongoRealFixture): void {
     if (!function_exists('pcntl_fork')) {
         throw new RuntimeException('pcntl is required for real MongoDB atomic contention coverage.');
     }
 
-    $collectionName = $this->mongoCollection->getCollectionName();
+    $collectionName = $mongoRealFixture->mongoCollection->getCollectionName();
     $children = [];
     for ($worker = 0; $worker < 8; ++$worker) {
         $pid = pcntl_fork();

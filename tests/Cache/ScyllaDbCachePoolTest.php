@@ -7,87 +7,58 @@ use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 use Infocyph\CacheLayer\Support\OptionalCassandra;
 
-beforeEach(function () {
-    $this->session = new class
+final class CacheLayerScyllaSessionDouble
+{
+    /** @var array<string, array{ckey:string,payload:string,expires:int|null}> */
+    private array $rows = [];
+
+    /** @var array<string, array{tag:string,generation:string}> */
+    private array $metadata = [];
+
+    public int $bucketReads = 0;
+
+    public int $writeBatches = 0;
+
+    public function prepare(string $cql): string
     {
-        /** @var array<string, array{ckey:string,payload:string,expires:int|null}> */
-        private array $rows = [];
+        return $cql;
+    }
 
-        /** @var array<string, array{tag:string,generation:string}> */
-        private array $metadata = [];
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function execute(mixed $statement, mixed $options = []): array
+    {
+        $cql = trim((string) $statement);
+        $args = $this->extractArguments($options);
 
-        public int $bucketReads = 0;
-
-        public int $writeBatches = 0;
-
-        public function prepare(string $cql): string
-        {
-            return $cql;
+        if (str_starts_with($cql, 'CREATE TABLE')) {
+            return [];
         }
 
-        /**
-         * @return array<int, array<string, mixed>>
-         */
-        public function execute(mixed $statement, mixed $options = []): array
-        {
-            $cql = trim((string) $statement);
-            $args = $this->extractArguments($options);
-
-            if (str_starts_with($cql, 'CREATE TABLE')) {
-                return [];
-            }
-
-            if (str_contains($cql, 'cachelayer_entries_metadata')) {
-                if (str_starts_with($cql, 'SELECT tag, generation')) {
-                    $ns = (string) ($args[0] ?? '');
-                    $bucket = (int) ($args[1] ?? 0);
-                    $tags = array_map('strval', array_slice($args, 2));
-
-                    return array_values(array_filter(
-                        $this->metadata,
-                        static fn(array $row, string $key): bool => str_starts_with(
-                            $key,
-                            $ns . ':' . $bucket . ':',
-                        ) && in_array($row['tag'], $tags, true),
-                        ARRAY_FILTER_USE_BOTH,
-                    ));
-                }
-
-                if (str_starts_with($cql, 'INSERT INTO')) {
-                    $key = $this->rowKey($args);
-                    if (!str_contains($cql, 'IF NOT EXISTS') || !isset($this->metadata[$key])) {
-                        $this->metadata[$key] = [
-                            'tag' => (string) ($args[2] ?? ''),
-                            'generation' => (string) ($args[3] ?? ''),
-                        ];
-                    }
-
-                    return [];
-                }
-
-                if (str_starts_with($cql, 'DELETE FROM')) {
-                    $prefix = (string) ($args[0] ?? '') . ':' . (int) ($args[1] ?? 0) . ':';
-                    foreach (array_keys($this->metadata) as $key) {
-                        if (str_starts_with($key, $prefix)) {
-                            unset($this->metadata[$key]);
-                        }
-                    }
-
-                    return [];
-                }
-            }
-
-            if (str_starts_with($cql, 'DELETE FROM') && str_contains($cql, 'AND ckey = ?')) {
-                unset($this->rows[$this->rowKey($args)]);
-
-                return [];
-            }
-
-            if (str_starts_with($cql, 'DELETE FROM') && str_contains($cql, 'ckey IN')) {
+        if (str_contains($cql, 'cachelayer_entries_metadata')) {
+            if (str_starts_with($cql, 'SELECT tag, generation')) {
                 $ns = (string) ($args[0] ?? '');
                 $bucket = (int) ($args[1] ?? 0);
-                foreach (array_slice($args, 2) as $key) {
-                    unset($this->rows[$ns . ':' . $bucket . ':' . $key]);
+                $tags = array_map('strval', array_slice($args, 2));
+
+                return array_values(array_filter(
+                    $this->metadata,
+                    static fn(array $row, string $key): bool => str_starts_with(
+                        $key,
+                        $ns . ':' . $bucket . ':',
+                    ) && in_array($row['tag'], $tags, true),
+                    ARRAY_FILTER_USE_BOTH,
+                ));
+            }
+
+            if (str_starts_with($cql, 'INSERT INTO')) {
+                $key = $this->rowKey($args);
+                if (!str_contains($cql, 'IF NOT EXISTS') || !isset($this->metadata[$key])) {
+                    $this->metadata[$key] = [
+                        'tag' => (string) ($args[2] ?? ''),
+                        'generation' => (string) ($args[3] ?? ''),
+                    ];
                 }
 
                 return [];
@@ -95,128 +66,165 @@ beforeEach(function () {
 
             if (str_starts_with($cql, 'DELETE FROM')) {
                 $prefix = (string) ($args[0] ?? '') . ':' . (int) ($args[1] ?? 0) . ':';
-                foreach (array_keys($this->rows) as $key) {
+                foreach (array_keys($this->metadata) as $key) {
                     if (str_starts_with($key, $prefix)) {
-                        unset($this->rows[$key]);
+                        unset($this->metadata[$key]);
                     }
                 }
 
                 return [];
             }
+        }
 
-            if (str_starts_with($cql, 'SELECT expires')) {
-                $ns = (string) ($args[0] ?? '');
-                $bucket = (int) ($args[1] ?? 0);
-                $matching = [];
-                foreach ($this->rows as $key => $row) {
-                    if (str_starts_with($key, $ns . ':' . $bucket . ':')) {
-                        $matching[] = $row;
-                    }
-                }
+        if (str_starts_with($cql, 'DELETE FROM') && str_contains($cql, 'AND ckey = ?')) {
+            unset($this->rows[$this->rowKey($args)]);
 
-                return array_map(
-                    static fn (array $row): array => ['expires' => $row['expires']],
-                    $matching,
-                );
-            }
+            return [];
+        }
 
-            if (str_starts_with($cql, 'SELECT payload, expires')) {
-                $row = $this->rows[$this->rowKey($args)] ?? null;
-
-                return is_array($row) ? [$row] : [];
-            }
-
-            if (str_starts_with($cql, 'SELECT ckey, payload, expires')) {
-                $this->bucketReads++;
-                $ns = (string) ($args[0] ?? '');
-                $bucket = (int) ($args[1] ?? 0);
-                $keys = array_map('strval', array_slice($args, 2));
-
-                return array_values(array_filter(
-                    $this->rows,
-                    static fn(array $row): bool => in_array($row['ckey'], $keys, true),
-                ));
-            }
-
-            if (str_starts_with($cql, 'BEGIN UNLOGGED BATCH')) {
-                $this->writeBatches++;
-                foreach (array_chunk($args, 5) as $row) {
-                    $this->store($row);
-                }
-
-                return [];
-            }
-
-            if (str_starts_with($cql, 'INSERT INTO')) {
-                $this->store($args);
-
-                return [];
+        if (str_starts_with($cql, 'DELETE FROM') && str_contains($cql, 'ckey IN')) {
+            $ns = (string) ($args[0] ?? '');
+            $bucket = (int) ($args[1] ?? 0);
+            foreach (array_slice($args, 2) as $key) {
+                unset($this->rows[$ns . ':' . $bucket . ':' . $key]);
             }
 
             return [];
         }
 
-        /**
-         * @return array<int, mixed>
-         */
-        private function extractArguments(mixed $options): array
-        {
-            if (is_array($options) && is_array($options['arguments'] ?? null)) {
-                return array_values($options['arguments']);
+        if (str_starts_with($cql, 'DELETE FROM')) {
+            $prefix = (string) ($args[0] ?? '') . ':' . (int) ($args[1] ?? 0) . ':';
+            foreach (array_keys($this->rows) as $key) {
+                if (str_starts_with($key, $prefix)) {
+                    unset($this->rows[$key]);
+                }
             }
 
             return [];
         }
 
-        /** @param array<int, mixed> $row */
-        private function rowKey(array $row): string
-        {
-            return (string) ($row[0] ?? '') . ':' . (int) ($row[1] ?? 0) . ':' . (string) ($row[2] ?? '');
+        if (str_starts_with($cql, 'SELECT expires')) {
+            $ns = (string) ($args[0] ?? '');
+            $bucket = (int) ($args[1] ?? 0);
+            $matching = [];
+            foreach ($this->rows as $key => $row) {
+                if (str_starts_with($key, $ns . ':' . $bucket . ':')) {
+                    $matching[] = $row;
+                }
+            }
+
+            return array_map(
+                static fn (array $row): array => ['expires' => $row['expires']],
+                $matching,
+            );
         }
 
-        /** @param array<int, mixed> $row */
-        private function store(array $row): void
-        {
-            $key = $this->rowKey($row);
-            $this->rows[$key] = [
-                'ckey' => (string) ($row[2] ?? ''),
-                'payload' => (string) ($row[3] ?? ''),
-                'expires' => is_numeric($row[4] ?? null) ? (int) $row[4] : null,
-            ];
-        }
-    };
+        if (str_starts_with($cql, 'SELECT payload, expires')) {
+            $row = $this->rows[$this->rowKey($args)] ?? null;
 
-    $this->cache = new Cache(new ScyllaDbCacheAdapter(
-        $this->session,
+            return is_array($row) ? [$row] : [];
+        }
+
+        if (str_starts_with($cql, 'SELECT ckey, payload, expires')) {
+            $this->bucketReads++;
+            $ns = (string) ($args[0] ?? '');
+            $bucket = (int) ($args[1] ?? 0);
+            $keys = array_map('strval', array_slice($args, 2));
+
+            return array_values(array_filter(
+                $this->rows,
+                static fn(array $row): bool => in_array($row['ckey'], $keys, true),
+            ));
+        }
+
+        if (str_starts_with($cql, 'BEGIN UNLOGGED BATCH')) {
+            $this->writeBatches++;
+            foreach (array_chunk($args, 5) as $row) {
+                $this->store($row);
+            }
+
+            return [];
+        }
+
+        if (str_starts_with($cql, 'INSERT INTO')) {
+            $this->store($args);
+
+            return [];
+        }
+
+        return [];
+    }
+
+    /**
+     * @return array<int, mixed>
+     */
+    private function extractArguments(mixed $options): array
+    {
+        if (is_array($options) && is_array($options['arguments'] ?? null)) {
+            return array_values($options['arguments']);
+        }
+
+        return [];
+    }
+
+    /** @param array<int, mixed> $row */
+    private function rowKey(array $row): string
+    {
+        return (string) ($row[0] ?? '') . ':' . (int) ($row[1] ?? 0) . ':' . (string) ($row[2] ?? '');
+    }
+
+    /** @param array<int, mixed> $row */
+    private function store(array $row): void
+    {
+        $key = $this->rowKey($row);
+        $this->rows[$key] = [
+            'ckey' => (string) ($row[2] ?? ''),
+            'payload' => (string) ($row[3] ?? ''),
+            'expires' => is_numeric($row[4] ?? null) ? (int) $row[4] : null,
+        ];
+    }
+}
+
+$scyllaFixture = new class {
+    public CacheLayerScyllaSessionDouble $session;
+
+    public Cache $cache;
+};
+
+beforeEach(function () use ($scyllaFixture): void {
+    $scyllaFixture->session = new CacheLayerScyllaSessionDouble();
+
+    $scyllaFixture->cache = new Cache(new ScyllaDbCacheAdapter(
+        $scyllaFixture->session,
         'cachelayer',
         'cachelayer_entries',
         'scylla-tests',
     ));
 });
 
-test('scylladb adapter stores and retrieves values', function () {
-    $this->cache->set('k', 'value');
+test('scylladb adapter stores and retrieves values', function () use ($scyllaFixture): void {
+    $scyllaFixture->cache->set('k', 'value');
 
-    expect($this->cache->get('k'))->toBe('value');
+    expect($scyllaFixture->cache->get('k'))->toBe('value');
 });
 
-test('scylladb adapter clears namespace entries', function () {
-    $this->cache->set('a', 1);
-    $this->cache->set('b', 2);
+test('scylladb adapter clears namespace entries', function () use ($scyllaFixture): void {
+    $scyllaFixture->cache->set('a', 1);
+    $scyllaFixture->cache->set('b', 2);
 
-    $this->cache->clear();
+    $scyllaFixture->cache->clear();
 
-    expect($this->cache->getMultiple(['a', 'b']))->toBe(['a' => null, 'b' => null]);
+    expect($scyllaFixture->cache->getMultiple(['a', 'b']))->toBe(['a' => null, 'b' => null]);
 });
 
-test('scylladb cache factory accepts injected session', function () {
-    $cache = Cache::scylla('scylla-tests', $this->session, 'cachelayer', 'cachelayer_entries');
+test('scylladb cache factory accepts injected session', function () use ($scyllaFixture): void {
+    $cache = Cache::scylla('scylla-tests', $scyllaFixture->session, 'cachelayer', 'cachelayer_entries');
     $cache->set('x', 'X');
 
     expect($cache->get('x'))->toBe('X');
 });
 
-test('scylladb cache factory handles the optional extension explicitly', function () {
+test('scylladb cache factory handles the optional extension explicitly', function (): void {
     if (OptionalCassandra::available()) {
         expect(Cache::scylla('scylla-tests'))->toBeInstanceOf(Cache::class);
 
@@ -227,15 +235,15 @@ test('scylladb cache factory handles the optional extension explicitly', functio
         ->toThrow(CacheInvalidArgumentException::class);
 });
 
-test('scylladb groups bulk reads and writes by configured bucket', function () {
-    $cache = Cache::scylla('bucket-tests', $this->session, 'cachelayer', 'cachelayer_entries', 1);
+test('scylladb groups bulk reads and writes by configured bucket', function () use ($scyllaFixture): void {
+    $cache = Cache::scylla('bucket-tests', $scyllaFixture->session, 'cachelayer', 'cachelayer_entries', 1);
     $cache->setMultiple(['a' => 1, 'b' => 2, 'c' => 3]);
-    $reads = $this->session->bucketReads;
+    $reads = $scyllaFixture->session->bucketReads;
 
     expect($cache->getMultiple(['c', 'missing', 'a']))
         ->toBe(['c' => 3, 'missing' => null, 'a' => 1])
-        ->and($this->session->writeBatches)->toBeGreaterThanOrEqual(1)
-        ->and($this->session->bucketReads)->toBe($reads + 1);
+        ->and($scyllaFixture->session->writeBatches)->toBeGreaterThanOrEqual(1)
+        ->and($scyllaFixture->session->bucketReads)->toBe($reads + 1);
 });
 
 /**
@@ -281,7 +289,7 @@ function scylladbHttpGet(string $url, mixed $context): ?string
     return $result;
 }
 
-test('scylladb alternator health endpoint is reachable', function () {
+test('scylladb alternator health endpoint is reachable', function (): void {
     $integration = scylladbAlternatorIntegrationContext();
     if ($integration === null) {
         throw new RuntimeException('ScyllaDB Alternator service is required for the configured cache test matrix.');
@@ -300,7 +308,7 @@ test('scylladb alternator health endpoint is reachable', function () {
         ->and(str_contains(strtolower((string) $response), 'healthy'))->toBeTrue();
 });
 
-test('scylladb alternator localnodes endpoint returns json list', function () {
+test('scylladb alternator localnodes endpoint returns json list', function (): void {
     $integration = scylladbAlternatorIntegrationContext();
     if ($integration === null) {
         throw new RuntimeException('ScyllaDB Alternator service is required for the configured cache test matrix.');
@@ -320,9 +328,9 @@ test('scylladb alternator localnodes endpoint returns json list', function () {
 });
 
 
-test('scylladb tag initialization preserves the first generation', function () {
-    $first = Cache::scylla('tag-race', $this->session, 'cachelayer', 'cachelayer_entries', 1);
-    $second = Cache::scylla('tag-race', $this->session, 'cachelayer', 'cachelayer_entries', 1);
+test('scylladb tag initialization preserves the first generation', function () use ($scyllaFixture): void {
+    $first = Cache::scylla('tag-race', $scyllaFixture->session, 'cachelayer', 'cachelayer_entries', 1);
+    $second = Cache::scylla('tag-race', $scyllaFixture->session, 'cachelayer', 'cachelayer_entries', 1);
 
     expect($first->setTagged('one', 'A', ['shared']))->toBeTrue()
         ->and($second->setTagged('two', 'B', ['shared']))->toBeTrue()
