@@ -91,7 +91,7 @@ test('get throws for invalid key (memcached)', function () use (&$memcachedFixtu
 /* ─── PSR-6 getItem()/save() ───────────────────────────────────── */
 test('PSR-6 getItem()/save()', function () use (&$memcachedFixtureCache): void {
     $it = $memcachedFixtureCache->getItem('psr');
-    assert($item instanceof CacheItem);
+    assert($it instanceof CacheItem);
     expect($it)->toBeInstanceOf(CacheItem::class)
         ->and($it->isHit())->toBeFalse();
 

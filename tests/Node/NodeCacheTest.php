@@ -27,20 +27,24 @@ use Infocyph\CacheLayer\Node\NodeCacheConfig;
 use Infocyph\CacheLayer\Tests\Cache\Support\FaultingFileCacheAdapter;
 use Psr\Cache\CacheItemInterface;
 
-beforeEach(function () {
-    $this->nodeCacheDirectory = sys_get_temp_dir() . '/cachelayer-node-' . uniqid();
-    $this->nodeCacheFile = $this->nodeCacheDirectory . '/cache.sqlite';
-    $this->nodeConfig = new NodeCacheConfig(
-        sqliteFile: $this->nodeCacheFile,
+$nodeFixtureDirectory = '';
+$nodeFixtureFile = '';
+$nodeFixtureConfig = new NodeCacheConfig(sys_get_temp_dir() . '/cachelayer-node-fixture.sqlite', 'node.tests', apcuEnabled: false);
+
+beforeEach(function () use (&$nodeFixtureDirectory, &$nodeFixtureFile, &$nodeFixtureConfig): void {
+    $nodeFixtureDirectory = sys_get_temp_dir() . '/cachelayer-node-' . uniqid();
+    $nodeFixtureFile = $nodeFixtureDirectory . '/cache.sqlite';
+    $nodeFixtureConfig = new NodeCacheConfig(
+        sqliteFile: $nodeFixtureFile,
         namespace: 'node.tests',
         apcuEnabled: false,
-        lockDirectory: $this->nodeCacheDirectory . '/locks',
+        lockDirectory: $nodeFixtureDirectory . '/locks',
     );
 });
 
-test('node fences L1 after a mutation fails under either failure policy', function (string $operation, bool $failOpen, bool $throws) {
-    $l1 = new FaultingFileCacheAdapter('node.failure', $this->nodeCacheDirectory . '/l1');
-    $l2 = new NodeSqliteCacheAdapter(NodeSqliteConnection::create($this->nodeConfig), 'node.failure');
+test('node fences L1 after a mutation fails under either failure policy', function (string $operation, bool $failOpen, bool $throws) use (&$nodeFixtureDirectory, &$nodeFixtureConfig): void {
+    $l1 = new FaultingFileCacheAdapter('node.failure', $nodeFixtureDirectory . '/l1');
+    $l2 = new NodeSqliteCacheAdapter(NodeSqliteConnection::create($nodeFixtureConfig), 'node.failure');
     $adapter = new NodeCacheAdapter($l1, $l2, $failOpen);
     $cache = new Cache($adapter, options: new CacheOptions(failOpen: $failOpen));
     $cache->set('key', 'old', 300);
@@ -66,8 +70,8 @@ test('node fences L1 after a mutation fails under either failure policy', functi
 })->with(['save', 'saveItems', 'deleteItem', 'deleteItems', 'clear'])
     ->with([false, true])->with([false, true]);
 
-test('node preserves the mutation failure when L1 cleanup also throws', function () {
-    $l1 = new class('node.cleanup', $this->nodeCacheDirectory . '/l1') extends \Infocyph\CacheLayer\Cache\Adapter\FileCacheAdapter {
+test('node preserves the mutation failure when L1 cleanup also throws', function () use (&$nodeFixtureDirectory, &$nodeFixtureConfig): void {
+    $l1 = new class('node.cleanup', $nodeFixtureDirectory . '/l1') extends \Infocyph\CacheLayer\Cache\Adapter\FileCacheAdapter {
         public bool $fault = false;
 
         #[\Override]
@@ -90,7 +94,7 @@ test('node preserves the mutation failure when L1 cleanup also throws', function
             return parent::clear();
         }
     };
-    $l2 = new NodeSqliteCacheAdapter(NodeSqliteConnection::create($this->nodeConfig), 'node.cleanup');
+    $l2 = new NodeSqliteCacheAdapter(NodeSqliteConnection::create($nodeFixtureConfig), 'node.cleanup');
     $adapter = new NodeCacheAdapter($l1, $l2, false);
     $item = $adapter->createItem('key')->set('old');
     $adapter->save($item);
@@ -100,9 +104,9 @@ test('node preserves the mutation failure when L1 cleanup also throws', function
         ->and($adapter->getItem('key')->get())->toBe('new');
 });
 
-test('node fences failed single and bulk promotions under either failure policy', function (bool $bulk, bool $failOpen, bool $throws) {
-    $l1 = new FaultingFileCacheAdapter('node.promotion', $this->nodeCacheDirectory . '/l1');
-    $l2 = new NodeSqliteCacheAdapter(NodeSqliteConnection::create($this->nodeConfig), 'node.promotion');
+test('node fences failed single and bulk promotions under either failure policy', function (bool $bulk, bool $failOpen, bool $throws) use (&$nodeFixtureDirectory, &$nodeFixtureConfig): void {
+    $l1 = new FaultingFileCacheAdapter('node.promotion', $nodeFixtureDirectory . '/l1');
+    $l2 = new NodeSqliteCacheAdapter(NodeSqliteConnection::create($nodeFixtureConfig), 'node.promotion');
     $adapter = new NodeCacheAdapter($l1, $l2, $failOpen);
     $cache = new Cache($adapter, options: new CacheOptions(failOpen: $failOpen));
     $cache->set('key', 'value');
@@ -121,8 +125,8 @@ test('node fences failed single and bulk promotions under either failure policy'
         ->and($cache->get('key'))->toBe('value');
 })->with([false, true])->with([false, true])->with([false, true]);
 
-test('node fences L1 when copying a committed value into L1 throws', function (bool $bulk) {
-    $l1 = new class('node.copy', $this->nodeCacheDirectory . '/l1') extends \Infocyph\CacheLayer\Cache\Adapter\FileCacheAdapter {
+test('node fences L1 when copying a committed value into L1 throws', function (bool $bulk) use (&$nodeFixtureDirectory, &$nodeFixtureConfig): void {
+    $l1 = new class('node.copy', $nodeFixtureDirectory . '/l1') extends \Infocyph\CacheLayer\Cache\Adapter\FileCacheAdapter {
         public bool $fault = false;
 
         #[\Override]
@@ -135,7 +139,7 @@ test('node fences L1 when copying a committed value into L1 throws', function (b
             return parent::createItem($key);
         }
     };
-    $l2 = new NodeSqliteCacheAdapter(NodeSqliteConnection::create($this->nodeConfig), 'node.copy');
+    $l2 = new NodeSqliteCacheAdapter(NodeSqliteConnection::create($nodeFixtureConfig), 'node.copy');
     $adapter = new NodeCacheAdapter($l1, $l2, false);
     $cache = new Cache($adapter, options: new CacheOptions(failOpen: false));
     $cache->set('key', 'old');
@@ -146,7 +150,7 @@ test('node fences L1 when copying a committed value into L1 throws', function (b
         ->and($cache->get('key'))->toBe('new');
 })->with([false, true]);
 
-test('node fences L1 when a tag metadata mutation throws', function (string $operation) {
+test('node fences L1 when a tag metadata mutation throws', function (string $operation) use (&$nodeFixtureConfig): void {
     $l1 = new class('node.tags.' . uniqid()) extends ApcuCacheAdapter {
         public ?string $failure = null;
 
@@ -170,7 +174,7 @@ test('node fences L1 when a tag metadata mutation throws', function (string $ope
             return parent::storeTagGenerations($generations);
         }
     };
-    $l2 = new NodeSqliteCacheAdapter(NodeSqliteConnection::create($this->nodeConfig), 'node.tags');
+    $l2 = new NodeSqliteCacheAdapter(NodeSqliteConnection::create($nodeFixtureConfig), 'node.tags');
     $adapter = new NodeCacheAdapter($l1, $l2, false);
     $cache = new Cache($adapter, options: new CacheOptions(failOpen: false));
     $cache->setTagged('key', 'old', ['group']);
@@ -184,23 +188,23 @@ test('node fences L1 when a tag metadata mutation throws', function (string $ope
         ->and($cache->get('key'))->toBeNull();
 })->with(['rotate', 'store']);
 
-afterEach(function () {
-    if (!is_dir($this->nodeCacheDirectory)) {
+afterEach(function () use (&$nodeFixtureDirectory): void {
+    if (!is_dir($nodeFixtureDirectory)) {
         return;
     }
 
     $files = new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator($this->nodeCacheDirectory, FilesystemIterator::SKIP_DOTS),
+        new RecursiveDirectoryIterator($nodeFixtureDirectory, FilesystemIterator::SKIP_DOTS),
         RecursiveIteratorIterator::CHILD_FIRST,
     );
     foreach ($files as $file) {
         $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
     }
-    rmdir($this->nodeCacheDirectory);
+    rmdir($nodeFixtureDirectory);
 });
 
-test('node cache factory provides SQLite-backed facade behavior and local tags', function () {
-    $cache = NodeCache::create($this->nodeConfig);
+test('node cache factory provides SQLite-backed facade behavior and local tags', function () use (&$nodeFixtureConfig): void {
+    $cache = NodeCache::create($nodeFixtureConfig);
 
     expect($cache->setTagged('user.42', ['name' => 'Ada'], ['users'], 300))->toBeTrue()
         ->and($cache->get('user.42'))->toBe(['name' => 'Ada'])
@@ -208,8 +212,8 @@ test('node cache factory provides SQLite-backed facade behavior and local tags',
         ->and($cache->get('user.42'))->toBeNull();
 });
 
-test('node cache supports deferred writes through its composed PSR-6 item', function () {
-    $cache = NodeCache::create($this->nodeConfig);
+test('node cache supports deferred writes through its composed PSR-6 item', function () use (&$nodeFixtureConfig): void {
+    $cache = NodeCache::create($nodeFixtureConfig);
     $item = $cache->getItem('deferred')->set('value')->expiresAfter(300);
 
     expect($cache->saveDeferred($item))->toBeTrue()
@@ -217,7 +221,7 @@ test('node cache supports deferred writes through its composed PSR-6 item', func
         ->and($cache->get('deferred'))->toBe('value');
 });
 
-test('node cache uses the configured shared lock provider for remember operations', function () {
+test('node cache uses the configured shared lock provider for remember operations', function () use (&$nodeFixtureFile): void {
     $lock = new class implements LockProviderInterface {
         public int $acquired = 0;
 
@@ -252,7 +256,7 @@ test('node cache uses the configured shared lock provider for remember operation
         }
     };
     $config = new NodeCacheConfig(
-        sqliteFile: $this->nodeCacheFile,
+        sqliteFile: $nodeFixtureFile,
         namespace: 'node.tests',
         apcuEnabled: false,
         lockProvider: $lock,
@@ -263,10 +267,10 @@ test('node cache uses the configured shared lock provider for remember operation
         ->and($lock->released)->toBe(1);
 });
 
-test('SQLite hits promote into an L1 cache without returning the child item', function () {
-    $connection = NodeSqliteConnection::create($this->nodeConfig);
-    $l1 = new ArrayCacheAdapter($this->nodeConfig->namespace);
-    $l2 = new NodeSqliteCacheAdapter($connection, $this->nodeConfig->namespace);
+test('SQLite hits promote into an L1 cache without returning the child item', function () use (&$nodeFixtureConfig): void {
+    $connection = NodeSqliteConnection::create($nodeFixtureConfig);
+    $l1 = new ArrayCacheAdapter($nodeFixtureConfig->namespace);
+    $l2 = new NodeSqliteCacheAdapter($connection, $nodeFixtureConfig->namespace);
     $cache = new Cache(new NodeCacheAdapter($l1, $l2, false));
 
     expect($cache->set('promoted', 'value', 300))->toBeTrue();
@@ -283,10 +287,10 @@ test('SQLite hits promote into an L1 cache without returning the child item', fu
         ->and($l2->getItem('promoted')->get())->toBe('changed');
 });
 
-test('node bulk reads fetch only L1 misses from SQLite and promote as one batch', function () {
-    $connection = NodeSqliteConnection::create($this->nodeConfig);
-    $l1 = new ArrayCacheAdapter($this->nodeConfig->namespace);
-    $l2 = new NodeSqliteCacheAdapter($connection, $this->nodeConfig->namespace);
+test('node bulk reads fetch only L1 misses from SQLite and promote as one batch', function () use (&$nodeFixtureConfig): void {
+    $connection = NodeSqliteConnection::create($nodeFixtureConfig);
+    $l1 = new ArrayCacheAdapter($nodeFixtureConfig->namespace);
+    $l2 = new NodeSqliteCacheAdapter($connection, $nodeFixtureConfig->namespace);
     $metrics = new InMemoryCacheMetricsCollector();
     $cache = new Cache(new NodeCacheAdapter($l1, $l2, false, $metrics), metrics: $metrics);
     $cache->setMultiple(['hot' => 1, 'cold.a' => 2, 'cold.b' => 3]);
@@ -303,25 +307,25 @@ test('node bulk reads fetch only L1 misses from SQLite and promote as one batch'
         ->and(($after['l2_batch_promote'] ?? 0) - ($before['l2_batch_promote'] ?? 0))->toBe(2);
 });
 
-test('node tagged L1 hits use cached generation metadata', function () {
-    $connection = NodeSqliteConnection::create($this->nodeConfig);
-    $l1 = new ArrayCacheAdapter($this->nodeConfig->namespace);
-    $l2 = new NodeSqliteCacheAdapter($connection, $this->nodeConfig->namespace);
+test('node tagged L1 hits use cached generation metadata', function () use (&$nodeFixtureConfig): void {
+    $connection = NodeSqliteConnection::create($nodeFixtureConfig);
+    $l1 = new ArrayCacheAdapter($nodeFixtureConfig->namespace);
+    $l2 = new NodeSqliteCacheAdapter($connection, $nodeFixtureConfig->namespace);
     $cache = new Cache(new NodeCacheAdapter($l1, $l2, false));
     $cache->setTagged('tagged', 'value', ['products'], 300);
     $connection->prepare(
         "DELETE FROM cachelayer_node_entries WHERE namespace = ? AND cache_key = 'm:tag:products'",
-    )->execute([$this->nodeConfig->namespace]);
+    )->execute([$nodeFixtureConfig->namespace]);
 
     expect($cache->get('tagged'))->toBe('value');
     $l1->clear();
     expect($cache->get('tagged'))->toBeNull();
 });
 
-test('node never writes L1 when its authoritative L2 write fails', function () {
-    $connection = NodeSqliteConnection::create($this->nodeConfig);
-    $l1 = new ArrayCacheAdapter($this->nodeConfig->namespace);
-    $l2 = new NodeSqliteCacheAdapter($connection, $this->nodeConfig->namespace);
+test('node never writes L1 when its authoritative L2 write fails', function () use (&$nodeFixtureConfig): void {
+    $connection = NodeSqliteConnection::create($nodeFixtureConfig);
+    $l1 = new ArrayCacheAdapter($nodeFixtureConfig->namespace);
+    $l2 = new NodeSqliteCacheAdapter($connection, $nodeFixtureConfig->namespace);
     $cache = new Cache(new NodeCacheAdapter($l1, $l2));
     $cache->set('coherent', 'old', 300);
     $l1->clear();
@@ -335,9 +339,9 @@ test('node never writes L1 when its authoritative L2 write fails', function () {
         ->and($l2->getItem('coherent')->get())->toBe('old');
 });
 
-test('node cache applies the complete cache policy from its configuration', function () {
+test('node cache applies the complete cache policy from its configuration', function () use (&$nodeFixtureDirectory): void {
     $cache = NodeCache::create(new NodeCacheConfig(
-        sqliteFile: $this->nodeCacheDirectory . '/policy.sqlite',
+        sqliteFile: $nodeFixtureDirectory . '/policy.sqlite',
         namespace: 'policy',
         apcuEnabled: false,
         options: new CacheOptions(
@@ -353,8 +357,8 @@ test('node cache applies the complete cache policy from its configuration', func
         ->and($cache->get('scalar'))->toBe('value');
 });
 
-test('node disables a failed L1 before it can serve stale data', function () {
-    $connection = NodeSqliteConnection::create($this->nodeConfig);
+test('node disables a failed L1 before it can serve stale data', function () use (&$nodeFixtureConfig): void {
+    $connection = NodeSqliteConnection::create($nodeFixtureConfig);
     $l1 = new class extends AbstractCacheAdapter {
         public bool $rejectWrites = false;
 
@@ -438,7 +442,7 @@ test('node disables a failed L1 before it can serve stale data', function () {
             return true;
         }
     };
-    $l2 = new NodeSqliteCacheAdapter($connection, $this->nodeConfig->namespace);
+    $l2 = new NodeSqliteCacheAdapter($connection, $nodeFixtureConfig->namespace);
     $cache = new Cache(new NodeCacheAdapter($l1, $l2, true));
 
     expect($cache->set('coherent', 'old', 300))->toBeTrue();
@@ -450,41 +454,41 @@ test('node disables a failed L1 before it can serve stale data', function () {
         ->and($cache->getMultiple(['one', 'two']))->toBe(['one' => 1, 'two' => 2]);
 });
 
-test('expired rows remain outside the read path until bounded pruning', function () {
-    $connection = NodeSqliteConnection::create($this->nodeConfig);
-    $adapter = new NodeSqliteCacheAdapter($connection, $this->nodeConfig->namespace);
+test('expired rows remain outside the read path until bounded pruning', function () use (&$nodeFixtureConfig): void {
+    $connection = NodeSqliteConnection::create($nodeFixtureConfig);
+    $adapter = new NodeSqliteCacheAdapter($connection, $nodeFixtureConfig->namespace);
     $statement = $connection->prepare(
         'INSERT INTO cachelayer_node_entries (namespace, cache_key, payload, expires_at) VALUES (?, ?, ?, ?)',
     );
-    $statement->execute([$this->nodeConfig->namespace, 'stale', 'invalid-payload', time() - 1]);
+    $statement->execute([$nodeFixtureConfig->namespace, 'stale', 'invalid-payload', time() - 1]);
 
     expect($adapter->getItem('stale')->isHit())->toBeFalse()
         ->and((int) $connection->query("SELECT COUNT(*) FROM cachelayer_node_entries WHERE cache_key = 'stale'")->fetchColumn())
         ->toBe(1)
-        ->and((new NodeCachePruner($connection, $this->nodeConfig->namespace))->pruneExpired(1))
+        ->and((new NodeCachePruner($connection, $nodeFixtureConfig->namespace))->pruneExpired(1))
         ->toBe(1)
         ->and((int) $connection->query("SELECT COUNT(*) FROM cachelayer_node_entries WHERE cache_key = 'stale'")->fetchColumn())
         ->toBe(0);
 });
 
-test('node cache configuration rejects invalid paths and timeouts', function () {
+test('node cache configuration rejects invalid paths and timeouts', function (): void {
     expect(fn() => new NodeCacheConfig('', 'app'))->toThrow(NodeCacheConfigurationException::class)
         ->and(fn() => new NodeCacheConfig('/tmp/cache.sqlite', 'app', busyTimeoutMs: -1))
         ->toThrow(NodeCacheConfigurationException::class);
 });
 
-test('node APCu identity includes the SQLite store', function () {
+test('node APCu identity includes the SQLite store', function () use (&$nodeFixtureDirectory): void {
     expect(extension_loaded('apcu'))->toBeTrue()
         ->and(apcu_enabled())->toBeTrue();
     apcu_clear_cache();
 
     $first = NodeCache::create(new NodeCacheConfig(
-        sqliteFile: $this->nodeCacheDirectory . '/first.sqlite',
+        sqliteFile: $nodeFixtureDirectory . '/first.sqlite',
         namespace: 'shared.namespace',
         apcuEnabled: true,
     ));
     $second = NodeCache::create(new NodeCacheConfig(
-        sqliteFile: $this->nodeCacheDirectory . '/second.sqlite',
+        sqliteFile: $nodeFixtureDirectory . '/second.sqlite',
         namespace: 'shared.namespace',
         apcuEnabled: true,
     ));
@@ -498,7 +502,7 @@ test('node APCu identity includes the SQLite store', function () {
     apcu_clear_cache();
 });
 
-test('node lock identity includes the SQLite store', function () {
+test('node lock identity includes the SQLite store', function () use (&$nodeFixtureDirectory): void {
     $keys = [];
     $provider = new class ($keys) implements LockProviderInterface {
         public function __construct(private array &$keys) {}
@@ -524,7 +528,7 @@ test('node lock identity includes the SQLite store', function () {
 
     foreach (['first.sqlite', 'second.sqlite'] as $file) {
         $cache = NodeCache::create(new NodeCacheConfig(
-            sqliteFile: $this->nodeCacheDirectory . '/' . $file,
+            sqliteFile: $nodeFixtureDirectory . '/' . $file,
             namespace: 'shared.namespace',
             apcuEnabled: false,
             lockProvider: $provider,
@@ -536,18 +540,18 @@ test('node lock identity includes the SQLite store', function () {
         ->and($keys[0])->not->toBe($keys[1]);
 });
 
-test('node authority reflects whether an L1 cache can serve stale state', function () {
+test('node authority reflects whether an L1 cache can serve stale state', function () use (&$nodeFixtureDirectory): void {
     expect(extension_loaded('apcu'))->toBeTrue()
         ->and(apcu_enabled())->toBeTrue();
     apcu_clear_cache();
 
     $withL1 = NodeCache::create(new NodeCacheConfig(
-        sqliteFile: $this->nodeCacheDirectory . '/with-l1.sqlite',
+        sqliteFile: $nodeFixtureDirectory . '/with-l1.sqlite',
         namespace: 'authority',
         apcuEnabled: true,
     ));
     $l2Only = NodeCache::create(new NodeCacheConfig(
-        sqliteFile: $this->nodeCacheDirectory . '/l2-only.sqlite',
+        sqliteFile: $nodeFixtureDirectory . '/l2-only.sqlite',
         namespace: 'authority',
         apcuEnabled: false,
     ));
@@ -558,8 +562,8 @@ test('node authority reflects whether an L1 cache can serve stale state', functi
     apcu_clear_cache();
 });
 
-test('node SQLite adapter accepts associative PSR-6 delete key arrays', function () {
-    $adapter = new NodeSqliteCacheAdapter(NodeSqliteConnection::create($this->nodeConfig), $this->nodeConfig->namespace);
+test('node SQLite adapter accepts associative PSR-6 delete key arrays', function () use (&$nodeFixtureConfig): void {
+    $adapter = new NodeSqliteCacheAdapter(NodeSqliteConnection::create($nodeFixtureConfig), $nodeFixtureConfig->namespace);
     $cache = new Cache($adapter);
     expect($cache->setMultiple(['a' => 1, 'b' => 2, 'c' => 3]))->toBeTrue()
         ->and($adapter->deleteItems(['first' => 'a', 'second' => 'b']))->toBeTrue()

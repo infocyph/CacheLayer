@@ -742,6 +742,11 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         return $this->backendBool(fn(): bool => $this->adapter->saveDeferred($item));
     }
 
+    /**
+     * @param int|\DateInterval|\DateTimeInterface|null $ttl
+     * @throws CacheInvalidArgumentException
+     * @throws CacheBackendException
+     */
     #[\Override]
     public function set(string $key, mixed $value, mixed $ttl = null): bool
     {
@@ -786,6 +791,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
 
     /**
      * @param iterable<mixed, mixed> $values
+     * @param int|\DateInterval|\DateTimeInterface|null $ttl
      * @throws \Psr\Cache\InvalidArgumentException
      * @throws CacheBackendException
      */

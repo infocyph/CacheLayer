@@ -8,45 +8,48 @@ use Infocyph\CacheLayer\Node\Maintenance\NodeCacheMaintenance;
 use Infocyph\CacheLayer\Node\Maintenance\NodeCachePruner;
 use Infocyph\CacheLayer\Node\NodeCacheConfig;
 
-beforeEach(function (): void {
-    $this->maintenanceDirectory = sys_get_temp_dir() . '/cachelayer-maintenance-' . uniqid();
-    $this->maintenanceConfig = new NodeCacheConfig(
-        $this->maintenanceDirectory . '/cache.sqlite',
+$maintenanceFixtureDirectory = '';
+$maintenanceFixtureConfig = new NodeCacheConfig(sys_get_temp_dir() . '/cachelayer-maintenance-fixture.sqlite', 'maintenance', apcuEnabled: false);
+
+beforeEach(function () use (&$maintenanceFixtureDirectory, &$maintenanceFixtureConfig): void {
+    $maintenanceFixtureDirectory = sys_get_temp_dir() . '/cachelayer-maintenance-' . uniqid();
+    $maintenanceFixtureConfig = new NodeCacheConfig(
+        $maintenanceFixtureDirectory . '/cache.sqlite',
         'maintenance',
         apcuEnabled: false,
     );
 });
 
-afterEach(function (): void {
-    if (!is_dir($this->maintenanceDirectory)) {
+afterEach(function () use (&$maintenanceFixtureDirectory): void {
+    if (!is_dir($maintenanceFixtureDirectory)) {
         return;
     }
 
     $files = new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator($this->maintenanceDirectory, FilesystemIterator::SKIP_DOTS),
+        new RecursiveDirectoryIterator($maintenanceFixtureDirectory, FilesystemIterator::SKIP_DOTS),
         RecursiveIteratorIterator::CHILD_FIRST,
     );
     foreach ($files as $file) {
         $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
     }
-    rmdir($this->maintenanceDirectory);
+    rmdir($maintenanceFixtureDirectory);
 });
 
-it('runs one bounded prune checkpoint and optimize maintenance unit', function (): void {
-    $connection = NodeSqliteConnection::create($this->maintenanceConfig);
-    new NodeSqliteCacheAdapter($connection, $this->maintenanceConfig->namespace);
+it('runs one bounded prune checkpoint and optimize maintenance unit', function () use (&$maintenanceFixtureConfig): void {
+    $connection = NodeSqliteConnection::create($maintenanceFixtureConfig);
+    new NodeSqliteCacheAdapter($connection, $maintenanceFixtureConfig->namespace);
     $statement = $connection->prepare(
         'INSERT INTO cachelayer_node_entries (namespace, cache_key, payload, expires_at) VALUES (?, ?, ?, ?)',
     );
     $statement->execute([
-        $this->maintenanceConfig->namespace,
+        $maintenanceFixtureConfig->namespace,
         'expired',
         'unused',
         time() - 1,
     ]);
     $maintenance = new NodeCacheMaintenance(
         $connection,
-        new NodeCachePruner($connection, $this->maintenanceConfig->namespace),
+        new NodeCachePruner($connection, $maintenanceFixtureConfig->namespace),
     );
 
     expect($maintenance->cycle(pruneLimit: 1, checkpoint: true, optimize: true))->toBe(1)
