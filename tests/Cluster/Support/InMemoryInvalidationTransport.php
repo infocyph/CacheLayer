@@ -15,12 +15,18 @@ final class InMemoryInvalidationTransport implements InvalidationTransportInspec
 
     private int $nextId = 1;
 
+    public ?InvalidationBatch $forcedBatch = null;
+
     /**
      * @throws \Infocyph\CacheLayer\Cluster\Exception\ClusterCacheException
      */
     #[\Override]
     public function consumeAfter(string $cluster, ?string $cursor, int $limit): InvalidationBatch
     {
+        if ($this->forcedBatch !== null) {
+            return $this->forcedBatch;
+        }
+
         $after = $cursor === null ? 0 : (int) $cursor;
         $events = array_filter(
             $this->events[$cluster] ?? [],

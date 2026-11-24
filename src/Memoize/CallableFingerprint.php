@@ -36,23 +36,6 @@ final class CallableFingerprint
         return self::methodFingerprint($callable);
     }
 
-    /**
-     * @throws \LogicException
-     */
-    private static function methodFingerprint(mixed $method): string
-    {
-        if (!is_array($method) || !isset($method[0], $method[1])
-            || (!is_object($method[0]) && !is_string($method[0])) || !is_string($method[1])) {
-            throw new \LogicException('Invalid callable method representation.');
-        }
-
-        $target = is_object($method[0])
-            ? self::objectIdentity($method[0])
-            : 'class:' . $method[0];
-
-        return 'array:' . $target . '::' . $method[1];
-    }
-
     public static function flush(): void
     {
         self::$closures = new WeakMap();
@@ -101,6 +84,23 @@ final class CallableFingerprint
         $closures[$closure] = $fingerprint;
 
         return $fingerprint;
+    }
+
+    /**
+     * @throws \LogicException
+     */
+    private static function methodFingerprint(mixed $method): string
+    {
+        if (!is_array($method) || !isset($method[0], $method[1])
+            || (!is_object($method[0]) && !is_string($method[0])) || !is_string($method[1])) {
+            throw new \LogicException('Invalid callable method representation.');
+        }
+
+        $target = is_object($method[0])
+            ? self::objectIdentity($method[0])
+            : 'class:' . $method[0];
+
+        return 'array:' . $target . '::' . $method[1];
     }
 
     private static function normalizeValue(mixed $value): mixed

@@ -14,6 +14,7 @@ use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Cluster\Consumer\InvalidationConsumer;
 use Infocyph\CacheLayer\Cluster\Consumer\InvalidationHandler;
 use Infocyph\CacheLayer\Cluster\Cursor\SqliteCursorStore;
+use Infocyph\CacheLayer\Cluster\Event\InvalidationBatch;
 use Infocyph\CacheLayer\Cluster\Event\InvalidationEvent;
 use Infocyph\CacheLayer\Cluster\Event\InvalidationEventType;
 use Infocyph\CacheLayer\Cluster\Exception\ClusterCacheException;
@@ -766,4 +767,32 @@ test('direct invalidation event construction enforces transport ID validation', 
 
     $event = new InvalidationEvent('123-0', 'cluster', 'namespace', InvalidationEventType::Key, 'key', 'node', time());
     expect($event->id)->toBe('123-0');
+});
+
+test('consumer rejects foreign, duplicate and oversized transport batches before applying them', function () use (&$clusterFixture): void {
+    if ($clusterFixture === null) {
+        throw new \RuntimeException('Integration fixture setup did not run.');
+    }
+
+    $transport = $clusterFixture->transport;
+    $node = $clusterFixture->nodeB;
+    $event = InvalidationEvent::key('test-cluster', 'application', 'protected', 'writer');
+    $transport->publish($event);
+    expect($node->consume(1))->toBe(1);
+    expect($node->cache()->set('protected', 'keep', 300))->toBeTrue();
+
+    foreach ([
+        [InvalidationEvent::key('other-cluster', 'application', 'protected', 'writer')->withId('2')],
+        [$event->withId('1')],
+        [$event->withId('2'), $event->withId('3')],
+    ] as $events) {
+        $transport->forcedBatch = new InvalidationBatch($events);
+        try {
+            expect(fn(): int => $node->consume(1))->toThrow(ClusterTransportException::class);
+        } finally {
+            $transport->forcedBatch = null;
+        }
+        expect($node->status()->cursor)->toBe('1')
+            ->and($node->cache()->get('protected'))->toBe('keep');
+    }
 });

@@ -77,11 +77,6 @@ final class AdapterValueNormalizer
         return $out;
     }
 
-    public static function redisPipeline(mixed $value): ?\Redis
-    {
-        return $value instanceof \Redis ? $value : null;
-    }
-
     public static function pdoPayload(mixed $value): ?string
     {
         if (is_resource($value)) {
@@ -89,6 +84,11 @@ final class AdapterValueNormalizer
         }
 
         return is_string($value) ? $value : null;
+    }
+
+    public static function redisPipeline(mixed $value): ?\Redis
+    {
+        return $value instanceof \Redis ? $value : null;
     }
 
     /**
