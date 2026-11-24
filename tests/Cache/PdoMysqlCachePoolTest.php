@@ -23,32 +23,34 @@ try {
     throw new RuntimeException('MySQL service is required for the configured cache test matrix.', 0, $failure);
 }
 
-beforeEach(function () use ($dsn, $user, $pass) {
-    $this->cache = Cache::pdo('mysql-tests', $dsn, $user, $pass, null, 'cachelayer_entries');
-    $this->cache->clear();
+$pdomysqlFixtureCache = Cache::nullStore();
+
+beforeEach(function () use ($dsn, $user, $pass, &$pdomysqlFixtureCache): void {
+    $pdomysqlFixtureCache = Cache::pdo('mysql-tests', $dsn, $user, $pass, null, 'cachelayer_entries');
+    $pdomysqlFixtureCache->clear();
 });
 
-afterEach(function () {
-    $this->cache->clear();
+afterEach(function () use (&$pdomysqlFixtureCache): void {
+    $pdomysqlFixtureCache->clear();
 });
 
-test('pdo adapter set and get on mysql', function () {
-    expect($this->cache->set('alpha', 11))->toBeTrue()
-        ->and($this->cache->get('alpha'))->toBe(11);
+test('pdo adapter set and get on mysql', function () use (&$pdomysqlFixtureCache): void {
+    expect($pdomysqlFixtureCache->set('alpha', 11))->toBeTrue()
+        ->and($pdomysqlFixtureCache->get('alpha'))->toBe(11);
 });
 
-test('pdo adapter ttl expiry on mysql', function () {
-    $this->cache->set('ttl', 'v', 1);
+test('pdo adapter ttl expiry on mysql', function () use (&$pdomysqlFixtureCache): void {
+    $pdomysqlFixtureCache->set('ttl', 'v', 1);
     usleep(2_000_000);
 
-    expect($this->cache->get('ttl'))->toBeNull();
+    expect($pdomysqlFixtureCache->get('ttl'))->toBeNull();
 });
 
-test('pdo adapter bulk delete on mysql', function () {
-    $this->cache->set('a', 'A');
-    $this->cache->set('b', 'B');
+test('pdo adapter bulk delete on mysql', function () use (&$pdomysqlFixtureCache): void {
+    $pdomysqlFixtureCache->set('a', 'A');
+    $pdomysqlFixtureCache->set('b', 'B');
 
-    $this->cache->deleteMultiple(['a']);
-    expect($this->cache->get('a'))->toBeNull()
-        ->and($this->cache->get('b'))->toBe('B');
+    $pdomysqlFixtureCache->deleteMultiple(['a']);
+    expect($pdomysqlFixtureCache->get('a'))->toBeNull()
+        ->and($pdomysqlFixtureCache->get('b'))->toBe('B');
 });

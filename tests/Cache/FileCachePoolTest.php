@@ -2,9 +2,16 @@
 
 declare(strict_types=1);
 
+namespace Infocyph\CacheLayer\Tests\Cache;
+
 /**  tests/FileCachePoolTest.php  */
 
 use Infocyph\CacheLayer\Cache\Cache;
+use Closure;
+use FilesystemIterator;
+use InvalidArgumentException;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
 use Infocyph\CacheLayer\Cache\CacheOptions;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
@@ -55,7 +62,7 @@ test('get returns default when key missing (file)', function () use (&$fileFixtu
 });
 
 test('get throws for invalid key (file)', function () use (&$fileFixtureCache): void {
-    expect(fn () => $fileFixtureCache->get('bad key', 'v'))
+    expect(fn (): mixed => $fileFixtureCache->get('bad key', 'v'))
         ->toThrow(CacheInvalidArgumentException::class);
 });
 
@@ -118,7 +125,7 @@ test('closure round-trips via ClosureSerializer', function () use (&$fileFixture
 });
 
 test('invalid cache key throws', function () use (&$fileFixtureCache): void {
-    expect(fn () => $fileFixtureCache->set('space key', 'v'))
+    expect(fn (): bool => $fileFixtureCache->set('space key', 'v'))
         ->toThrow(InvalidArgumentException::class);
 });
 

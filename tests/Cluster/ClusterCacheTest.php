@@ -2,7 +2,13 @@
 
 declare(strict_types=1);
 
+namespace Infocyph\CacheLayer\Tests\Cluster;
+
 use Infocyph\CacheLayer\Cluster\ClusterCache;
+use FilesystemIterator;
+use PDO;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
 use Infocyph\CacheLayer\Cluster\ClusterCacheConfig;
 use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Cluster\Consumer\InvalidationConsumer;

@@ -2,31 +2,42 @@
 
 declare(strict_types=1);
 
+namespace Infocyph\CacheLayer\Tests\Cache;
+
 use Infocyph\CacheLayer\Cache\Adapter\ArrayCacheAdapter;
+use FilesystemIterator;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
+use ReflectionClass;
+use ReflectionProperty;
 use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 
-beforeEach(function () {
-    $this->l1 = new ArrayCacheAdapter('l1');
-    $this->l2 = new ArrayCacheAdapter('l2');
-    $this->cache = Cache::tiered([$this->l1, $this->l2]);
+$tieredFixtureCache = Cache::nullStore();
+$tieredFixtureL1 = new ArrayCacheAdapter('tier-fixture-placeholder-l1');
+$tieredFixtureL2 = new ArrayCacheAdapter('tier-fixture-placeholder-l2');
+
+beforeEach(function () use (&$tieredFixtureCache, &$tieredFixtureL1, &$tieredFixtureL2): void {
+    $tieredFixtureL1 = new ArrayCacheAdapter('l1');
+    $tieredFixtureL2 = new ArrayCacheAdapter('l2');
+    $tieredFixtureCache = Cache::tiered([$tieredFixtureL1, $tieredFixtureL2]);
 });
 
-test('tiered adapter writes through all pools', function () {
-    $this->cache->set('k', 'value');
+test('tiered adapter writes through all pools', function () use (&$tieredFixtureCache, &$tieredFixtureL1, &$tieredFixtureL2): void {
+    $tieredFixtureCache->set('k', 'value');
 
-    expect($this->l1->getItem('k')->isHit())->toBeTrue()
-        ->and($this->l2->getItem('k')->isHit())->toBeTrue();
+    expect($tieredFixtureL1->getItem('k')->isHit())->toBeTrue()
+        ->and($tieredFixtureL2->getItem('k')->isHit())->toBeTrue();
 });
 
-test('tiered adapter promotes value from lower tier to upper tier', function () {
-    $item = $this->l2->getItem('promote');
+test('tiered adapter promotes value from lower tier to upper tier', function () use (&$tieredFixtureCache, &$tieredFixtureL1, &$tieredFixtureL2): void {
+    $item = $tieredFixtureL2->getItem('promote');
     $item->set('from-l2')->save();
 
-    expect($this->l1->getItem('promote')->isHit())->toBeFalse();
+    expect($tieredFixtureL1->getItem('promote')->isHit())->toBeFalse();
 
-    expect($this->cache->get('promote'))->toBe('from-l2')
-        ->and($this->l1->getItem('promote')->isHit())->toBeTrue();
+    expect($tieredFixtureCache->get('promote'))->toBe('from-l2')
+        ->and($tieredFixtureL1->getItem('promote')->isHit())->toBeTrue();
 });
 
 test('tiered cache supports descriptor array tiers', function () {

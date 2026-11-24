@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+namespace Infocyph\CacheLayer\Tests\Cache;
+
 /**
  * tests/MemcachedCachePoolTest.php
  *
@@ -10,6 +12,12 @@ declare(strict_types=1);
  */
 
 use Infocyph\CacheLayer\Cache\Cache;
+use Closure;
+use DateInterval;
+use DateTimeImmutable;
+use InvalidArgumentException;
+use Memcached;
+use RuntimeException;
 use Infocyph\CacheLayer\Cache\CacheOptions;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Cache\Lock\MemcachedLockProvider;
@@ -34,13 +42,16 @@ if ($probe->getResultCode() !== Memcached::RES_SUCCESS) {
 
 /* ── Test bootstrap / teardown ───────────────────────────────────── */
 
-beforeEach(function () use ($memcachedHost, $memcachedPort) {
+$memcachedFixtureCache = Cache::nullStore();
+$memcachedFixtureClient = new Memcached();
+
+beforeEach(function () use ($memcachedHost, $memcachedPort, &$memcachedFixtureCache, &$memcachedFixtureClient): void {
     $client = new Memcached;
     $client->addServer($memcachedHost, $memcachedPort);
     $client->flush();                          // fresh slate
 
-    $this->client = $client;
-    $this->cache = Cache::memcached(
+    $memcachedFixtureClient = $client;
+    $memcachedFixtureCache = Cache::memcached(
         'tests',
         [[$memcachedHost, $memcachedPort, 0]],
         $client,
@@ -49,104 +60,106 @@ beforeEach(function () use ($memcachedHost, $memcachedPort) {
 
 });
 
-afterEach(function () {
-    $this->client->flush();
+afterEach(function () use (&$memcachedFixtureClient): void {
+    $memcachedFixtureClient->flush();
 });
 
 /* ── Convenience helpers ────────────────────────────────────────── */
 
 /* ─── convenience set()/get() ─────────────────────────────────── */
-test('memcache set()/get()', function () {
-    expect($this->cache->get('miss'))->toBeNull()
-        ->and($this->cache->set('foo', 'bar'))->toBeTrue()
-        ->and($this->cache->get('foo'))->toBe('bar');
+test('memcache set()/get()', function () use (&$memcachedFixtureCache): void {
+    expect($memcachedFixtureCache->get('miss'))->toBeNull()
+        ->and($memcachedFixtureCache->set('foo', 'bar'))->toBeTrue()
+        ->and($memcachedFixtureCache->get('foo'))->toBe('bar');
 });
 
 /* ─── PSR-16 get($key, $default) ───────────────────────────────── */
-test('get returns default when key missing (memcached)', function () {
+test('get returns default when key missing (memcached)', function () use (&$memcachedFixtureCache): void {
     // Scalar
-    expect($this->cache->get('nobody', 'dflt'))->toBe('dflt');
+    expect($memcachedFixtureCache->get('nobody', 'dflt'))->toBe('dflt');
 
     $default = static fn(): string => 'hello';
-    expect($this->cache->get('call', $default))->toBe($default)
-        ->and($this->cache->has('call'))->toBeFalse();
+    expect($memcachedFixtureCache->get('call', $default))->toBe($default)
+        ->and($memcachedFixtureCache->has('call'))->toBeFalse();
 });
 
-test('get throws for invalid key (memcached)', function () {
-    expect(fn () => $this->cache->get('bad key', 'x'))
+test('get throws for invalid key (memcached)', function () use (&$memcachedFixtureCache): void {
+    expect(fn () => $memcachedFixtureCache->get('bad key', 'x'))
         ->toThrow(CacheInvalidArgumentException::class);
 });
 
 /* ─── PSR-6 getItem()/save() ───────────────────────────────────── */
-test('PSR-6 getItem()/save()', function () {
-    $it = $this->cache->getItem('psr');
+test('PSR-6 getItem()/save()', function () use (&$memcachedFixtureCache): void {
+    $it = $memcachedFixtureCache->getItem('psr');
+    assert($item instanceof CacheItem);
     expect($it)->toBeInstanceOf(CacheItem::class)
         ->and($it->isHit())->toBeFalse();
 
     $it->set(321)->save();
-    expect($this->cache->getItem('psr')->get())->toBe(321);
+    expect($memcachedFixtureCache->getItem('psr')->get())->toBe(321);
 });
 
-test('saveDeferred() + commit()', function () {
-    $this->cache->getItem('a')->set('A')->saveDeferred();
-    expect($this->cache->get('a'))->toBe('A');
+test('saveDeferred() + commit()', function () use (&$memcachedFixtureCache): void {
+    \Infocyph\CacheLayer\Tests\Support\CacheFixture::item($memcachedFixtureCache, 'a')->set('A')->saveDeferred();
+    expect($memcachedFixtureCache->get('a'))->toBe('A');
 
-    $this->cache->commit();
-    expect($this->cache->get('a'))->toBe('A');
+    $memcachedFixtureCache->commit();
+    expect($memcachedFixtureCache->get('a'))->toBe('A');
 });
 
-test('ArrayAccess is the only property-like access', function () {
-    $this->cache['x'] = 7;
-    expect($this->cache['x'])->toBe(7)
-        ->and(method_exists($this->cache, '__get'))->toBeFalse();
+test('ArrayAccess is the only property-like access', function () use (&$memcachedFixtureCache): void {
+    $memcachedFixtureCache['x'] = 7;
+    expect($memcachedFixtureCache['x'])->toBe(7)
+        ->and(method_exists($memcachedFixtureCache, '__get'))->toBeFalse();
 });
 
-test('TTL expiration', function () {
-    $this->cache->getItem('ttl')->set('x')->expiresAfter(1)->save();
+test('TTL expiration', function () use (&$memcachedFixtureCache): void {
+    \Infocyph\CacheLayer\Tests\Support\CacheFixture::item($memcachedFixtureCache, 'ttl')->set('x')->expiresAfter(1)->save();
     usleep(2_000_000);
-    expect($this->cache->hasItem('ttl'))->toBeFalse();
+    expect($memcachedFixtureCache->hasItem('ttl'))->toBeFalse();
 });
 
-test('closure round-trip', function () {
-    $fn = fn ($n) => $n * 3;
-    $this->cache->getItem('cb')->set($fn)->save();
-    $g = $this->cache->getItem('cb')->get();
+test('closure round-trip', function () use (&$memcachedFixtureCache): void {
+    $fn = fn (int $n): int => $n * 3;
+    \Infocyph\CacheLayer\Tests\Support\CacheFixture::item($memcachedFixtureCache, 'cb')->set($fn)->save();
+    $g = $memcachedFixtureCache->getItem('cb')->get();
+    assert($g instanceof Closure);
     expect($g(3))->toBe(9);
 });
 
-test('invalid key throws', function () {
-    expect(fn () => $this->cache->set('bad key', 'v'))
+test('invalid key throws', function () use (&$memcachedFixtureCache): void {
+    expect(fn () => $memcachedFixtureCache->set('bad key', 'v'))
         ->toThrow(InvalidArgumentException::class);
 });
 
-test('clear only rotates this namespace generation', function () use ($memcachedHost, $memcachedPort) {
-    $other = Cache::memcached('other', [[$memcachedHost, $memcachedPort, 0]], $this->client);
-    $this->cache->set('z', 9);
+test('clear only rotates this namespace generation', function () use ($memcachedHost, $memcachedPort, &$memcachedFixtureCache, &$memcachedFixtureClient): void {
+    $other = Cache::memcached('other', [[$memcachedHost, $memcachedPort, 0]], $memcachedFixtureClient);
+    $memcachedFixtureCache->set('z', 9);
     $other->set('z', 10);
-    $this->cache->clear();
-    expect($this->cache->hasItem('z'))->toBeFalse()
+    $memcachedFixtureCache->clear();
+    expect($memcachedFixtureCache->hasItem('z'))->toBeFalse()
         ->and($other->get('z'))->toBe(10);
 });
 
-test('an expired Memcached lock owner cannot delete its replacement', function () {
-    $provider = new MemcachedLockProvider($this->client);
+test('an expired Memcached lock owner cannot delete its replacement', function () use (&$memcachedFixtureClient): void {
+    $provider = new MemcachedLockProvider($memcachedFixtureClient);
     $oldOwner = $provider->acquire('reports', 0.0, 30.0);
     expect($oldOwner)->not->toBeNull();
     if ($oldOwner === null) {
         return;
     }
 
-    $this->client->set($oldOwner->key, 'replacement-token', 30);
+    $memcachedFixtureClient->set($oldOwner->key, 'replacement-token', 30);
     $provider->release($oldOwner);
 
-    expect($this->client->get($oldOwner->key))->toBe('replacement-token');
+    expect($memcachedFixtureClient->get($oldOwner->key))->toBe('replacement-token');
 });
 
-test('Memcached adapter multiFetch()', function () {
-    $this->cache->set('m1', 'foo');
-    $this->cache->set('m2', 'bar');
+test('Memcached adapter multiFetch()', function () use (&$memcachedFixtureCache): void {
+    $memcachedFixtureCache->set('m1', 'foo');
+    $memcachedFixtureCache->set('m2', 'bar');
 
-    $items = $this->cache->getItems(['m1', 'm2', 'missing']);
+    $items = iterator_to_array($memcachedFixtureCache->getItems(['m1', 'm2', 'missing']));
 
     expect($items['m1']->get())->toBe('foo')
         ->and($items['m2']->get())->toBe('bar')
@@ -154,76 +167,76 @@ test('Memcached adapter multiFetch()', function () {
 });
 
 
-test('Memcached long TTLs remain relative at the CacheLayer boundary', function () {
+test('Memcached long TTLs remain relative at the CacheLayer boundary', function () use (&$memcachedFixtureCache): void {
     $thirtyDays = 2_592_000;
     $thirtyDaysAndOne = $thirtyDays + 1;
     $thirtyOneDays = 2_678_400;
 
-    expect($this->cache->set('ttl-30d', 'exact', $thirtyDays))->toBeTrue()
-        ->and($this->cache->get('ttl-30d'))->toBe('exact')
-        ->and($this->cache->set('ttl-30d-plus', 'plus', $thirtyDaysAndOne))->toBeTrue()
-        ->and($this->cache->get('ttl-30d-plus'))->toBe('plus')
-        ->and($this->cache->set('ttl-31d', 'month', $thirtyOneDays))->toBeTrue()
-        ->and($this->cache->get('ttl-31d'))->toBe('month')
-        ->and($this->cache->set('ttl-interval', 'interval', new DateInterval('P31D')))->toBeTrue()
-        ->and($this->cache->get('ttl-interval'))->toBe('interval')
-        ->and($this->cache->set(
+    expect($memcachedFixtureCache->set('ttl-30d', 'exact', $thirtyDays))->toBeTrue()
+        ->and($memcachedFixtureCache->get('ttl-30d'))->toBe('exact')
+        ->and($memcachedFixtureCache->set('ttl-30d-plus', 'plus', $thirtyDaysAndOne))->toBeTrue()
+        ->and($memcachedFixtureCache->get('ttl-30d-plus'))->toBe('plus')
+        ->and($memcachedFixtureCache->set('ttl-31d', 'month', $thirtyOneDays))->toBeTrue()
+        ->and($memcachedFixtureCache->get('ttl-31d'))->toBe('month')
+        ->and($memcachedFixtureCache->set('ttl-interval', 'interval', new DateInterval('P31D')))->toBeTrue()
+        ->and($memcachedFixtureCache->get('ttl-interval'))->toBe('interval')
+        ->and($memcachedFixtureCache->set(
             'ttl-absolute',
             'absolute',
             (new DateTimeImmutable())->modify('+31 days'),
         ))->toBeTrue()
-        ->and($this->cache->get('ttl-absolute'))->toBe('absolute');
+        ->and($memcachedFixtureCache->get('ttl-absolute'))->toBe('absolute');
 });
 
-test('Memcached atomic writes and leases normalize long TTLs', function () {
+test('Memcached atomic writes and leases normalize long TTLs', function () use (&$memcachedFixtureCache, &$memcachedFixtureClient): void {
     $longTtl = 2_592_001;
-    $atomic = $this->cache->atomic();
+    $atomic = $memcachedFixtureCache->atomic();
     expect($atomic)->not->toBeNull();
     if ($atomic === null) {
         return;
     }
 
     expect($atomic->setIfAbsent('atomic-long', 'first', $longTtl))->toBeTrue()
-        ->and($this->cache->get('atomic-long'))->toBe('first')
+        ->and($memcachedFixtureCache->get('atomic-long'))->toBe('first')
         ->and($atomic->compareAndSet('atomic-long', 'first', 'second', $longTtl))->toBeTrue()
-        ->and($this->cache->get('atomic-long'))->toBe('second');
+        ->and($memcachedFixtureCache->get('atomic-long'))->toBe('second');
 
-    $provider = new MemcachedLockProvider($this->client);
+    $provider = new MemcachedLockProvider($memcachedFixtureClient);
     $handle = $provider->acquire('long-lease', 0.0, (float) $longTtl);
     expect($handle)->not->toBeNull();
     if ($handle !== null) {
-        expect($this->client->get($handle->key))->toBe($handle->token)
+        expect($memcachedFixtureClient->get($handle->key))->toBe($handle->token)
             ->and($provider->refresh($handle, (float) $longTtl))->toBeTrue();
         $provider->release($handle);
     }
 });
 
 
-test('Memcached compare-safe guard preserves a concurrent replacement', function () {
+test('Memcached compare-safe guard preserves a concurrent replacement', function () use (&$memcachedFixtureClient): void {
     $key = 'tests:guard:race';
 
-    $this->client->set($key, 'fresh', 30);
+    $memcachedFixtureClient->set($key, 'fresh', 30);
     expect(MemcachedValueGuard::replaceIfUnchanged(
-        $this->client,
+        $memcachedFixtureClient,
         $key,
         'stale',
         'repair',
         1,
     ))->toBe('fresh')
-        ->and($this->client->get($key))->toBe('fresh');
+        ->and($memcachedFixtureClient->get($key))->toBe('fresh');
 
-    $this->client->set($key, 'stale', 30);
+    $memcachedFixtureClient->set($key, 'stale', 30);
     expect(MemcachedValueGuard::replaceIfUnchanged(
-        $this->client,
+        $memcachedFixtureClient,
         $key,
         'stale',
         'repair',
         1,
     ))->toBe('repair')
-        ->and($this->client->get($key))->toBe('repair');
+        ->and($memcachedFixtureClient->get($key))->toBe('repair');
 });
 
-test('Memcached delete reports backend errors but treats missing keys as success', function () {
+test('Memcached delete reports backend errors but treats missing keys as success', function () use (&$memcachedFixtureCache): void {
     $unavailable = new Memcached;
     $adapter = new \Infocyph\CacheLayer\Cache\Adapter\MemcachedCacheAdapter(
         'unavailable',
@@ -231,8 +244,8 @@ test('Memcached delete reports backend errors but treats missing keys as success
         $unavailable,
     );
 
-    expect($this->cache->delete('missing-delete'))->toBeTrue()
-        ->and($this->cache->deleteItems(['missing-one', 'missing-two']))->toBeTrue()
+    expect($memcachedFixtureCache->delete('missing-delete'))->toBeTrue()
+        ->and($memcachedFixtureCache->deleteItems(['missing-one', 'missing-two']))->toBeTrue()
         ->and($adapter->deleteItem('key'))->toBeFalse()
         ->and($adapter->deleteItems(['key']))->toBeFalse();
 });

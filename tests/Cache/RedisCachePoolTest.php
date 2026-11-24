@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+namespace Infocyph\CacheLayer\Tests\Cache;
+
 /**
  * tests/RedisCachePoolTest.php
  *
@@ -12,6 +14,11 @@ declare(strict_types=1);
  */
 
 use Infocyph\CacheLayer\Cache\AtomicCacheInterface;
+use Closure;
+use InvalidArgumentException;
+use Redis;
+use RuntimeException;
+use Throwable;
 use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Cache\CacheOptions;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
@@ -57,7 +64,10 @@ $finishForkedTest = static function (bool $success): never {
 };
 
 /* ── bootstrap / teardown ────────────────────────────────────────── */
-beforeEach(function () use ($redisHost, $redisPort, $redisPassword) {
+$redisFixtureCache = Cache::nullStore();
+$redisFixtureRedisClient = new Redis();
+
+beforeEach(function () use ($redisHost, $redisPort, $redisPassword, &$redisFixtureCache, &$redisFixtureRedisClient): void {
     $client = new Redis;
     $client->connect($redisHost, $redisPort);
     if ($redisPassword !== '') {
@@ -65,8 +75,8 @@ beforeEach(function () use ($redisHost, $redisPort, $redisPassword) {
     }
     $client->flushDB();                               // fresh DB 0
 
-    $this->redisClient = $client;
-    $this->cache = Cache::redis(
+    $redisFixtureRedisClient = $client;
+    $redisFixtureCache = Cache::redis(
         'tests',
         sprintf('redis://%s:%d', $redisHost, $redisPort),
         $client,
@@ -74,160 +84,162 @@ beforeEach(function () use ($redisHost, $redisPort, $redisPassword) {
     );
 });
 
-afterEach(function () {
-    $this->cache->clear();
+afterEach(function () use (&$redisFixtureCache): void {
+    $redisFixtureCache->clear();
 });
 
 /* ── 1. convenience set()/get() ───────────────────────────────────── */
-test('Redis set()/get()', function () {
-    expect($this->cache->get('none'))->toBeNull()
-        ->and($this->cache->set('foo', 'bar'))->toBeTrue()
-        ->and($this->cache->get('foo'))->toBe('bar');
+test('Redis set()/get()', function () use (&$redisFixtureCache): void {
+    expect($redisFixtureCache->get('none'))->toBeNull()
+        ->and($redisFixtureCache->set('foo', 'bar'))->toBeTrue()
+        ->and($redisFixtureCache->get('foo'))->toBe('bar');
 });
 
 /* ─── PSR-16 get($key, $default) ───────────────────────────────── */
-test('get returns default when key missing (redis)', function () {
-    expect($this->cache->get('nobody', 'dflt'))->toBe('dflt');
+test('get returns default when key missing (redis)', function () use (&$redisFixtureCache): void {
+    expect($redisFixtureCache->get('nobody', 'dflt'))->toBe('dflt');
 
     $default = static fn(): string => 'xyz';
-    expect($this->cache->get('dynamic', $default))->toBe($default)
-        ->and($this->cache->has('dynamic'))->toBeFalse();
+    expect($redisFixtureCache->get('dynamic', $default))->toBe($default)
+        ->and($redisFixtureCache->has('dynamic'))->toBeFalse();
 });
 
-test('get throws for invalid key (redis)', function () {
-    expect(fn () => $this->cache->get('bad key', 'v'))
+test('get throws for invalid key (redis)', function () use (&$redisFixtureCache): void {
+    expect(fn () => $redisFixtureCache->get('bad key', 'v'))
         ->toThrow(CacheInvalidArgumentException::class);
 });
 
 /* ── 2. PSR-6 behaviour ─────────────────────────────────────────── */
-test('getItem()/save() (redis)', function () {
-    $it = $this->cache->getItem('psr');
+test('getItem()/save() (redis)', function () use (&$redisFixtureCache): void {
+    $it = $redisFixtureCache->getItem('psr');
+    assert($it instanceof CacheItem);
     expect($it)->toBeInstanceOf(CacheItem::class)
         ->and($it->isHit())->toBeFalse();
 
     $it->set(777)->save();
-    expect($this->cache->getItem('psr')->get())->toBe(777);
+    expect($redisFixtureCache->getItem('psr')->get())->toBe(777);
 });
 
 /* ── 3. deferred queue ──────────────────────────────────────────── */
-test('saveDeferred() & commit() (redis)', function () {
-    $this->cache->getItem('a')->set('A')->saveDeferred();
-    expect($this->cache->get('a'))->toBe('A');
+test('saveDeferred() & commit() (redis)', function () use (&$redisFixtureCache): void {
+    \Infocyph\CacheLayer\Tests\Support\CacheFixture::item($redisFixtureCache, 'a')->set('A')->saveDeferred();
+    expect($redisFixtureCache->get('a'))->toBe('A');
 
-    $this->cache->commit();
-    expect($this->cache->get('a'))->toBe('A');
+    $redisFixtureCache->commit();
+    expect($redisFixtureCache->get('a'))->toBe('A');
 });
 
 /* ── 4. ArrayAccess ─────────────────────────────────────────────── */
-test('ArrayAccess (redis)', function () {
-    $this->cache['k'] = 12;
-    expect($this->cache['k'])->toBe(12)
-        ->and(method_exists($this->cache, '__get'))->toBeFalse();
+test('ArrayAccess (redis)', function () use (&$redisFixtureCache): void {
+    $redisFixtureCache['k'] = 12;
+    expect($redisFixtureCache['k'])->toBe(12)
+        ->and(method_exists($redisFixtureCache, '__get'))->toBeFalse();
 });
 
 /* ── 6. TTL expiration ─────────────────────────────────────────── */
-test('expiration honours TTL (redis)', function () {
-    $this->cache->getItem('ttl')->set('x')->expiresAfter(1)->save();
+test('expiration honours TTL (redis)', function () use (&$redisFixtureCache): void {
+    \Infocyph\CacheLayer\Tests\Support\CacheFixture::item($redisFixtureCache, 'ttl')->set('x')->expiresAfter(1)->save();
     usleep(2_000_000);
-    expect($this->cache->hasItem('ttl'))->toBeFalse();
+    expect($redisFixtureCache->hasItem('ttl'))->toBeFalse();
 });
 
 /* ── 7. closure round-trip ──────────────────────────────────────── */
-test('closure persists in redis', function () {
-    $double = fn ($n) => $n * 2;
-    $this->cache->getItem('cb')->set($double)->save();
-    $fn = $this->cache->getItem('cb')->get();
+test('closure persists in redis', function () use (&$redisFixtureCache): void {
+    $double = fn (int $n): int => $n * 2;
+    \Infocyph\CacheLayer\Tests\Support\CacheFixture::item($redisFixtureCache, 'cb')->set($double)->save();
+    $fn = $redisFixtureCache->getItem('cb')->get();
+    assert($fn instanceof Closure);
     expect($fn(5))->toBe(10);
 });
 
 /* ── 9. invalid key guard ───────────────────────────────────────── */
-test('invalid key throws (redis)', function () {
-    expect(fn () => $this->cache->set('bad key', 'v'))
+test('invalid key throws (redis)', function () use (&$redisFixtureCache): void {
+    expect(fn () => $redisFixtureCache->set('bad key', 'v'))
         ->toThrow(InvalidArgumentException::class);
 });
 
 /* ── 10. clear wipes namespace ----------------------------------- */
-test('clear() wipes entries (redis)', function () {
-    $this->cache->set('z', 9);
-    $this->cache->clear();
-    expect($this->cache->hasItem('z'))->toBeFalse();
+test('clear() wipes entries (redis)', function () use (&$redisFixtureCache): void {
+    $redisFixtureCache->set('z', 9);
+    $redisFixtureCache->clear();
+    expect($redisFixtureCache->hasItem('z'))->toBeFalse();
 });
 
-test('Redis adapter multiFetch()', function () {
-    $this->cache->set('r1', 10);
-    $this->cache->set('r2', 20);
+test('Redis adapter multiFetch()', function () use (&$redisFixtureCache): void {
+    $redisFixtureCache->set('r1', 10);
+    $redisFixtureCache->set('r2', 20);
 
-    $items = $this->cache->getItems(['r1', 'r2', 'none']);
+    $items = iterator_to_array($redisFixtureCache->getItems(['r1', 'r2', 'none']));
 
     expect($items['r1']->get())->toBe(10)
         ->and($items['r2']->get())->toBe(20)
         ->and($items['none']->isHit())->toBeFalse();
 });
 
-test('Redis exposes native atomic cache capability', function () {
-    expect($this->cache->atomic())->toBeInstanceOf(AtomicCacheInterface::class);
+test('Redis exposes native atomic cache capability', function () use (&$redisFixtureCache): void {
+    expect($redisFixtureCache->atomic())->toBeInstanceOf(AtomicCacheInterface::class);
 });
 
-test('Redis setIfAbsent is conditional and TTL-aware', function () {
-    $atomic = $this->cache->atomic();
+test('Redis setIfAbsent is conditional and TTL-aware', function () use (&$redisFixtureCache): void {
+    $atomic = $redisFixtureCache->atomic();
 
     expect($atomic)->not->toBeNull()
         ->and($atomic->setIfAbsent('claim', 'first', 1))->toBeTrue()
         ->and($atomic->setIfAbsent('claim', 'second', 30))->toBeFalse()
-        ->and($this->cache->get('claim'))->toBe('first');
+        ->and($redisFixtureCache->get('claim'))->toBe('first');
 
     usleep(2_000_000);
 
     expect($atomic->setIfAbsent('claim', 'after-expiry', 30))->toBeTrue()
-        ->and($this->cache->get('claim'))->toBe('after-expiry');
+        ->and($redisFixtureCache->get('claim'))->toBe('after-expiry');
 });
 
-test('Redis setIfAbsent can replace a stale tagged physical record', function () {
-    $atomic = $this->cache->atomic();
+test('Redis setIfAbsent can replace a stale tagged physical record', function () use (&$redisFixtureCache): void {
+    $atomic = $redisFixtureCache->atomic();
 
     expect($atomic)->not->toBeNull();
-    $this->cache->setTagged('claim', 'stale', ['group']);
-    $this->cache->invalidateTag('group');
+    $redisFixtureCache->setTagged('claim', 'stale', ['group']);
+    $redisFixtureCache->invalidateTag('group');
 
     expect($atomic->setIfAbsent('claim', 'fresh', 30))->toBeTrue()
-        ->and($this->cache->get('claim'))->toBe('fresh');
+        ->and($redisFixtureCache->get('claim'))->toBe('fresh');
 });
 
-test('Redis compareAndSet strictly replaces one live untagged value', function () {
-    $atomic = $this->cache->atomic();
+test('Redis compareAndSet strictly replaces one live untagged value', function () use (&$redisFixtureCache): void {
+    $atomic = $redisFixtureCache->atomic();
 
     expect($atomic)->not->toBeNull();
-    $this->cache->set('version', 1, 30);
+    $redisFixtureCache->set('version', 1, 30);
 
     expect($atomic->compareAndSet('version', '1', 2, 30))->toBeFalse()
         ->and($atomic->compareAndSet('version', 1, 2, 30))->toBeTrue()
-        ->and($this->cache->get('version'))->toBe(2)
+        ->and($redisFixtureCache->get('version'))->toBe(2)
         ->and($atomic->compareAndSet('version', 1, 3, 30))->toBeFalse();
 });
 
-test('Redis compareAndSet does not claim atomic tag coordination', function () {
-    $atomic = $this->cache->atomic();
+test('Redis compareAndSet does not claim atomic tag coordination', function () use (&$redisFixtureCache): void {
+    $atomic = $redisFixtureCache->atomic();
 
     expect($atomic)->not->toBeNull();
-    $this->cache->setTagged('tagged', 'old', ['group'], 30);
+    $redisFixtureCache->setTagged('tagged', 'old', ['group'], 30);
 
     expect($atomic->compareAndSet('tagged', 'old', 'new', 30))->toBeFalse()
-        ->and($this->cache->get('tagged'))->toBe('old');
+        ->and($redisFixtureCache->get('tagged'))->toBe('old');
 });
 
-test('Redis getAndDelete consumes one value atomically', function () {
-    $atomic = $this->cache->atomic();
+test('Redis getAndDelete consumes one value atomically', function () use (&$redisFixtureCache): void {
+    $atomic = $redisFixtureCache->atomic();
 
     expect($atomic)->not->toBeNull();
-    $this->cache->set('one-time', null, 30);
+    $redisFixtureCache->set('one-time', null, 30);
 
     expect($atomic->getAndDelete('one-time', 'missing'))->toBeNull()
         ->and($atomic->getAndDelete('one-time', 'missing'))->toBe('missing')
-        ->and($this->cache->has('one-time'))->toBeFalse();
+        ->and($redisFixtureCache->has('one-time'))->toBeFalse();
 });
 
-test('Redis atomic claims have one winner under process contention', function () use ($redisHost, $redisPort, $redisPassword, $finishForkedTest) {
-    $atomic = $this->cache->atomic();
+test('Redis atomic claims have one winner under process contention', function () use ($redisHost, $redisPort, $redisPassword, $finishForkedTest, &$redisFixtureCache): void {
+    $atomic = $redisFixtureCache->atomic();
     expect($atomic)->not->toBeNull();
 
     if (!function_exists('pcntl_fork')) {
@@ -267,10 +279,10 @@ test('Redis atomic claims have one winner under process contention', function ()
     expect($wins)->toBe(1);
 });
 
-test('Redis atomic compare and set has one winner under process contention', function () use ($redisHost, $redisPort, $redisPassword, $finishForkedTest) {
-    $atomic = $this->cache->atomic();
+test('Redis atomic compare and set has one winner under process contention', function () use ($redisHost, $redisPort, $redisPassword, $finishForkedTest, &$redisFixtureCache): void {
+    $atomic = $redisFixtureCache->atomic();
     expect($atomic)->not->toBeNull();
-    $this->cache->set('cas-contended', 0, 30);
+    $redisFixtureCache->set('cas-contended', 0, 30);
 
     if (!function_exists('pcntl_fork')) {
         $wins = 0;
@@ -307,14 +319,14 @@ test('Redis atomic compare and set has one winner under process contention', fun
     }
 
     expect($wins)->toBe(1)
-        ->and($this->cache->get('cas-contended'))->toBeGreaterThanOrEqual(1)
-        ->and($this->cache->get('cas-contended'))->toBeLessThanOrEqual(8);
+        ->and($redisFixtureCache->get('cas-contended'))->toBeGreaterThanOrEqual(1)
+        ->and($redisFixtureCache->get('cas-contended'))->toBeLessThanOrEqual(8);
 });
 
-test('Redis atomic consumption has one winner under process contention', function () use ($redisHost, $redisPort, $redisPassword, $finishForkedTest) {
-    $atomic = $this->cache->atomic();
+test('Redis atomic consumption has one winner under process contention', function () use ($redisHost, $redisPort, $redisPassword, $finishForkedTest, &$redisFixtureCache): void {
+    $atomic = $redisFixtureCache->atomic();
     expect($atomic)->not->toBeNull();
-    $this->cache->set('consume-once', 'payload', 30);
+    $redisFixtureCache->set('consume-once', 'payload', 30);
 
     if (!function_exists('pcntl_fork')) {
         $wins = 0;
@@ -354,23 +366,23 @@ test('Redis atomic consumption has one winner under process contention', functio
 });
 
 
-test('Redis cache clear does not reset isolated atomic counters and large integers stay exact', function () {
-    $counters = AtomicCounters::redis('tests', client: $this->redisClient);
+test('Redis cache clear does not reset isolated atomic counters and large integers stay exact', function () use (&$redisFixtureCache, &$redisFixtureRedisClient): void {
+    $counters = AtomicCounters::redis('tests', client: $redisFixtureRedisClient);
     $large = 9_007_199_254_740_993;
 
     expect($counters->increment('large', $large)->value)->toBe($large)
-        ->and($this->cache->set('ordinary', 'value'))->toBeTrue()
-        ->and($this->cache->clear())->toBeTrue()
+        ->and($redisFixtureCache->set('ordinary', 'value'))->toBeTrue()
+        ->and($redisFixtureCache->clear())->toBeTrue()
         ->and($counters->get('large'))->toBe($large);
 });
 
-test('Redis atomic counters preserve TTL, decrement, overflow, and invalid-value contracts', function () {
-    $counters = AtomicCounters::redis('tests', client: $this->redisClient);
+test('Redis atomic counters preserve TTL, decrement, overflow, and invalid-value contracts', function () use (&$redisFixtureRedisClient): void {
+    $counters = AtomicCounters::redis('tests', client: $redisFixtureRedisClient);
     $first = $counters->increment('window', 5, 30);
     $physical = 'cachelayer:counter:tests:window';
-    $ttlBefore = $this->redisClient->ttl($physical);
+    $ttlBefore = $redisFixtureRedisClient->ttl($physical);
     $later = $counters->decrement('window', 2, 30);
-    $ttlAfter = $this->redisClient->ttl($physical);
+    $ttlAfter = $redisFixtureRedisClient->ttl($physical);
 
     expect($first->initialized)->toBeTrue()
         ->and($later->initialized)->toBeFalse()
@@ -379,18 +391,18 @@ test('Redis atomic counters preserve TTL, decrement, overflow, and invalid-value
         ->and($ttlAfter)->toBeGreaterThan(0)
         ->and($ttlAfter)->toBeLessThanOrEqual($ttlBefore);
 
-    $this->redisClient->set('cachelayer:counter:tests:max', (string) PHP_INT_MAX);
+    $redisFixtureRedisClient->set('cachelayer:counter:tests:max', (string) PHP_INT_MAX);
     expect($counters->get('max'))->toBe(PHP_INT_MAX)
         ->and(fn () => $counters->increment('max'))->toThrow(AtomicCounterException::class);
 
-    $this->redisClient->set('cachelayer:counter:tests:out-of-range', '9223372036854775808');
-    $this->redisClient->set('cachelayer:counter:tests:malformed', '12x');
+    $redisFixtureRedisClient->set('cachelayer:counter:tests:out-of-range', '9223372036854775808');
+    $redisFixtureRedisClient->set('cachelayer:counter:tests:malformed', '12x');
     expect(fn () => $counters->get('out-of-range'))->toThrow(AtomicCounterException::class)
         ->and(fn () => $counters->get('malformed'))->toThrow(AtomicCounterException::class);
 });
 
-test('Redis atomic counter initialization has exactly one winner under contention', function () use ($redisHost, $redisPort, $redisPassword) {
-    $counters = AtomicCounters::redis('tests', client: $this->redisClient);
+test('Redis atomic counter initialization has exactly one winner under contention', function () use ($redisHost, $redisPort, $redisPassword, &$redisFixtureRedisClient): void {
+    $counters = AtomicCounters::redis('tests', client: $redisFixtureRedisClient);
     $wins = AtomicCounterProcessProbe::initializedWinners(
         'redis',
         $redisHost,
@@ -404,25 +416,25 @@ test('Redis atomic counter initialization has exactly one winner under contentio
         ->and($counters->get('contended-counter'))->toBe(8);
 });
 
-test('Redis stale cleanup never deletes or overwrites a concurrent replacement', function () {
+test('Redis stale cleanup never deletes or overwrites a concurrent replacement', function () use (&$redisFixtureRedisClient): void {
     $key = 'cachelayer:guard:race';
 
-    $this->redisClient->set($key, 'fresh');
-    expect(RedisValueGuard::deleteIfUnchanged($this->redisClient, $key, 'stale'))->toBeFalse()
-        ->and($this->redisClient->get($key))->toBe('fresh')
-        ->and(RedisValueGuard::replaceIfUnchanged($this->redisClient, $key, 'stale', 'repair'))->toBe('fresh')
-        ->and($this->redisClient->get($key))->toBe('fresh');
+    $redisFixtureRedisClient->set($key, 'fresh');
+    expect(RedisValueGuard::deleteIfUnchanged($redisFixtureRedisClient, $key, 'stale'))->toBeFalse()
+        ->and($redisFixtureRedisClient->get($key))->toBe('fresh')
+        ->and(RedisValueGuard::replaceIfUnchanged($redisFixtureRedisClient, $key, 'stale', 'repair'))->toBe('fresh')
+        ->and($redisFixtureRedisClient->get($key))->toBe('fresh');
 
-    $this->redisClient->set($key, 'stale');
-    expect(RedisValueGuard::replaceIfUnchanged($this->redisClient, $key, 'stale', 'repair'))->toBe('repair')
-        ->and($this->redisClient->get($key))->toBe('repair')
-        ->and(RedisValueGuard::deleteIfUnchanged($this->redisClient, $key, 'repair'))->toBeTrue()
-        ->and($this->redisClient->get($key))->toBeFalse();
+    $redisFixtureRedisClient->set($key, 'stale');
+    expect(RedisValueGuard::replaceIfUnchanged($redisFixtureRedisClient, $key, 'stale', 'repair'))->toBe('repair')
+        ->and($redisFixtureRedisClient->get($key))->toBe('repair')
+        ->and(RedisValueGuard::deleteIfUnchanged($redisFixtureRedisClient, $key, 'repair'))->toBeTrue()
+        ->and($redisFixtureRedisClient->get($key))->toBeFalse();
 });
 
 
-test('Redis atomic counters expire fixed windows', function () {
-    $counters = AtomicCounters::redis('tests', client: $this->redisClient);
+test('Redis atomic counters expire fixed windows', function () use (&$redisFixtureRedisClient): void {
+    $counters = AtomicCounters::redis('tests', client: $redisFixtureRedisClient);
 
     expect($counters->increment('short-window', 1, 1)->initialized)->toBeTrue()
         ->and($counters->get('short-window'))->toBe(1);
@@ -432,23 +444,23 @@ test('Redis atomic counters expire fixed windows', function () {
 });
 
 
-test('Redis atomic consume discards deferred overlays without resurrection', function () {
-    $atomic = $this->cache->atomic();
+test('Redis atomic consume discards deferred overlays without resurrection', function () use (&$redisFixtureCache): void {
+    $atomic = $redisFixtureCache->atomic();
     expect($atomic)->not->toBeNull()
-        ->and($this->cache->set('deferred-consume', 'stored'))->toBeTrue()
-        ->and($this->cache->saveDeferred($this->cache->getItem('deferred-consume')->set('pending')))->toBeTrue()
+        ->and($redisFixtureCache->set('deferred-consume', 'stored'))->toBeTrue()
+        ->and($redisFixtureCache->saveDeferred($redisFixtureCache->getItem('deferred-consume')->set('pending')))->toBeTrue()
         ->and($atomic->getAndDelete('deferred-consume', 'missing'))->toBe('stored')
         ->and($atomic->getAndDelete('deferred-consume', 'missing'))->toBe('missing')
-        ->and($this->cache->commit())->toBeTrue()
-        ->and($this->cache->get('deferred-consume'))->toBeNull();
+        ->and($redisFixtureCache->commit())->toBeTrue()
+        ->and($redisFixtureCache->get('deferred-consume'))->toBeNull();
 });
 
 
-test('Redis clear in boundary namespace preserves counters locks and invalidation streams', function () {
-    $cache = Cache::redis('cachelayer', client: $this->redisClient);
-    $counters = AtomicCounters::redis('audit-counter', client: $this->redisClient);
-    $locks = new \Infocyph\CacheLayer\Cache\Lock\RedisLockProvider($this->redisClient);
-    $transport = new \Infocyph\CacheLayer\Cluster\Transport\RedisStreamInvalidationTransport($this->redisClient);
+test('Redis clear in boundary namespace preserves counters locks and invalidation streams', function () use (&$redisFixtureRedisClient): void {
+    $cache = Cache::redis('cachelayer', client: $redisFixtureRedisClient);
+    $counters = AtomicCounters::redis('audit-counter', client: $redisFixtureRedisClient);
+    $locks = new \Infocyph\CacheLayer\Cache\Lock\RedisLockProvider($redisFixtureRedisClient);
+    $transport = new \Infocyph\CacheLayer\Cluster\Transport\RedisStreamInvalidationTransport($redisFixtureRedisClient);
 
     expect($cache->set('ordinary', 'value'))->toBeTrue()
         ->and($counters->increment('window', 5, 30)->value)->toBe(5);
@@ -470,43 +482,43 @@ test('Redis clear in boundary namespace preserves counters locks and invalidatio
         ->and($cache->get('ordinary'))->toBeNull()
         ->and($counters->get('window'))->toBe(5)
         ->and($locks->acquire('boundary-lock', 0.0, 30.0))->toBeNull()
-        ->and($this->redisClient->xLen('cachelayer:invalidation:clear-boundary'))->toBe(1);
+        ->and($redisFixtureRedisClient->xLen('cachelayer:invalidation:clear-boundary'))->toBe(1);
 
     $locks->release($held);
 });
 
-test('Redis compare-safe cleanup preserves a concurrent replacement', function () {
+test('Redis compare-safe cleanup preserves a concurrent replacement', function () use (&$redisFixtureRedisClient): void {
     $key = 'cachelayer:guard:stale-read';
-    $this->redisClient->set($key, 'observed-invalid');
-    $observed = $this->redisClient->get($key);
+    $redisFixtureRedisClient->set($key, 'observed-invalid');
+    $observed = $redisFixtureRedisClient->get($key);
     expect($observed)->toBe('observed-invalid');
 
-    $this->redisClient->set($key, 'replacement');
+    $redisFixtureRedisClient->set($key, 'replacement');
 
-    expect(RedisValueGuard::deleteIfUnchanged($this->redisClient, $key, (string) $observed))->toBeFalse()
-        ->and($this->redisClient->get($key))->toBe('replacement');
+    expect(RedisValueGuard::deleteIfUnchanged($redisFixtureRedisClient, $key, (string) $observed))->toBeFalse()
+        ->and($redisFixtureRedisClient->get($key))->toBe('replacement');
 });
 
-test('tag-stale Redis reads return misses without physically deleting an observed record', function () {
-    expect($this->cache->setTagged('tagged-stale', 'old', ['products'], 30))->toBeTrue();
+test('tag-stale Redis reads return misses without physically deleting an observed record', function () use (&$redisFixtureCache, &$redisFixtureRedisClient): void {
+    expect($redisFixtureCache->setTagged('tagged-stale', 'old', ['products'], 30))->toBeTrue();
     $physical = 'tests:d:tagged-stale';
-    expect($this->redisClient->exists($physical))->toBe(1);
+    expect($redisFixtureRedisClient->exists($physical))->toBe(1);
 
-    expect($this->cache->invalidateTag('products'))->toBeTrue()
-        ->and($this->cache->get('tagged-stale'))->toBeNull()
-        ->and($this->redisClient->exists($physical))->toBe(1)
-        ->and($this->cache->setTagged('tagged-stale', 'fresh', ['products'], 30))->toBeTrue()
-        ->and($this->cache->get('tagged-stale'))->toBe('fresh');
+    expect($redisFixtureCache->invalidateTag('products'))->toBeTrue()
+        ->and($redisFixtureCache->get('tagged-stale'))->toBeNull()
+        ->and($redisFixtureRedisClient->exists($physical))->toBe(1)
+        ->and($redisFixtureCache->setTagged('tagged-stale', 'fresh', ['products'], 30))->toBeTrue()
+        ->and($redisFixtureCache->get('tagged-stale'))->toBe('fresh');
 });
 
 
-test('Redis Stream recovery clears stale local state after complete history loss', function () {
+test('Redis Stream recovery clears stale local state after complete history loss', function () use (&$redisFixtureRedisClient): void {
     $directory = sys_get_temp_dir() . '/cachelayer-redis-history-' . uniqid('', true);
     mkdir($directory, 0700, true);
 
     try {
         $transport = new \Infocyph\CacheLayer\Cluster\Transport\RedisStreamInvalidationTransport(
-            $this->redisClient,
+            $redisFixtureRedisClient,
             'cachelayer:history:',
         );
         $runtime = \Infocyph\CacheLayer\Cluster\ClusterCache::create(
@@ -542,7 +554,7 @@ test('Redis Stream recovery clears stale local state after complete history loss
                 'writer',
             ),
         );
-        $this->redisClient->del('cachelayer:history:redis-history-loss');
+        $redisFixtureRedisClient->del('cachelayer:history:redis-history-loss');
 
         expect($runtime->recoverIfRequired())->toBeTrue()
             ->and($runtime->cache()->get('stale'))->toBeNull()

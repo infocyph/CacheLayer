@@ -204,7 +204,7 @@ LUA;
                 if ($keys !== false && $keys !== [] && !self::deleteSucceeded($this->redis->del($keys))) {
                     return false;
                 }
-            } while ($cursor !== 0 && $cursor !== '0' && $cursor !== null);
+            } while ($cursor !== 0 && $cursor !== null);
         }
         $this->deferred = [];
 
@@ -416,6 +416,11 @@ LUA;
         return $ok && $this->saveExpiring($expiring);
     }
 
+    private static function deleteSucceeded(mixed $result): bool
+    {
+        return is_int($result) && $result >= 0;
+    }
+
     /**
      * @throws RuntimeException
      */
@@ -490,11 +495,6 @@ LUA;
         }
 
         return true;
-    }
-
-    private static function deleteSucceeded(mixed $result): bool
-    {
-        return is_int($result) && $result >= 0;
     }
 
     /** @param list<array{0:string, 1:int, 2:string}> $records */

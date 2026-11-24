@@ -2,7 +2,13 @@
 
 declare(strict_types=1);
 
+namespace Infocyph\CacheLayer\Tests\Memoize;
+
 use Infocyph\CacheLayer\Memoize\Memoizer;
+use Closure;
+use ReflectionClass;
+use stdClass;
+use WeakReference;
 use Infocyph\CacheLayer\Memoize\MemoizeTrait;
 use Infocyph\CacheLayer\Memoize\OnceMemoizer;
 

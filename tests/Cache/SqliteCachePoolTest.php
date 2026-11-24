@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+namespace Infocyph\CacheLayer\Tests\Cache;
+
 /**
  * tests/SqliteCachePoolTest.php
  *
@@ -9,6 +11,10 @@ declare(strict_types=1);
  */
 
 use Infocyph\CacheLayer\Cache\Cache;
+use Closure;
+use InvalidArgumentException;
+use PDO;
+use RuntimeException;
 use Infocyph\CacheLayer\Cache\CacheOptions;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
@@ -53,7 +59,7 @@ test('get returns default when key missing (sqlite)', function () use (&$sqliteF
 });
 
 test('get throws for invalid key (sqlite)', function () use (&$sqliteFixtureCache): void {
-    expect(fn () => $sqliteFixtureCache->get('bad key', 'v'))
+    expect(fn (): mixed => $sqliteFixtureCache->get('bad key', 'v'))
         ->toThrow(CacheInvalidArgumentException::class);
 });
 
@@ -102,7 +108,7 @@ test('closure survives sqlite', function () use (&$sqliteFixtureCache): void {
 
 /* ── 9. invalid key guard ───────────────────────────────────────── */
 test('invalid key throws (sqlite)', function () use (&$sqliteFixtureCache): void {
-    expect(fn () => $sqliteFixtureCache->set('bad key', 'v'))
+    expect(fn (): bool => $sqliteFixtureCache->set('bad key', 'v'))
         ->toThrow(InvalidArgumentException::class);
 });
 

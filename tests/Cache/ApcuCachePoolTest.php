@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+namespace Infocyph\CacheLayer\Tests\Cache;
+
 /**
  * tests/ApcuCachePoolTest.php
  *
@@ -11,6 +13,9 @@ declare(strict_types=1);
  */
 
 use Infocyph\CacheLayer\Cache\Cache;
+use Closure;
+use InvalidArgumentException;
+use RuntimeException;
 use Infocyph\CacheLayer\Cache\CacheOptions;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
@@ -53,7 +58,7 @@ test('get returns default when key missing (apcu)', function () use (&$apcuFixtu
 });
 
 test('get throws for invalid key (apcu)', function () use (&$apcuFixtureCache): void {
-    expect(fn () => $apcuFixtureCache->get('bad key', 'x'))
+    expect(fn (): mixed => $apcuFixtureCache->get('bad key', 'x'))
         ->toThrow(CacheInvalidArgumentException::class);
 });
 
@@ -102,7 +107,7 @@ test('closure value survives APCu', function () use (&$apcuFixtureCache): void {
 
 /* ─── invalid key triggers exception ─────────────────────────────── */
 test('invalid key throws (apcu)', function () use (&$apcuFixtureCache): void {
-    expect(fn () => $apcuFixtureCache->set('bad key', 'v'))
+    expect(fn (): bool => $apcuFixtureCache->set('bad key', 'v'))
         ->toThrow(InvalidArgumentException::class);
 });
 
