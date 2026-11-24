@@ -74,6 +74,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
     /**
      * @throws \RuntimeException
      * @throws CacheInvalidArgumentException
+     * @throws \LogicException
      */
     public static function apcu(string $namespace = 'default', ?CacheOptions $options = null): self
     {
@@ -87,6 +88,8 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
 
     /**
      * @throws CacheInvalidArgumentException
+     * @throws \LogicException
+     * @throws \RuntimeException
      */
     public static function file(
         string $namespace = 'default',
@@ -105,6 +108,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
      * @param list<array{0:string, 1:int, 2:int}> $servers
      * @throws \RuntimeException
      * @throws CacheInvalidArgumentException
+     * @throws \LogicException
      */
     public static function memcached(
         string $namespace = 'default',
@@ -124,6 +128,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
 
     /**
      * @throws CacheInvalidArgumentException
+     * @throws \LogicException
      */
     public static function memory(string $namespace = 'default', ?CacheOptions $options = null): self
     {
@@ -138,6 +143,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
     /**
      * @throws CacheInvalidArgumentException
      * @throws \RuntimeException
+     * @throws \LogicException
      */
     public static function mongodb(
         string $namespace = 'default',
@@ -174,6 +180,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
 
     /**
      * @throws CacheInvalidArgumentException
+     * @throws \LogicException
      */
     public static function nullStore(?CacheOptions $options = null): self
     {
@@ -184,6 +191,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
      * @throws \RuntimeException
      * @throws CacheInvalidArgumentException
      * @throws \Infocyph\CacheLayer\Cache\Lock\UnsupportedPdoLockDriver
+     * @throws \LogicException
      */
     public static function pdo(
         string $namespace = 'default',
@@ -209,6 +217,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
     /**
      * @throws CacheInvalidArgumentException
      * @throws \RuntimeException
+     * @throws \LogicException
      */
     public static function phpFiles(
         string $namespace = 'default',
@@ -226,6 +235,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
     /**
      * @throws \RuntimeException
      * @throws CacheInvalidArgumentException
+     * @throws \LogicException
      */
     public static function redis(
         string $namespace = 'default',
@@ -248,6 +258,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
      * @param list<string> $seeds
      * @throws CacheInvalidArgumentException
      * @throws \RuntimeException
+     * @throws \LogicException
      */
     public static function redisCluster(
         string $namespace = 'default',
@@ -275,6 +286,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
     /**
      * @throws CacheInvalidArgumentException
      * @throws \RuntimeException
+     * @throws \LogicException
      */
     public static function scylla(
         string $namespace = 'default',
@@ -303,6 +315,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
     /**
      * @throws CacheInvalidArgumentException
      * @throws \RuntimeException
+     * @throws \LogicException
      */
     public static function sharedMemory(
         string $namespace = 'default',
@@ -336,6 +349,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
      * @param list<InternalCachePoolInterface|array<string, mixed>> $tiers
      * @throws CacheInvalidArgumentException
      * @throws \InvalidArgumentException
+     * @throws \LogicException
      */
     public static function tiered(
         #[\SensitiveParameter]
@@ -357,6 +371,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
     /**
      * @throws \RuntimeException
      * @throws CacheInvalidArgumentException
+     * @throws \LogicException
      */
     public static function valkey(
         string $namespace = 'default',
@@ -377,6 +392,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
 
     /**
      * @throws CacheInvalidArgumentException
+     * @throws \LogicException
      */
     public static function weakMap(string $namespace = 'default', ?CacheOptions $options = null): self
     {
@@ -564,7 +580,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
     }
 
     /**
-     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws CacheBackendException
      */
     #[\Override]
     public function has(string $key): bool
@@ -574,6 +590,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
 
     /**
      * @throws CacheBackendException
+     * @throws CacheInvalidArgumentException
      */
     #[\Override]
     public function hasItem(string $key): bool
@@ -636,6 +653,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
     /**
      * @throws \Psr\SimpleCache\InvalidArgumentException
      * @throws \Psr\Cache\InvalidArgumentException
+     * @throws CacheBackendException
      */
     #[\Override]
     public function offsetGet(mixed $offset): mixed
@@ -898,6 +916,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
 
     /**
      * @throws CacheInvalidArgumentException
+     * @throws \RuntimeException
      */
     #[\Override]
     public function useValkeyLock(?\Redis $client = null, string $prefix = 'cachelayer:lock:'): self
@@ -1071,6 +1090,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
     /**
      * @param array<int|string, string>|null $generations
      * @throws \Psr\SimpleCache\InvalidArgumentException
+     * @throws CacheBackendException
      */
     private function storeRemembered(
         string $key,

@@ -74,6 +74,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
 
     /**
      * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
     #[\Override]
     public function deleteItem(string $key): bool
@@ -91,6 +92,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
      * @param array $keys The keys argument.
      * @phpstan-param array<array-key, string> $keys
      * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
     #[\Override]
     public function deleteItems(array $keys): bool
@@ -190,6 +192,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
     /**
      * @param list<string> $tags
      * @return array<int|string, string>
+     * @throws RuntimeException
      */
     #[\Override]
     public function readTagGenerations(array $tags): array
@@ -215,7 +218,10 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
         return $generations;
     }
 
-    /** @param list<string> $tags */
+    /**
+     * @param list<string> $tags
+     * @throws RuntimeException
+     */
     #[\Override]
     public function rotateTagGenerations(array $tags): bool
     {
@@ -227,6 +233,9 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
         return $this->storeTagGenerations($generations);
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     #[\Override]
     public function save(CacheItemInterface $item): bool
     {
@@ -253,6 +262,8 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
     /**
      * @param array<string, CacheItemInterface> $items
      * @throws \Psr\Cache\InvalidArgumentException
+     * @throws RuntimeException
+     * @throws \InvalidArgumentException
      */
     #[\Override]
     public function saveItems(array $items): bool
@@ -395,6 +406,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
     /**
      * @param list<string> $keys
      * @return array<string, CacheItem>
+     * @throws RuntimeException
      */
     private function fetchBucketItems(int $bucket, array $keys): array
     {
@@ -430,6 +442,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
      * @param array $arguments The arguments argument.
      * @phpstan-param array<int, mixed> $arguments
      * @phpstan-return array<string, mixed>|null
+     * @throws RuntimeException
      */
     private function firstRow(string $cql, array $arguments = []): ?array
     {

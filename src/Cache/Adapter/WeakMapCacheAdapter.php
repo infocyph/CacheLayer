@@ -36,6 +36,8 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
 
     /**
      * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws \RuntimeException
      */
     #[\Override]
     public function atomicCompareAndSet(
@@ -80,6 +82,8 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
 
     /**
      * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws \RuntimeException
      */
     #[\Override]
     public function atomicSetIfAbsent(CacheItemInterface $item): bool
@@ -229,6 +233,9 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return $items;
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     #[\Override]
     public function save(CacheItemInterface $item): bool
     {
@@ -238,6 +245,8 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
     /**
      * @param array<string, CacheItemInterface> $items
      * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws \RuntimeException
      */
     #[\Override]
     public function saveItems(array $items): bool

@@ -176,6 +176,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
     /**
      * @param list<string> $keys
      * @return array<string, CacheItem>
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
     #[\Override]
     public function multiFetch(array $keys): array

@@ -75,6 +75,8 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
     /**
      * @throws \Psr\Cache\InvalidArgumentException
      * @throws NodeCacheStorageException
+     * @throws \InvalidArgumentException
+     * @throws \RuntimeException
      */
     #[\Override]
     public function commit(): bool
@@ -350,6 +352,8 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
      * @param array<string, CacheItemInterface> $items
      * @throws \Psr\Cache\InvalidArgumentException
      * @throws NodeCacheStorageException
+     * @throws \InvalidArgumentException
+     * @throws \RuntimeException
      */
     #[\Override]
     public function saveItems(array $items): bool

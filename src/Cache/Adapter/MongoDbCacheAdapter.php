@@ -68,6 +68,8 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
 
     /**
      * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws RuntimeException
      */
     #[\Override]
     public function atomicCompareAndSet(
@@ -246,6 +248,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
      * @phpstan-param list<string> $keys
      * @phpstan-return array<string, CacheItem>
      * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
     #[\Override]
     public function multiFetch(array $keys): array
@@ -320,6 +323,9 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return $this->storeTagGenerations($generations);
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     #[\Override]
     public function save(CacheItemInterface $item): bool
     {

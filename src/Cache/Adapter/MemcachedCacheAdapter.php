@@ -208,6 +208,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
 
     /**
      * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
     #[\Override]
     public function getItem(string $key): CacheItem
@@ -259,6 +260,9 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         return $generations;
     }
 
+    /**
+     * @throws RuntimeException
+     */
     #[\Override]
     public function hasItem(string $key): bool
     {
@@ -472,6 +476,9 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         );
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function recordTagsAreCurrent(CacheRecord $record): bool
     {
         if ($record->tags === []) {

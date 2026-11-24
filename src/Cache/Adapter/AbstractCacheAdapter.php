@@ -170,6 +170,9 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         return $this->save($item);
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     #[\Override]
     public function internalQueue(CacheItemInterface $item): bool
     {

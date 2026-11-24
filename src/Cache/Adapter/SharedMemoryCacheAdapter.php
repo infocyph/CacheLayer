@@ -162,6 +162,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
 
     /**
      * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
     #[\Override]
     public function deleteItem(string $key): bool
@@ -181,6 +182,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
      * @param array $keys The keys argument.
      * @phpstan-param array<array-key, string> $keys
      * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
     #[\Override]
     public function deleteItems(array $keys): bool
@@ -196,6 +198,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
 
     /**
      * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
     #[\Override]
     public function getItem(string $key): CacheItem
@@ -227,6 +230,9 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         return $this->withExclusiveLock(fn(): array => $this->initializeTagGenerations($tags));
     }
 
+    /**
+     * @throws RuntimeException
+     */
     #[\Override]
     public function hasItem(string $key): bool
     {
@@ -266,7 +272,10 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         });
     }
 
-    /** @param list<string> $tags */
+    /**
+     * @param list<string> $tags
+     * @throws RuntimeException
+     */
     #[\Override]
     public function rotateTagGenerations(array $tags): bool
     {
@@ -278,6 +287,9 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         return $this->storeTagGenerations($generations);
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     #[\Override]
     public function save(CacheItemInterface $item): bool
     {

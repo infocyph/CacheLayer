@@ -145,6 +145,8 @@ LUA;
 
     /**
      * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws \RuntimeException
      */
     public function atomicSetIfAbsent(CacheItemInterface $item): bool
     {

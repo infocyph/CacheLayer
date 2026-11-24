@@ -403,17 +403,19 @@ LUA;
         $expired = [];
         foreach ($items as $item) {
             $expiration = CachePayloadCodec::expirationFromItem($item);
-            if ($expiration['ttl'] !== null && $expiration['ttl'] <= 0) {
-                $expired[] = $this->map($item->getKey());
+            $key = $this->map($item->getKey());
+            $ttl = $expiration['ttl'];
+            if ($ttl === null) {
+                $plain[$key] = $this->encodeItem($item, $expiration['expiresAt']);
 
                 continue;
             }
-            $blob = $this->encodeItem($item, $expiration['expiresAt']);
-            if ($expiration['ttl'] === null) {
-                $plain[$this->map($item->getKey())] = $blob;
-            } else {
-                $expiring[] = [$this->map($item->getKey()), max(1, $expiration['ttl']), $blob];
+            if ($ttl <= 0) {
+                $expired[] = $key;
+
+                continue;
             }
+            $expiring[] = [$key, $ttl, $this->encodeItem($item, $expiration['expiresAt'])];
         }
 
         if ($expired !== [] && !self::deleteSucceeded($this->redis->del($expired))) {
@@ -489,6 +491,9 @@ LUA;
         return $this->ns . ':m:tag:' . $tag;
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function recordTagsAreCurrent(CacheRecord $record): bool
     {
         if ($record->tags === []) {

@@ -52,6 +52,9 @@ final class OnceMemoizer
         return $value;
     }
 
+    /**
+     * @throws \LogicException
+     */
     private function cacheKey(callable $callback, int $callerOffset): string
     {
         $bt = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 4 + $callerOffset);

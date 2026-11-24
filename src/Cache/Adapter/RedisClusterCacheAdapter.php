@@ -91,6 +91,7 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
 
     /**
      * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
     #[\Override]
     public function getItem(string $key): CacheItem
@@ -132,6 +133,9 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
         return $generations;
     }
 
+    /**
+     * @throws RuntimeException
+     */
     #[\Override]
     public function hasItem(string $key): bool
     {
@@ -142,6 +146,7 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
      * @param list<string> $keys
      * @return array<string, CacheItem>
      * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws RuntimeException
      */
     #[\Override]
     public function multiFetch(array $keys): array

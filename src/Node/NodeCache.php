@@ -20,6 +20,7 @@ final class NodeCache
      * @throws \Infocyph\CacheLayer\Node\Exception\NodeCacheConfigurationException
      * @throws \RuntimeException
      * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \LogicException
      */
     public static function create(NodeCacheConfig $config): Cache
     {
