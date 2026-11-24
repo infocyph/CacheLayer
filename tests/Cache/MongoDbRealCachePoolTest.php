@@ -83,7 +83,7 @@ test('real MongoDB atomic claim has exactly one process winner', function () use
 
     $wins = 0;
     foreach ($children as $pid) {
-        if (pcntl_waitpid($pid, $status) !== $pid || !is_int($status) || !pcntl_wifexited($status)) {
+        if (pcntl_waitpid($pid, $status) !== $pid || !pcntl_wifexited($status)) {
             throw new RuntimeException('MongoDB contention process did not exit normally.');
         }
         $wins += pcntl_wexitstatus($status) === 0 ? 1 : 0;

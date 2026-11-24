@@ -237,7 +237,7 @@ it('runs bounded invalidation consumption inside the host-owned Runwire worker s
         batchSize: 1,
         idleSeconds: 0.001,
     );
-    expect($task)->not->toBeNull();
+    $task ??= throw new \RuntimeException('Expected an active Runwire worker task.');
 
     $loop->delay(0.01, static function () use ($worker): void {
         $worker->requestStop();
@@ -280,7 +280,7 @@ it('runs bounded node maintenance inside the host-owned Runwire worker scope', f
         pruneLimit: 1,
         optimizeEvery: 2,
     );
-    expect($task)->not->toBeNull();
+    $task ??= throw new \RuntimeException('Expected an active Runwire worker task.');
 
     $loop->delay(0.01, static function () use ($worker): void {
         $worker->requestStop();
@@ -393,7 +393,7 @@ it('turns an unhandled CacheLayer consumer failure into a Runwire worker stop', 
         batchSize: 1,
         idleSeconds: 0.001,
     );
-    expect($task)->not->toBeNull();
+    $task ??= throw new \RuntimeException('Expected an active Runwire worker task.');
 
     $loop->run();
 

@@ -163,10 +163,7 @@ test('redis cluster leaves stale data for safe overwrite instead of deleting aft
             break;
         }
     }
-    expect($physical)->not->toBeNull();
-    if (!is_string($physical)) {
-        return;
-    }
+    $physical ??= throw new \RuntimeException('Expected the physical Redis cluster record.');
 
     $redisClusterFixture->cluster->set($physical, 'invalid-payload');
 
@@ -184,10 +181,7 @@ test('redis cluster generation repair fails closed without overwriting unexpecte
             break;
         }
     }
-    expect($generation)->not->toBeNull();
-    if (!is_string($generation)) {
-        return;
-    }
+    $generation ??= throw new \RuntimeException('Expected the Redis cluster generation record.');
 
     $redisClusterFixture->cluster->set($generation, 'malformed-generation');
 

@@ -387,7 +387,9 @@ test('shared-memory token creation rejects a pre-created symlink', function () {
         mkdir($directory, 0700, true);
     }
     $target = tempnam(sys_get_temp_dir(), 'cachelayer-token-target-');
-    expect($target)->not->toBeFalse();
+    if ($target === false) {
+        throw new RuntimeException('Unable to create the shared-memory symlink target.');
+    }
     $token = $directory . DIRECTORY_SEPARATOR . hash('xxh128', $namespace) . '.tok';
     expect(symlink($target, $token))->toBeTrue();
 
@@ -398,7 +400,7 @@ test('shared-memory token creation rejects a pre-created symlink', function () {
         if (is_link($token)) {
             unlink($token);
         }
-        if (is_string($target) && is_file($target)) {
+        if (is_file($target)) {
             unlink($target);
         }
     }

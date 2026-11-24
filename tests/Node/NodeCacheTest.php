@@ -135,6 +135,7 @@ test('node fences L1 when copying a committed value into L1 throws', function (b
 
         /**
          * @throws RuntimeException
+         * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
          */
         #[\Override]
         public function createItem(string $key): CacheItemInterface

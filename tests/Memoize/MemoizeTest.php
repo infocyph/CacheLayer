@@ -240,13 +240,10 @@ it('memoizer fingerprints recursive closure captures without traversing their gr
     $recursive['self'] = &$recursive;
     $arrayClosure = static fn(): int => count($recursive);
 
-    $selfClosure = null;
     $selfClosure = static function () use (&$selfClosure): string {
         return 'self:' . get_debug_type($selfClosure);
     };
 
-    $left = null;
-    $right = null;
     $left = static function () use (&$right): string {
         return 'right:' . get_debug_type($right);
     };

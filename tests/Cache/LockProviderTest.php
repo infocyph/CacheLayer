@@ -16,8 +16,8 @@ test('file locks retain ownership until release and support lease refresh', func
     try {
         $handle = $first->acquire('worker:reports', 0.0, 0.05);
 
-        expect($handle)->not->toBeNull()
-            ->and($handle->leaseSeconds)->toBe(0.05)
+        $handle ??= throw new RuntimeException('Unable to acquire file lock.');
+        expect($handle->leaseSeconds)->toBe(0.05)
             ->and($first->refresh($handle, 0.05))->toBeTrue();
 
         usleep(75_000);
@@ -178,8 +178,7 @@ test('strict PDO locks allow native drivers without a fallback', function (): vo
         $provider = PdoLockProvider::strict($pdo);
         $fallback = (new ReflectionObject($provider))->getProperty('fallback')->getValue($provider);
 
-        expect($provider)->toBeInstanceOf(PdoLockProvider::class)
-            ->and($fallback)->toBeNull();
+        expect($fallback)->toBeNull();
     }
 });
 
@@ -229,7 +228,8 @@ test('PDO lock providers accept an explicit non-file fallback', function (): voi
         }
     };
 
-    expect(new PdoLockProvider($pdo, fallback: $fallback))->toBeInstanceOf(PdoLockProvider::class);
+    $provider = new PdoLockProvider($pdo, fallback: $fallback);
+    expect((new ReflectionObject($provider))->getProperty('fallback')->getValue($provider))->toBe($fallback);
 });
 
 test('MySQL PDO locks use the native lock path', function (): void {

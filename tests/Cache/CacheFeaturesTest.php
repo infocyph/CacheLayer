@@ -173,7 +173,7 @@ test('file tag rotations remain valid during concurrent updates', function () us
     }
     foreach ($children as $pid) {
         $status = 0;
-        if (pcntl_waitpid($pid, $status) !== $pid || !is_int($status) || !pcntl_wifexited($status)) {
+        if (pcntl_waitpid($pid, $status) !== $pid || !pcntl_wifexited($status)) {
             throw new RuntimeException('Tag rotation worker did not exit normally.');
         }
         expect(pcntl_wexitstatus($status))->toBe(0);

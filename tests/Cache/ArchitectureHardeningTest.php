@@ -61,6 +61,7 @@ final class ArchitectureHardeningTest extends AbstractCacheAdapter
         return true;
     }
 
+    /** @throws RuntimeException */
     #[\Override]
     public function getItem(string $key): CacheItem
     {
@@ -101,6 +102,7 @@ final class ArchitectureHardeningTest extends AbstractCacheAdapter
         return $items;
     }
 
+    /** @throws CacheInvalidArgumentException */
     #[\Override]
     public function save(CacheItemInterface $item): bool
     {
@@ -234,8 +236,8 @@ test('cache items can only be persisted by their exact owning pool', function ()
 test('invalid argument failures satisfy both PSR cache contracts', function () {
     $exception = new CacheInvalidArgumentException('invalid');
 
-    expect($exception)->toBeInstanceOf(\Psr\Cache\InvalidArgumentException::class)
-        ->and($exception)->toBeInstanceOf(\Psr\SimpleCache\InvalidArgumentException::class);
+    expect((new \ReflectionClass($exception))->implementsInterface(\Psr\Cache\InvalidArgumentException::class))->toBeTrue()
+        ->and((new \ReflectionClass($exception))->implementsInterface(\Psr\SimpleCache\InvalidArgumentException::class))->toBeTrue();
 });
 
 test('namespaces are strictly validated instead of normalized', function () {
@@ -317,8 +319,8 @@ test('non-authoritative caches cannot expose an authentication state lock', func
 test('fail-closed backend failures satisfy both PSR cache exception contracts', function () {
     $exception = new CacheBackendException('failed');
 
-    expect($exception)->toBeInstanceOf(\Psr\Cache\CacheException::class)
-        ->and($exception)->toBeInstanceOf(\Psr\SimpleCache\CacheException::class);
+    expect((new \ReflectionClass($exception))->implementsInterface(\Psr\Cache\CacheException::class))->toBeTrue()
+        ->and((new \ReflectionClass($exception))->implementsInterface(\Psr\SimpleCache\CacheException::class))->toBeTrue();
 });
 
 test('tag metadata failures cannot expose or create tagged values', function () {

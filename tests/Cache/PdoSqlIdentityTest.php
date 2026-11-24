@@ -135,7 +135,7 @@ $orderingBackends = static function (): array {
 
 /** @param array{string,string,string} $backend */
 $connectOrderingBackend = static function (array $backend): PDO {
-    [$dsn, $user, $password] = $backend;
+    [$dsn, $user, $password] = \Infocyph\CacheLayer\Tests\Support\CacheFixture::pdoCredentials($backend);
 
     return new PDO($dsn, $user, $password, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
 };
@@ -174,7 +174,7 @@ $startPublisher = static function (
     bool $commit = true,
     int $holdMicros = 0,
 ): mixed {
-    [$dsn, $user, $password] = $backend;
+    [$dsn, $user, $password] = \Infocyph\CacheLayer\Tests\Support\CacheFixture::pdoCredentials($backend);
     $command = [
         PHP_BINARY,
         __DIR__ . '/Support/PdoInvalidationPublisherProcess.php',

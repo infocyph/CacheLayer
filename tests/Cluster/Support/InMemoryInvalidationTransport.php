@@ -58,6 +58,7 @@ final class InMemoryInvalidationTransport implements InvalidationTransportInspec
         return $events === [] ? null : $events[array_key_last($events)]->id;
     }
 
+    /** @throws \Infocyph\CacheLayer\Cluster\Exception\ClusterCacheException */
     #[\Override]
     public function countAfter(string $cluster, ?string $cursor): int
     {

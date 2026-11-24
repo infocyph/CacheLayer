@@ -7,23 +7,20 @@ use Infocyph\CacheLayer\Cluster\Transport\Pdo\PdoInvalidationTransport;
 
 require dirname(__DIR__, 3) . '/vendor/autoload.php';
 
-if (count($argv) !== 11 || !isset($argv[10])) {
+if (count($argv) !== 11) {
     throw new RuntimeException('Invalid concurrent invalidation publisher arguments.');
 }
 
-[
-    ,
-    $dsn,
-    $user,
-    $password,
-    $cluster,
-    $identifier,
-    $stateFile,
-    $resultFile,
-    $commit,
-    $holdMicros,
-    $origin,
-] = $argv;
+$dsn = $argv[1];
+$user = $argv[2];
+$password = $argv[3];
+$cluster = $argv[4];
+$identifier = $argv[5];
+$stateFile = $argv[6];
+$resultFile = $argv[7];
+$commit = $argv[8];
+$holdMicros = $argv[9];
+$origin = $argv[10];
 
 $connection = new PDO($dsn, $user, $password, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
 $transport = new PdoInvalidationTransport($connection, initializeSchema: false);

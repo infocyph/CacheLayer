@@ -98,7 +98,7 @@ final class MongoCollectionDouble
     public function find(array $filter): array
     {
         $this->findCalls++;
-        $ids = $filter['_id']['$in'] ?? [];
+        $ids = $filter['_id']['$in'];
 
         return array_values(array_filter(
             $this->docs,

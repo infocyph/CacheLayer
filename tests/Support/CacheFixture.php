@@ -29,6 +29,21 @@ final class CacheFixture
         throw new UnexpectedValueException('Invalid fixture row count.');
     }
 
+    /**
+     * @param array<mixed> $backend
+     * @return array{string, string, string}
+     * @throws UnexpectedValueException
+     */
+    public static function pdoCredentials(array $backend): array
+    {
+        if (count($backend) !== 3 || !isset($backend[0], $backend[1], $backend[2])
+            || !is_string($backend[0]) || !is_string($backend[1]) || !is_string($backend[2])) {
+            throw new UnexpectedValueException('Invalid PDO fixture credentials.');
+        }
+
+        return [$backend[0], $backend[1], $backend[2]];
+    }
+
     public static function environment(string $name): ?string
     {
         $value = getenv($name);

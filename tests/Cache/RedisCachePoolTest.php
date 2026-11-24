@@ -260,7 +260,7 @@ test('Redis atomic claims have one winner under process contention', function ()
 
     $wins = 0;
     foreach ($children as $pid) {
-        if (pcntl_waitpid($pid, $status) !== $pid || !is_int($status) || !pcntl_wifexited($status)) {
+        if (pcntl_waitpid($pid, $status) !== $pid || !pcntl_wifexited($status)) {
             throw new RuntimeException('Redis contention process did not exit normally.');
         }
         $wins += pcntl_wexitstatus($status) === 0 ? 1 : 0;
@@ -304,7 +304,7 @@ test('Redis atomic compare and set has one winner under process contention', fun
 
     $wins = 0;
     foreach ($children as $pid) {
-        if (pcntl_waitpid($pid, $status) !== $pid || !is_int($status) || !pcntl_wifexited($status)) {
+        if (pcntl_waitpid($pid, $status) !== $pid || !pcntl_wifexited($status)) {
             throw new RuntimeException('Redis contention process did not exit normally.');
         }
         $wins += pcntl_wexitstatus($status) === 0 ? 1 : 0;
@@ -350,7 +350,7 @@ test('Redis atomic consumption has one winner under process contention', functio
 
     $wins = 0;
     foreach ($children as $pid) {
-        if (pcntl_waitpid($pid, $status) !== $pid || !is_int($status) || !pcntl_wifexited($status)) {
+        if (pcntl_waitpid($pid, $status) !== $pid || !pcntl_wifexited($status)) {
             throw new RuntimeException('Redis contention process did not exit normally.');
         }
         $wins += pcntl_wexitstatus($status) === 0 ? 1 : 0;
