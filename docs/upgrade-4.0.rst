@@ -15,7 +15,8 @@ Runtime floor
 =============
 
 CacheLayer 4.0 requires PHP 8.4 or newer. Upgrade the application runtime before
-installing the package. The release gates cover PHP 8.4 and PHP 8.5.
+installing the package. The release gates cover PHP 8.4, 8.5 and 8.6. Native Scylla CQL remains on PHP 8.4/8.5 until a
+compatible PHP 8.6 extension is published.
 
 Serialization and authenticated records
 ========================================
@@ -139,11 +140,11 @@ Cursor state is scoped by cluster, node, namespace, and transport identity.
 Retention gaps trigger a local namespace clear before progress is advanced.
 Permanent poison events are not skipped silently.
 
-Runwire 2.1 integration
+Runwire 3.1 integration
 =======================
 
 Runwire is still optional at installation time. Applications that use the
-integration should install ``infocyph/runwire:^2.1`` and bind the concrete
+integration should install ``infocyph/runwire:^3.1`` and bind the concrete
 Runwire ``RuntimeContext`` after each worker/generation is created. Share the
 current request/task scope only while that work is active and release the
 runtime binding on shutdown or replacement.

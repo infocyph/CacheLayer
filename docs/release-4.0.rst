@@ -10,8 +10,8 @@ Platform
 ========
 
 * Minimum PHP version is 8.4.
-* Release verification targets PHP 8.4 and 8.5.
-* Runwire 2.1 remains an optional dependency, but CacheLayer 4.0 ships and
+* Release verification targets PHP 8.4, 8.5 and 8.6.
+* Runwire 3.1 remains an optional dependency, but CacheLayer 4.0 ships and
   release-verifies runtime/request scope integration plus host-owned cluster
   invalidation and Node maintenance runners.
 
@@ -44,7 +44,7 @@ Correctness
   invalidation, and promotion. Reads use the authoritative last tier until a
   successful full clear reconciles every tier.
 
-Runwire 2.1
+Runwire 3.1
 ===========
 
 * The application shares the active Runwire runtime and request/task scope;
@@ -57,7 +57,7 @@ Runwire 2.1
   maintenance while Runwire retains worker, supervisor, and event-loop ownership.
 * Worker cancellation/drain propagates through Runwire. Backend operations stay
   synchronous and no HTTP scheduling or throughput improvement is claimed.
-* A dedicated PHP 8.4/8.5 release consumer installs Runwire 2.1 separately and
+* A dedicated PHP 8.4/8.5/8.6 release consumer installs Runwire 3.1 separately and
   executes the shipped invalidation-worker example.
 
 Atomicity and counters
@@ -81,9 +81,10 @@ The 4.0 release gate covers:
 * independent PSR-6 and PSR-16 contract consumers;
 * documentation builds with warnings treated as errors;
 * real Redis Cluster and Scylla CQL release jobs, with real MongoDB exercised
-  by the PHPForge service matrix;
-* Runwire 2.1 consumer certification and persistent-worker soak coverage across
-  PHP 8.4/8.5 stable and lowest dependency sets.
+  by the PHPForge service matrix. Native Scylla CQL currently covers PHP 8.4
+  and 8.5 pending an upstream PHP 8.6 binary;
+* Runwire 3.1 consumer certification and persistent-worker soak coverage across
+  PHP 8.4/8.5/8.6 stable and lowest dependency sets.
 
 The Runwire certification measures 4,000 cache operations after a separate
 250-iteration warmup and validates the expected 3,500 reads plus 500 writes in
