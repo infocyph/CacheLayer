@@ -17,9 +17,9 @@ if (! class_exists(Redis::class)) {
     throw new RuntimeException('phpredis is required for the configured Valkey test matrix.');
 }
 
-$valkeyHost = getenv('IC_VALKEY_HOST') ?: getenv('CACHELAYER_VALKEY_HOST') ?: getenv('IC_REDIS_HOST') ?: getenv('CACHELAYER_REDIS_HOST') ?: '127.0.0.1';
-$valkeyPort = (int) (getenv('IC_VALKEY_PORT') ?: getenv('CACHELAYER_VALKEY_PORT') ?: getenv('IC_REDIS_PORT') ?: getenv('CACHELAYER_REDIS_PORT') ?: '6379');
-$valkeyPassword = getenv('IC_VALKEY_PASSWORD') ?: getenv('CACHELAYER_VALKEY_PASSWORD') ?: getenv('IC_REDIS_PASSWORD') ?: getenv('CACHELAYER_REDIS_PASSWORD') ?: '';
+$valkeyHost = \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_VALKEY_HOST') ?? \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('CACHELAYER_VALKEY_HOST') ?? \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_REDIS_HOST') ?? \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('CACHELAYER_REDIS_HOST') ?? '127.0.0.1';
+$valkeyPort = (int) (\Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_VALKEY_PORT') ?? \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('CACHELAYER_VALKEY_PORT') ?? \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_REDIS_PORT') ?? \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('CACHELAYER_REDIS_PORT') ?? '6379');
+$valkeyPassword = \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_VALKEY_PASSWORD') ?? \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('CACHELAYER_VALKEY_PASSWORD') ?? \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_REDIS_PASSWORD') ?? \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('CACHELAYER_REDIS_PASSWORD') ?? '';
 
 try {
     $probe = new Redis;

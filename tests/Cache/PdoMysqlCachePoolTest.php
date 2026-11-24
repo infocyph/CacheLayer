@@ -2,15 +2,20 @@
 
 declare(strict_types=1);
 
+namespace Infocyph\CacheLayer\Tests\Cache;
+
 use Infocyph\CacheLayer\Cache\Cache;
+use PDO;
+use RuntimeException;
+use Throwable;
 
 if (! in_array('mysql', PDO::getAvailableDrivers(), true)) {
     throw new RuntimeException('PDO MySQL is required for the configured cache test matrix.');
 }
 
-$dsn = getenv('IC_MYSQL_DSN') ?: getenv('CACHELAYER_MYSQL_DSN') ?: 'mysql:host=127.0.0.1;port=3306;dbname=cachelayer';
-$user = getenv('IC_SERVICE_USERNAME') ?: getenv('IC_MYSQL_USER') ?: getenv('CACHELAYER_MYSQL_USER') ?: 'root';
-$pass = getenv('IC_SERVICE_PASSWORD') ?: getenv('IC_MYSQL_PASSWORD') ?: getenv('CACHELAYER_MYSQL_PASS');
+$dsn = \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_MYSQL_DSN') ?? \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('CACHELAYER_MYSQL_DSN') ?? 'mysql:host=127.0.0.1;port=3306;dbname=cachelayer';
+$user = \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_SERVICE_USERNAME') ?? \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_MYSQL_USER') ?? \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('CACHELAYER_MYSQL_USER') ?? 'root';
+$pass = \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_SERVICE_PASSWORD') ?? \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_MYSQL_PASSWORD') ?? getenv('CACHELAYER_MYSQL_PASS');
 if ($pass === false) {
     $pass = '';
 }

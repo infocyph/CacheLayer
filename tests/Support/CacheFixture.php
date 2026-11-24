@@ -29,7 +29,18 @@ final class CacheFixture
         throw new UnexpectedValueException('Invalid fixture row count.');
     }
 
-    /** @throws UnexpectedValueException */
+    public static function environment(string $name): ?string
+    {
+        $value = getenv($name);
+
+        return $value === false || $value === '' || $value === '0' ? null : $value;
+    }
+
+    /**
+     * @throws UnexpectedValueException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     public static function item(Cache $cache, string $key): CacheItem
     {
         $item = $cache->getItem($key);

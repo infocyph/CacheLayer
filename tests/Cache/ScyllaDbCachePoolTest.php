@@ -75,7 +75,7 @@ test('scylladb groups bulk reads and writes by configured bucket', function () u
  */
 function scylladbAlternatorIntegrationContext(): ?array
 {
-    $endpoint = getenv('IC_SCYLLADB_ENDPOINT') ?: getenv('CACHELAYER_SCYLLADB_ENDPOINT') ?: 'http://127.0.0.1:8000';
+    $endpoint = \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_SCYLLADB_ENDPOINT') ?? \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('CACHELAYER_SCYLLADB_ENDPOINT') ?? 'http://127.0.0.1:8000';
     $base = rtrim($endpoint, '/');
     $context = stream_context_create([
         'http' => [

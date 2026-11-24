@@ -30,8 +30,8 @@ if (! class_exists(Memcached::class)) {
     throw new RuntimeException('Memcached extension is required for the configured cache test matrix.');
 }
 
-$memcachedHost = getenv('IC_MEMCACHED_HOST') ?: getenv('CACHELAYER_MEMCACHED_HOST') ?: '127.0.0.1';
-$memcachedPort = (int) (getenv('IC_MEMCACHED_PORT') ?: getenv('CACHELAYER_MEMCACHED_PORT') ?: '11211');
+$memcachedHost = \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_MEMCACHED_HOST') ?? \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('CACHELAYER_MEMCACHED_HOST') ?? '127.0.0.1';
+$memcachedPort = (int) (\Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_MEMCACHED_PORT') ?? \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('CACHELAYER_MEMCACHED_PORT') ?? '11211');
 
 $probe = new Memcached;
 $probe->addServer($memcachedHost, $memcachedPort);

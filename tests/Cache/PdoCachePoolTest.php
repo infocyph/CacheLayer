@@ -2,9 +2,14 @@
 
 declare(strict_types=1);
 
+namespace Infocyph\CacheLayer\Tests\Cache;
+
 use Infocyph\CacheLayer\Cache\Adapter\PdoCacheAdapter;
 use Infocyph\CacheLayer\Cache\Cache;
-use Infocyph\CacheLayer\Cache\Lock\FileLockProvider;
+use Infocyph\CacheLayer\Cache\Lock\PdoLockProvider;
+use PDO;
+use ReflectionObject;
+use RuntimeException;
 
 if (! in_array('sqlite', PDO::getAvailableDrivers(), true)) {
     throw new RuntimeException('PDO SQLite is required for the configured cache test matrix.');
@@ -56,15 +61,7 @@ test('pdo factory configures pdo lock provider', function (): void {
     $cache = Cache::pdo('pdo-lock-tests', 'sqlite::memory:');
     $prop = (new ReflectionObject($cache))->getProperty('lockProvider');
     $provider = $prop->getValue($cache);
-    $pdoLockProviderClass = 'Infocyph\\CacheLayer\\Cache\\Lock\\PdoLockProvider';
-
-    if (class_exists($pdoLockProviderClass)) {
-        expect($provider)->toBeInstanceOf($pdoLockProviderClass);
-
-        return;
-    }
-
-    expect($provider)->toBeInstanceOf(FileLockProvider::class);
+    expect($provider)->toBeInstanceOf(PdoLockProvider::class);
 });
 
 test('PDO cache supports numeric-looking tag names without changing their identity', function (): void {

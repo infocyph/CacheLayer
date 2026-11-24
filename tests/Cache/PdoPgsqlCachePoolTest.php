@@ -2,16 +2,21 @@
 
 declare(strict_types=1);
 
+namespace Infocyph\CacheLayer\Tests\Cache;
+
 use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Cache\Lock\PdoLockProvider;
+use PDO;
+use RuntimeException;
+use Throwable;
 
 if (! in_array('pgsql', PDO::getAvailableDrivers(), true)) {
     throw new RuntimeException('PDO PostgreSQL is required for the configured cache test matrix.');
 }
 
-$dsn = getenv('IC_POSTGRES_DSN') ?: getenv('CACHELAYER_PG_DSN') ?: 'pgsql:host=127.0.0.1;port=5432;dbname=cachelayer';
-$user = getenv('IC_SERVICE_USERNAME') ?: getenv('IC_POSTGRES_USER') ?: getenv('CACHELAYER_PG_USER') ?: 'postgres';
-$pass = getenv('IC_SERVICE_PASSWORD') ?: getenv('IC_POSTGRES_PASSWORD') ?: getenv('CACHELAYER_PG_PASS') ?: 'postgres';
+$dsn = \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_POSTGRES_DSN') ?? \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('CACHELAYER_PG_DSN') ?? 'pgsql:host=127.0.0.1;port=5432;dbname=cachelayer';
+$user = \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_SERVICE_USERNAME') ?? \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_POSTGRES_USER') ?? \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('CACHELAYER_PG_USER') ?? 'postgres';
+$pass = \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_SERVICE_PASSWORD') ?? \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_POSTGRES_PASSWORD') ?? \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('CACHELAYER_PG_PASS') ?? 'postgres';
 
 try {
     $probe = new PDO($dsn, $user, $pass);

@@ -2,11 +2,16 @@
 
 declare(strict_types=1);
 
+namespace Infocyph\CacheLayer\Tests\Node;
+
 use Infocyph\CacheLayer\Node\Adapter\NodeSqliteCacheAdapter;
 use Infocyph\CacheLayer\Node\Connection\NodeSqliteConnection;
 use Infocyph\CacheLayer\Node\Maintenance\NodeCacheMaintenance;
 use Infocyph\CacheLayer\Node\Maintenance\NodeCachePruner;
 use Infocyph\CacheLayer\Node\NodeCacheConfig;
+use FilesystemIterator;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
 
 $maintenanceFixtureDirectory = '';
 $maintenanceFixtureConfig = new NodeCacheConfig(sys_get_temp_dir() . '/cachelayer-maintenance-fixture.sqlite', 'maintenance', apcuEnabled: false);

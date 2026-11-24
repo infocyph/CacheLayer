@@ -2,8 +2,15 @@
 
 declare(strict_types=1);
 
+namespace Infocyph\CacheLayer\Tests\Cache;
+
 use Infocyph\CacheLayer\Cache\AtomicCacheInterface;
 use Infocyph\CacheLayer\Cache\Cache;
+use FilesystemIterator;
+use Memcached;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
+use RuntimeException;
 
 $cleanupTree = static function (string $directory): void {
     if (!is_dir($directory)) {
@@ -76,8 +83,8 @@ if (!class_exists(Memcached::class)) {
     throw new RuntimeException('Memcached extension is required for the configured atomic test matrix.');
 }
 
-$host = getenv('IC_MEMCACHED_HOST') ?: getenv('CACHELAYER_MEMCACHED_HOST') ?: '127.0.0.1';
-$port = (int) (getenv('IC_MEMCACHED_PORT') ?: getenv('CACHELAYER_MEMCACHED_PORT') ?: '11211');
+$host = \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_MEMCACHED_HOST') ?? \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('CACHELAYER_MEMCACHED_HOST') ?? '127.0.0.1';
+$port = (int) (\Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_MEMCACHED_PORT') ?? \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('CACHELAYER_MEMCACHED_PORT') ?? '11211');
 $probe = new Memcached();
 $probe->addServer($host, $port);
 $available = $probe->set('cachelayer-atomic-probe', 'ok')

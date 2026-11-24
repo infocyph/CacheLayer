@@ -2,16 +2,20 @@
 
 declare(strict_types=1);
 
+namespace Infocyph\CacheLayer\Tests\Cache;
+
 use Infocyph\CacheLayer\Cache\Adapter\MongoDbCacheAdapter;
 use Infocyph\CacheLayer\Cache\Cache;
+use MongoDB\Client;
+use RuntimeException;
 
 $mongoDsn = getenv('IC_MONGODB_DSN');
-$mongoDatabase = getenv('IC_SERVICE_DATABASE') ?: 'phpforge';
+$mongoDatabase = \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_SERVICE_DATABASE') ?? 'phpforge';
 
 if (!is_string($mongoDsn) || $mongoDsn === '') {
     throw new RuntimeException('IC_MONGODB_DSN is required for the configured MongoDB integration matrix.');
 }
-if (!class_exists(MongoDB\Client::class)) {
+if (!class_exists(Client::class)) {
     throw new RuntimeException('mongodb/mongodb is required for the configured MongoDB integration matrix.');
 }
 
@@ -22,10 +26,10 @@ $mongoRealFixture = new class(Cache::nullStore()) {
 };
 
 beforeEach(function () use ($mongoDsn, $mongoDatabase, $mongoRealFixture): void {
-    $client = new MongoDB\Client($mongoDsn);
+    $client = new Client($mongoDsn);
     $client->selectDatabase($mongoDatabase)->command(['ping' => 1]);
 
-    $collectionName = 'cachelayer_real_' . getmypid() . '_' . bin2hex(random_bytes(4));
+    $collectionName = 'cachelayer_real_' . bin2hex(random_bytes(12));
     $mongoRealFixture->mongoCollection = $client->selectCollection($mongoDatabase, $collectionName);
     $mongoRealFixture->mongoCache = new Cache(new MongoDbCacheAdapter($mongoRealFixture->mongoCollection, 'mongo-real'));
 });
@@ -63,7 +67,7 @@ test('real MongoDB atomic claim has exactly one process winner', function () use
     for ($worker = 0; $worker < 8; ++$worker) {
         $pid = pcntl_fork();
         if ($pid === 0) {
-            $client = new MongoDB\Client($mongoDsn);
+            $client = new Client($mongoDsn);
             $collection = $client->selectCollection($mongoDatabase, $collectionName);
             $cache = new Cache(new MongoDbCacheAdapter($collection, 'mongo-real'));
             $won = $cache->atomic()?->setIfAbsent('claim', (string) $worker, 30) === true;
@@ -71,18 +75,21 @@ test('real MongoDB atomic claim has exactly one process winner', function () use
 
             throw new RuntimeException('Unable to terminate forked MongoDB contention process.');
         }
-        if ($pid > 0) {
-            $children[] = $pid;
+        if ($pid < 0) {
+            throw new RuntimeException('Unable to fork a MongoDB contention process.');
         }
+        $children[] = $pid;
     }
 
     $wins = 0;
     foreach ($children as $pid) {
-        pcntl_waitpid($pid, $status);
+        if (pcntl_waitpid($pid, $status) !== $pid || !is_int($status) || !pcntl_wifexited($status)) {
+            throw new RuntimeException('MongoDB contention process did not exit normally.');
+        }
         $wins += pcntl_wexitstatus($status) === 0 ? 1 : 0;
     }
 
-    $freshClient = new MongoDB\Client($mongoDsn);
+    $freshClient = new Client($mongoDsn);
     $freshCollection = $freshClient->selectCollection($mongoDatabase, $collectionName);
     $freshCache = new Cache(new MongoDbCacheAdapter($freshCollection, 'mongo-real'));
 

@@ -2,11 +2,15 @@
 
 declare(strict_types=1);
 
+namespace Infocyph\CacheLayer\Tests\Cache;
+
 use Infocyph\CacheLayer\Cache\Adapter\PdoCacheSchema;
 use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Cluster\Event\InvalidationEvent;
 use Infocyph\CacheLayer\Cluster\Transport\Pdo\PdoInvalidationSchema;
 use Infocyph\CacheLayer\Cluster\Transport\Pdo\PdoInvalidationTransport;
+use PDO;
+use RuntimeException;
 
 /** @return array<string, array{string,string,string}> */
 $backends = static function (): array {
@@ -15,14 +19,14 @@ $backends = static function (): array {
 
     return [
         'mysql' => [
-            getenv('IC_MYSQL_DSN') ?: 'mysql:host=127.0.0.1;port=3306;dbname=phpforge;charset=utf8mb4',
-            getenv('IC_MYSQL_USER') ?: getenv('IC_SERVICE_USERNAME') ?: 'phpforge',
-            getenv('IC_MYSQL_PASSWORD') ?: $servicePassword,
+            \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_MYSQL_DSN') ?? 'mysql:host=127.0.0.1;port=3306;dbname=phpforge;charset=utf8mb4',
+            \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_MYSQL_USER') ?? \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_SERVICE_USERNAME') ?? 'phpforge',
+            \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_MYSQL_PASSWORD') ?? $servicePassword,
         ],
         'mariadb' => [
-            getenv('IC_MARIADB_DSN') ?: 'mysql:host=127.0.0.1;port=3308;dbname=phpforge;charset=utf8mb4',
-            getenv('IC_MARIADB_USER') ?: getenv('IC_SERVICE_USERNAME') ?: 'phpforge',
-            getenv('IC_MARIADB_PASSWORD') ?: $servicePassword,
+            \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_MARIADB_DSN') ?? 'mysql:host=127.0.0.1;port=3308;dbname=phpforge;charset=utf8mb4',
+            \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_MARIADB_USER') ?? \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_SERVICE_USERNAME') ?? 'phpforge',
+            \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_MARIADB_PASSWORD') ?? $servicePassword,
         ],
     ];
 };
@@ -113,18 +117,18 @@ test('MySQL-family cache and invalidation identities use byte-sensitive collatio
 $orderingBackends = static function (): array {
     $servicePassword = getenv('IC_SERVICE_PASSWORD');
     $servicePassword = $servicePassword === false ? '' : $servicePassword;
-    $serviceUser = getenv('IC_SERVICE_USERNAME') ?: 'phpforge';
+    $serviceUser = \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_SERVICE_USERNAME') ?? 'phpforge';
 
     return [
         'mysql' => [
-            getenv('IC_MYSQL_DSN') ?: 'mysql:host=127.0.0.1;port=3306;dbname=phpforge;charset=utf8mb4',
-            getenv('IC_MYSQL_USER') ?: $serviceUser,
-            getenv('IC_MYSQL_PASSWORD') ?: $servicePassword,
+            \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_MYSQL_DSN') ?? 'mysql:host=127.0.0.1;port=3306;dbname=phpforge;charset=utf8mb4',
+            \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_MYSQL_USER') ?? $serviceUser,
+            \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_MYSQL_PASSWORD') ?? $servicePassword,
         ],
         'pgsql' => [
-            getenv('IC_POSTGRES_DSN') ?: 'pgsql:host=127.0.0.1;port=5432;dbname=cachelayer',
-            getenv('IC_POSTGRES_USER') ?: $serviceUser,
-            getenv('IC_POSTGRES_PASSWORD') ?: $servicePassword,
+            \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_POSTGRES_DSN') ?? 'pgsql:host=127.0.0.1;port=5432;dbname=cachelayer',
+            \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_POSTGRES_USER') ?? $serviceUser,
+            \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_POSTGRES_PASSWORD') ?? $servicePassword,
         ],
     ];
 };

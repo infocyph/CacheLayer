@@ -33,8 +33,8 @@ if (! class_exists(Redis::class)) {
     throw new RuntimeException('phpredis is required for the configured cache test matrix.');
 }
 
-$redisHost = getenv('IC_REDIS_HOST') ?: getenv('CACHELAYER_REDIS_HOST') ?: '127.0.0.1';
-$redisPort = (int) (getenv('IC_REDIS_PORT') ?: getenv('CACHELAYER_REDIS_PORT') ?: '6379');
+$redisHost = \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_REDIS_HOST') ?? \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('CACHELAYER_REDIS_HOST') ?? '127.0.0.1';
+$redisPort = (int) (\Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_REDIS_PORT') ?? \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('CACHELAYER_REDIS_PORT') ?? '6379');
 $redisPassword = getenv('IC_REDIS_PASSWORD');
 if ($redisPassword === false) {
     $redisPassword = getenv('IC_SERVICE_PASSWORD');
