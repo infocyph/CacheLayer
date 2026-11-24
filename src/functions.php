@@ -7,7 +7,7 @@ use Infocyph\CacheLayer\Memoize\Memoizer;
 
 if (!function_exists('memoize')) {
     /**
-     * @param array<int, mixed> $params
+     * @param array<array-key, mixed> $params
      *
      * @throws ReflectionException
      */
@@ -27,7 +27,7 @@ if (!function_exists('memoize')) {
 
 if (!function_exists('remember')) {
     /**
-     * @param array<int, mixed> $params
+     * @param array<array-key, mixed> $params
      *
      * @throws ReflectionException
      */

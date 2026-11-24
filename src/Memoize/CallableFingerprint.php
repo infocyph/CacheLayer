@@ -36,11 +36,7 @@ final class CallableFingerprint
             return 'array:' . $target . '::' . $callable[1];
         }
 
-        if (is_object($callable)) {
-            return 'invokable:' . self::objectIdentity($callable);
-        }
-
-        throw new \LogicException('Unsupported callable form.');
+        return 'invokable:' . self::objectIdentity($callable);
     }
 
     public static function flush(): void
@@ -65,24 +61,28 @@ final class CallableFingerprint
 
     private static function closure(Closure $closure): string
     {
-        self::$closures ??= new WeakMap();
-        if (isset(self::$closures[$closure])) {
-            return self::$closures[$closure];
+        $closures = self::$closures ??= new WeakMap();
+        if (isset($closures[$closure])) {
+            return $closures[$closure];
         }
 
         $reflection = new ReflectionFunction($closure);
         $bound = $reflection->getClosureThis();
         $scope = $reflection->getClosureScopeClass();
+        $file = $reflection->getFileName();
         $identity = [
             'instance' => self::objectIdentity($closure),
-            'file' => $reflection->getFileName() ?: 'internal',
+            'file' => $file === false ? 'internal' : $file,
             'start' => $reflection->getStartLine(),
             'end' => $reflection->getEndLine(),
             'bound' => $bound === null ? null : self::objectIdentity($bound),
             'scope' => $scope?->getName(),
         ];
 
-        return self::$closures[$closure] = 'closure:' . hash('xxh128', serialize($identity));
+        $fingerprint = 'closure:' . hash('xxh128', serialize($identity));
+        $closures[$closure] = $fingerprint;
+
+        return $fingerprint;
     }
 
     private static function normalizeValue(mixed $value): mixed

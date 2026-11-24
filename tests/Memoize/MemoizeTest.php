@@ -258,3 +258,14 @@ it('once() caches null results without repeating callback side effects', functio
 
     expect($runs)->toBe(1);
 });
+
+it('memoizer distinguishes named argument bindings with the same values', function (): void {
+    $memoizer = memoize();
+    $callback = static fn(int $left, int $right): int => $left - $right;
+    $owner = new stdClass();
+    expect($memoizer->get($callback, ['left' => 1, 'right' => 2]))->toBe(-1)
+        ->and($memoizer->get($callback, ['right' => 1, 'left' => 2]))->toBe(1)
+        ->and($memoizer->getFor($owner, $callback, ['left' => 1, 'right' => 2]))->toBe(-1)
+        ->and($memoizer->getFor($owner, $callback, ['right' => 1, 'left' => 2]))->toBe(1)
+        ->and($memoizer->get($callback, ['left' => 1, 'right' => 2]))->toBe(-1);
+});

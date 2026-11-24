@@ -15,7 +15,7 @@ final class ClusterInput
 {
     public static function cluster(string $cluster): string
     {
-        self::boundedName($cluster, 128, 'cluster name', ClusterConfigurationException::class);
+        self::boundedName($cluster, 128, 'cluster name');
 
         return $cluster;
     }
@@ -66,25 +66,24 @@ final class ClusterInput
 
     public static function nodeId(string $nodeId): string
     {
-        self::boundedName($nodeId, 255, 'node ID', ClusterConfigurationException::class);
+        self::boundedName($nodeId, 255, 'node ID');
 
         return $nodeId;
     }
 
     public static function transportIdentity(string $transportIdentity): string
     {
-        self::boundedName($transportIdentity, 128, 'transport identity', ClusterConfigurationException::class);
+        self::boundedName($transportIdentity, 128, 'transport identity');
 
         return $transportIdentity;
     }
 
-    /** @param class-string<ClusterCacheException> $exceptionClass */
-    private static function boundedName(string $value, int $maximum, string $label, string $exceptionClass): void
+    private static function boundedName(string $value, int $maximum, string $label): void
     {
         if (strlen($value) < 1
             || strlen($value) > $maximum
             || preg_match('/^[A-Za-z0-9_.-]+$/D', $value) !== 1) {
-            throw new $exceptionClass(sprintf(
+            throw new ClusterConfigurationException(sprintf(
                 'The %s must contain 1-%d characters from A-Z, a-z, 0-9, _, ., and -.',
                 $label,
                 $maximum,

@@ -208,7 +208,7 @@ final class RunwireIntegration
             return;
         }
 
-        usleep((int) min(PHP_INT_MAX, ceil($seconds * 1_000_000)));
+        usleep((int) min(PHP_INT_MAX, ceil($seconds * 1_000_000.0)));
     }
 
     public static function supports(RuntimeCapability $capability): bool

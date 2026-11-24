@@ -10,20 +10,30 @@ trait PollingLockProviderHelpers
 {
     protected static function leaseMilliseconds(float $leaseSeconds): int
     {
-        if ($leaseSeconds <= 0) {
-            throw new \InvalidArgumentException('Lock lease duration must be positive.');
+        if (!is_finite($leaseSeconds) || $leaseSeconds <= 0.0) {
+            throw new \InvalidArgumentException('Lock lease duration must be finite and positive.');
         }
 
-        return max(1, (int) ceil($leaseSeconds * 1000));
+        $milliseconds = ceil($leaseSeconds * 1000.0);
+        if ($milliseconds >= (float) PHP_INT_MAX) {
+            throw new \InvalidArgumentException('Lock lease duration exceeds the supported range.');
+        }
+
+        return max(1, (int) $milliseconds);
     }
 
     protected static function leaseSeconds(float $leaseSeconds): int
     {
-        if ($leaseSeconds <= 0) {
-            throw new \InvalidArgumentException('Lock lease duration must be positive.');
+        if (!is_finite($leaseSeconds) || $leaseSeconds <= 0.0) {
+            throw new \InvalidArgumentException('Lock lease duration must be finite and positive.');
         }
 
-        return max(1, (int) ceil($leaseSeconds));
+        $seconds = ceil($leaseSeconds);
+        if ($seconds >= (float) PHP_INT_MAX) {
+            throw new \InvalidArgumentException('Lock lease duration exceeds the supported range.');
+        }
+
+        return max(1, (int) $seconds);
     }
 
     protected static function normalizeRetrySleepMicros(int $retrySleepMicros): int
@@ -46,8 +56,12 @@ trait PollingLockProviderHelpers
         float $leaseSeconds,
         callable $attemptAcquire,
     ): ?LockHandle {
-        if ($leaseSeconds <= 0) {
-            throw new \InvalidArgumentException('Lock lease duration must be positive.');
+        if (!is_finite($leaseSeconds) || $leaseSeconds <= 0.0) {
+            throw new \InvalidArgumentException('Lock lease duration must be finite and positive.');
+        }
+
+        if (!is_finite($waitSeconds)) {
+            throw new \InvalidArgumentException('Lock wait duration must be finite.');
         }
 
         $deadline = microtime(true) + max(0.0, $waitSeconds);

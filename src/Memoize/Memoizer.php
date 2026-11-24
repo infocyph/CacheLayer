@@ -52,7 +52,7 @@ final class Memoizer
      * @throws ReflectionException
      * @param callable $callable The callable argument.
      * @param array $params The params argument.
-     * @phpstan-param array<int, mixed> $params
+     * @phpstan-param array<array-key, mixed> $params
      */
     public function get(callable $callable, array $params = []): mixed
     {
@@ -80,7 +80,7 @@ final class Memoizer
      * @param object $object The object argument.
      * @param callable $callable The callable argument.
      * @param array $params The params argument.
-     * @phpstan-param array<int, mixed> $params
+     * @phpstan-param array<array-key, mixed> $params
      */
     public function getFor(object $object, callable $callable, array $params = []): mixed
     {
@@ -120,7 +120,7 @@ final class Memoizer
     /**
      * @param string $signature The signature argument.
      * @param array $params The params argument.
-     * @phpstan-param array<int, mixed> $params
+     * @phpstan-param array<array-key, mixed> $params
      */
     private static function buildCacheKey(string $signature, array $params): string
     {
@@ -129,8 +129,8 @@ final class Memoizer
         }
 
         $normalized = [];
-        foreach ($params as $param) {
-            $normalized[] = CallableFingerprint::value($param);
+        foreach ($params as $key => $param) {
+            $normalized[$key] = CallableFingerprint::value($param);
         }
 
         return $signature . '|' . hash('xxh128', serialize($normalized));
@@ -147,6 +147,8 @@ final class Memoizer
         }
 
         $oldest = array_key_first($cache);
-        unset($cache[$oldest]);
+        if ($oldest !== null) {
+            unset($cache[$oldest]);
+        }
     }
 }

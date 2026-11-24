@@ -51,8 +51,12 @@ final class PdoLockProvider implements LockProviderInterface
     #[\Override]
     public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): ?LockHandle
     {
-        if ($leaseSeconds <= 0) {
-            throw new \InvalidArgumentException('Lock lease duration must be positive.');
+        if (!is_finite($leaseSeconds) || $leaseSeconds <= 0.0) {
+            throw new \InvalidArgumentException('Lock lease duration must be finite and positive.');
+        }
+
+        if (!is_finite($waitSeconds)) {
+            throw new \InvalidArgumentException('Lock wait duration must be finite.');
         }
 
         return match ($this->driver) {
@@ -65,8 +69,8 @@ final class PdoLockProvider implements LockProviderInterface
     #[\Override]
     public function refresh(?LockHandle $handle, float $leaseSeconds): bool
     {
-        if ($leaseSeconds <= 0) {
-            throw new \InvalidArgumentException('Lock lease duration must be positive.');
+        if (!is_finite($leaseSeconds) || $leaseSeconds <= 0.0) {
+            throw new \InvalidArgumentException('Lock lease duration must be finite and positive.');
         }
         if (!$handle instanceof LockHandle) {
             return false;

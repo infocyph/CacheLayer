@@ -61,7 +61,8 @@ final class NodeCache
 
     private static function storageIdentity(NodeCacheConfig $config): string
     {
-        $path = realpath($config->sqliteFile) ?: $config->sqliteFile;
+        $resolved = realpath($config->sqliteFile);
+        $path = $resolved === false ? $config->sqliteFile : $resolved;
 
         return 'node.' . hash('xxh128', $path . "\0" . $config->namespace);
     }

@@ -335,3 +335,42 @@ test('PostgreSQL PDO locks accept native boolean results', function (): void {
 
     expect($provider->refresh($handle, 10.0))->toBeFalse();
 });
+
+test('lock providers reject nonfinite waits and leases before backend operations', function (): void {
+    $providers = [
+        new FileLockProvider(),
+        new PdoLockProvider(new PDO('sqlite::memory:')),
+        new \Infocyph\CacheLayer\Cache\Lock\RedisLockProvider(new Redis()),
+        new \Infocyph\CacheLayer\Cache\Lock\MemcachedLockProvider(new Memcached()),
+    ];
+    foreach ($providers as $provider) {
+        expect(fn() => $provider->acquire('invalid', INF, 1.0))->toThrow(InvalidArgumentException::class)
+            ->and(fn() => $provider->acquire('invalid', 0.0, NAN))->toThrow(InvalidArgumentException::class)
+            ->and(fn() => $provider->acquire('invalid', 0.0, INF))->toThrow(InvalidArgumentException::class);
+    }
+});
+
+test('a stale file lock handle cannot release its replacement', function (): void {
+    $directory = sys_get_temp_dir() . '/cachelayer-lock-stale-' . bin2hex(random_bytes(5));
+    $provider = new FileLockProvider($directory);
+    $first = null;
+    $second = null;
+    try {
+        $first = $provider->acquire('shared', 0.0);
+        expect($first)->not->toBeNull();
+        $provider->release($first);
+        $second = $provider->acquire('shared', 0.0);
+        expect($second)->not->toBeNull();
+        $provider->release($first);
+        expect($provider->refresh($first, 30.0))->toBeFalse()
+            ->and($provider->refresh($second, 30.0))->toBeTrue()
+            ->and($provider->acquire('shared', 0.0))->toBeNull();
+    } finally {
+        $provider->release($first);
+        $provider->release($second);
+        foreach (new FilesystemIterator($directory, FilesystemIterator::SKIP_DOTS) as $file) {
+            unlink($file->getPathname());
+        }
+        rmdir($directory);
+    }
+});

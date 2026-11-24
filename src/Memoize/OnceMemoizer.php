@@ -72,10 +72,11 @@ final class OnceMemoizer
         if ($callback instanceof Closure) {
             $reflection = new ReflectionFunction($callback);
             $bound = $reflection->getClosureThis();
+            $file = $reflection->getFileName();
 
             return implode(':', [
                 'closure',
-                $reflection->getFileName() ?: 'internal',
+                $file === false ? 'internal' : $file,
                 $reflection->getStartLine(),
                 $reflection->getEndLine(),
                 $reflection->getClosureScopeClass()?->getName() ?? '',

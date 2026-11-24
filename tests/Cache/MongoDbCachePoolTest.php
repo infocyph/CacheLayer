@@ -43,6 +43,9 @@ beforeEach(function () {
         {
             foreach ($this->docs as $key => $doc) {
                 $ids = $filter['_id']['$in'] ?? null;
+                if (is_array($ids) && !array_is_list($ids)) {
+                    throw new InvalidArgumentException('MongoDB $in requires a list.');
+                }
                 if (is_array($ids) && in_array($key, $ids, true)) {
                     unset($this->docs[$key]);
                 } elseif (isset($filter['ns']) && ($doc['ns'] ?? null) === $filter['ns']) {
