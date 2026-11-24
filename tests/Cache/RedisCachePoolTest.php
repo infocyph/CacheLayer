@@ -586,3 +586,18 @@ test('Redis authentication failures do not expose supplied passwords in exceptio
         }
     }
 });
+
+test('Redis clear and delete propagate a refused native delete operation', function (): void {
+    $client = $this->createMock(Redis::class);
+    $client->method('scan')->willReturnCallback(static function (&$cursor): array {
+        $cursor = 0;
+
+        return ['refused:d:key'];
+    });
+    $client->method('del')->willReturn(false);
+    $adapter = new \Infocyph\CacheLayer\Cache\Adapter\RedisCacheAdapter('refused', client: $client);
+
+    expect($adapter->deleteItem('key'))->toBeFalse()
+        ->and($adapter->deleteItems(['key']))->toBeFalse()
+        ->and($adapter->clear())->toBeFalse();
+});

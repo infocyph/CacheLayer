@@ -239,7 +239,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
 
         return array_all(
             $groups,
-            static fn(array $records, int|string $ttl): bool => apcu_store($records, null, (int) $ttl) === [],
+            static fn(array $records, int $ttl): bool => apcu_store($records, null, $ttl) === [],
         );
     }
 
@@ -303,8 +303,8 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
             APC_ITER_KEY,
         );
         $out = [];
-        foreach ($iter as $k => $unused) {
-            $out[] = $k;
+        for ($iter->rewind(); $iter->valid(); $iter->next()) {
+            $out[] = $iter->key();
         }
 
         return $out;

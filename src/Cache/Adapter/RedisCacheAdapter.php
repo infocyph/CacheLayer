@@ -170,7 +170,7 @@ LUA;
 
         $existing = $this->redis->get($key);
         if (!is_string($existing)) {
-            return (bool) $this->redis->set($key, $blob, $options);
+            return $this->redis->set($key, $blob, $options) === true;
         }
 
         $record = $this->decodeRecordFromBlob($existing, $item->getKey());
@@ -194,10 +194,10 @@ LUA;
             $cursor = null;
             do {
                 $keys = $this->redis->scan($cursor, $pattern, 1000);
-                if ($keys) {
-                    $this->redis->del($keys);
+                if ($keys !== false && $keys !== [] && !self::deleteSucceeded($this->redis->del($keys))) {
+                    return false;
                 }
-            } while ($cursor);
+            } while ($cursor !== 0 && $cursor !== '0' && $cursor !== null);
         }
         $this->deferred = [];
 
@@ -209,7 +209,7 @@ LUA;
     {
         $this->discardDeferredKey($key);
 
-        return $this->redis->del($this->map($key)) !== false;
+        return self::deleteSucceeded($this->redis->del($this->map($key)));
     }
 
     /**
@@ -227,7 +227,7 @@ LUA;
 
         $full = array_map($this->map(...), array_values($keys));
 
-        return $this->redis->del($full) !== false;
+        return self::deleteSucceeded($this->redis->del($full));
     }
 
     public function getClient(): \Redis
@@ -474,6 +474,11 @@ LUA;
         }
 
         return true;
+    }
+
+    private static function deleteSucceeded(mixed $result): bool
+    {
+        return is_int($result) && $result >= 0;
     }
 
     /** @param list<array{0:string, 1:int, 2:string}> $records */

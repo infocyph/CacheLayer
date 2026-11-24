@@ -814,6 +814,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
     private function fetchItems(array $keys): array
     {
         $items = $this->adapter->getItems($keys);
+
         return array_values(is_array($items) ? $items : iterator_to_array($items));
     }
 
@@ -954,8 +955,8 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
     }
 
     /**
-     * @param array<string, CacheItemInterface> $items
-     * @return array<string, CacheItemInterface>
+     * @param array<int|string, CacheItemInterface> $items
+     * @return array<int|string, CacheItemInterface>
      */
     private function validateTagSnapshots(array $items): array
     {

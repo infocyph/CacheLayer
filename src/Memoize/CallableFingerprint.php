@@ -31,11 +31,15 @@ final class CallableFingerprint
         if (is_string($callable)) {
             return 'string:' . $callable;
         }
-        $target = is_object($callable[0])
-            ? self::objectIdentity($callable[0])
-            : 'class:' . $callable[0];
+        if (is_array($callable)) {
+            $target = is_object($callable[0])
+                ? self::objectIdentity($callable[0])
+                : 'class:' . $callable[0];
 
-        return 'array:' . $target . '::' . $callable[1];
+            return 'array:' . $target . '::' . $callable[1];
+        }
+
+        throw new \LogicException('Unsupported callable representation.');
     }
 
     public static function flush(): void
