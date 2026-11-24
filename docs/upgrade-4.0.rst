@@ -18,6 +18,18 @@ CacheLayer 4.0 requires PHP 8.4 or newer. Upgrade the application runtime before
 installing the package. The release gates cover PHP 8.4, 8.5 and 8.6. Native Scylla CQL remains on PHP 8.4/8.5 until a
 compatible PHP 8.6 extension is published.
 
+PHP 8.6 invalidation enum migration
+===================================
+
+The PHP case formerly named ``InvalidationEventType::Namespace`` is now
+``InvalidationEventType::NamespaceClear`` because PHP 8.6 deprecates the
+reserved case name. Update direct enum references before deployment. PHP-native
+serialized enum objects containing the old case name are not compatible; clear
+or explicitly migrate those application-owned payloads before upgrading.
+The backed value remains ``namespace``, so persisted PDO/Redis transport events
+and the ``InvalidationEvent::namespace()`` factory remain compatible. No alias
+is retained because it would reintroduce the reserved-name deprecation.
+
 Serialization and authenticated records
 ========================================
 

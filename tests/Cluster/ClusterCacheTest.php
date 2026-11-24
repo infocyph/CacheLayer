@@ -449,7 +449,7 @@ test('invalidation events enforce identifier and timestamp invariants', function
             null,
             'cluster',
             'namespace',
-            InvalidationEventType::Namespace,
+            InvalidationEventType::NamespaceClear,
             'unexpected',
             'node',
             time(),
@@ -458,7 +458,7 @@ test('invalidation events enforce identifier and timestamp invariants', function
             null,
             'cluster',
             'namespace',
-            InvalidationEventType::Namespace,
+            InvalidationEventType::NamespaceClear,
             null,
             'node',
             -1,
@@ -795,4 +795,13 @@ test('consumer rejects foreign, duplicate and oversized transport batches before
         expect($node->status()->cursor)->toBe('1')
             ->and($node->cache()->get('protected'))->toBe('keep');
     }
+});
+
+test('namespace clear retains its transport wire value after the PHP case rename', function (): void {
+    $event = InvalidationEvent::namespace('cluster', 'application', 'writer');
+
+    expect($event->type)->toBe(InvalidationEventType::NamespaceClear)
+        ->and($event->type->value)->toBe('namespace')
+        ->and(InvalidationEventType::from('namespace'))->toBe($event->type)
+        ->and($event->identifier)->toBeNull();
 });

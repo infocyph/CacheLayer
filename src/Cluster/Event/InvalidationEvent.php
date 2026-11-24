@@ -41,7 +41,7 @@ final readonly class InvalidationEvent
     /** @throws ClusterCacheException */
     public static function namespace(string $cluster, string $namespace, string $originNodeId): self
     {
-        return new self(null, $cluster, $namespace, InvalidationEventType::Namespace, null, $originNodeId, time());
+        return new self(null, $cluster, $namespace, InvalidationEventType::NamespaceClear, null, $originNodeId, time());
     }
 
     /** @throws ClusterCacheException */

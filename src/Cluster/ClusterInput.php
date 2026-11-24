@@ -34,7 +34,7 @@ final class ClusterInput
     /** @throws ClusterCacheException */
     public static function identifier(InvalidationEventType $type, ?string $identifier): ?string
     {
-        if ($type === InvalidationEventType::Namespace) {
+        if ($type === InvalidationEventType::NamespaceClear) {
             if ($identifier !== null) {
                 throw new ClusterCacheException('Namespace invalidation events must not contain an identifier.');
             }
