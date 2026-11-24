@@ -39,6 +39,7 @@ LUA;
         }
     }
 
+    #[\Override]
     public function decrement(string $key, int $by = 1, ?int $ttlSeconds = null): AtomicCounterValue
     {
         if ($by < 1) {
@@ -48,11 +49,13 @@ LUA;
         return $this->change($key, -$by, $ttlSeconds);
     }
 
+    #[\Override]
     public function delete(string $key): bool
     {
         return $this->client->del($this->map($key)) !== false;
     }
 
+    #[\Override]
     public function get(string $key): ?int
     {
         $value = $this->client->get($this->map($key));
@@ -67,6 +70,7 @@ LUA;
         return $this->parseInteger($value);
     }
 
+    #[\Override]
     public function increment(string $key, int $by = 1, ?int $ttlSeconds = null): AtomicCounterValue
     {
         if ($by < 1) {

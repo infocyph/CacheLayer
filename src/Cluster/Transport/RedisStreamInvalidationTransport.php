@@ -24,6 +24,7 @@ final readonly class RedisStreamInvalidationTransport implements InvalidationTra
         }
     }
 
+    #[\Override]
     public function consumeAfter(string $cluster, ?string $cursor, int $limit): InvalidationBatch
     {
         if ($limit < 1) {
@@ -56,21 +57,25 @@ final readonly class RedisStreamInvalidationTransport implements InvalidationTra
         return new InvalidationBatch($events);
     }
 
+    #[\Override]
     public function isCursorBefore(string $cursor, string $oldestAvailableId): bool
     {
         return $this->compareIds($cursor, $oldestAvailableId) < 0;
     }
 
+    #[\Override]
     public function newestAvailableId(string $cluster): ?string
     {
         return $this->boundary($cluster, true);
     }
 
+    #[\Override]
     public function oldestAvailableId(string $cluster): ?string
     {
         return $this->boundary($cluster, false);
     }
 
+    #[\Override]
     public function publish(InvalidationEvent $event): string
     {
         try {

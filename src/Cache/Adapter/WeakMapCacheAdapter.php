@@ -31,6 +31,7 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         $this->ns = CacheInput::namespace($namespace);
     }
 
+    #[\Override]
     public function atomicCompareAndSet(
         string $key,
         mixed $expected,
@@ -53,6 +54,7 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return $this->persistItem($replacement, $expiration);
     }
 
+    #[\Override]
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
         $this->discardDeferredKey($key);
@@ -67,6 +69,7 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return $current;
     }
 
+    #[\Override]
     public function atomicSetIfAbsent(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
@@ -85,6 +88,7 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return $this->persistItem($item, $expiration);
     }
 
+    #[\Override]
     public function clear(): bool
     {
         $this->scalarStore = [];
@@ -97,6 +101,7 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return true;
     }
 
+    #[\Override]
     public function deleteItem(string $key): bool
     {
         $this->discardDeferredKey($key);
@@ -112,6 +117,7 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
      * @param array $keys The keys argument.
      * @phpstan-param list<string> $keys
      */
+    #[\Override]
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
@@ -122,6 +128,7 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return true;
     }
 
+    #[\Override]
     public function getItem(string $key): CacheItem
     {
         $this->pruneCollected();
@@ -161,6 +168,7 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         );
     }
 
+    #[\Override]
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
@@ -170,6 +178,7 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
      * @param list<string> $keys
      * @return array<string, CacheItem>
      */
+    #[\Override]
     public function multiFetch(array $keys): array
     {
         $this->pruneCollected();
@@ -207,12 +216,14 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return $items;
     }
 
+    #[\Override]
     public function save(CacheItemInterface $item): bool
     {
         return $this->saveEncoded($item, $this->persistItem(...));
     }
 
     /** @param array<string, CacheItemInterface> $items */
+    #[\Override]
     public function saveItems(array $items): bool
     {
         if (!$this->supportsItems($items)) {

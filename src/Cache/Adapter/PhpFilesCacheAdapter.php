@@ -27,6 +27,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         $this->createDirectory($namespace, $baseDir);
     }
 
+    #[\Override]
     public function atomicCompareAndSet(string $key, mixed $expected, CacheItemInterface $replacement): bool
     {
         if (!$this->supportsItem($replacement)) {
@@ -47,6 +48,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         });
     }
 
+    #[\Override]
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
         $this->discardDeferredKey($key);
@@ -64,6 +66,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         });
     }
 
+    #[\Override]
     public function atomicSetIfAbsent(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
@@ -83,6 +86,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         });
     }
 
+    #[\Override]
     public function clear(): bool
     {
         $ok = true;
@@ -98,6 +102,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         return $ok;
     }
 
+    #[\Override]
     public function deleteItem(string $key): bool
     {
         $this->discardDeferredKey($key);
@@ -106,6 +111,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
     }
 
     /** @param list<string> $keys */
+    #[\Override]
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
@@ -118,6 +124,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         return $ok;
     }
 
+    #[\Override]
     public function getItem(string $key): CacheItem
     {
         $record = $this->readLiveRecordUnlocked($key);
@@ -151,6 +158,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         return $generations;
     }
 
+    #[\Override]
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
@@ -160,6 +168,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
      * @param list<string> $keys
      * @return array<string, CacheItem>
      */
+    #[\Override]
     public function multiFetch(array $keys): array
     {
         $items = [];
@@ -180,6 +189,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         );
     }
 
+    #[\Override]
     public function save(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
@@ -190,6 +200,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
     }
 
     /** @param array<string, CacheItemInterface> $items */
+    #[\Override]
     public function saveItems(array $items): bool
     {
         if (!$this->supportsItems($items)) {

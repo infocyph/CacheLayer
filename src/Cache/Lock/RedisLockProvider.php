@@ -22,6 +22,7 @@ final readonly class RedisLockProvider implements LockProviderInterface
         $this->retrySleepMicros = self::normalizeRetrySleepMicros($retrySleepMicros);
     }
 
+    #[\Override]
     public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): ?LockHandle
     {
         $ttlMs = self::leaseMilliseconds($leaseSeconds);
@@ -35,6 +36,7 @@ final readonly class RedisLockProvider implements LockProviderInterface
         );
     }
 
+    #[\Override]
     public function refresh(?LockHandle $handle, float $leaseSeconds): bool
     {
         if (!$handle instanceof LockHandle) {
@@ -54,6 +56,7 @@ LUA;
         return $result === 1 || $result === '1';
     }
 
+    #[\Override]
     public function release(?LockHandle $handle): void
     {
         $script = <<<'LUA'

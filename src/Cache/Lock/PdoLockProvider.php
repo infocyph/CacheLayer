@@ -48,6 +48,7 @@ final class PdoLockProvider implements LockProviderInterface
         return in_array(strtolower($driver), ['mysql', 'mariadb', 'pgsql'], true);
     }
 
+    #[\Override]
     public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): ?LockHandle
     {
         if ($leaseSeconds <= 0) {
@@ -61,6 +62,7 @@ final class PdoLockProvider implements LockProviderInterface
         };
     }
 
+    #[\Override]
     public function refresh(?LockHandle $handle, float $leaseSeconds): bool
     {
         if ($leaseSeconds <= 0) {
@@ -76,6 +78,7 @@ final class PdoLockProvider implements LockProviderInterface
         };
     }
 
+    #[\Override]
     public function release(?LockHandle $handle): void
     {
         if (!$handle instanceof LockHandle) {

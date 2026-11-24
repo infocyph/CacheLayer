@@ -322,11 +322,13 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         );
     }
 
+    #[\Override]
     public function atomic(): ?AtomicCacheInterface
     {
         return $this->atomicCapability ??= AtomicCache::fromAdapter($this->adapter, $this->options, $this->metrics);
     }
 
+    #[\Override]
     public function authenticationStateLock(): ?LockProviderInterface
     {
         return match ([$this->authenticationStateLockCapable, $this->authoritative]) {
@@ -335,16 +337,19 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         };
     }
 
+    #[\Override]
     public function clear(): bool
     {
         return $this->backendBool(fn(): bool => $this->adapter->clear());
     }
 
+    #[\Override]
     public function commit(): bool
     {
         return $this->backendBool(fn(): bool => $this->adapter->commit());
     }
 
+    #[\Override]
     public function delete(string $key): bool
     {
         CacheInput::key($key);
@@ -354,11 +359,13 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         return $deleted;
     }
 
+    #[\Override]
     public function deleteItem(string $key): bool
     {
         return $this->delete($key);
     }
 
+    #[\Override]
     public function deleteItems(array $keys): bool
     {
         $keys = CacheInput::keys($keys);
@@ -369,11 +376,13 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         return $deleted;
     }
 
+    #[\Override]
     public function deleteMultiple(iterable $keys): bool
     {
         return $this->deleteItems(CacheInput::materializeKeys($keys));
     }
 
+    #[\Override]
     public function exportMetrics(): array
     {
         $snapshot = $this->readableMetricsSnapshot($this->metrics->export());
@@ -384,6 +393,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         return $snapshot;
     }
 
+    #[\Override]
     public function get(string $key, mixed $default = null): mixed
     {
         $this->metric('get');
@@ -398,6 +408,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         return $item->get();
     }
 
+    #[\Override]
     public function getItem(string $key): CacheItemInterface
     {
         CacheInput::key($key);
@@ -410,6 +421,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
     }
 
     /** @return iterable<string, CacheItemInterface> */
+    #[\Override]
     public function getItems(array $keys = []): iterable
     {
         $keys = CacheInput::keys($keys);
@@ -439,6 +451,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         return CacheBatchResults::items($keys, $items);
     }
 
+    #[\Override]
     public function getMultiple(iterable $keys, mixed $default = null): iterable
     {
         $keys = CacheInput::materializeKeys($keys);
@@ -446,26 +459,31 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         return CacheBatchResults::values($keys, $this->getItems($keys), $default);
     }
 
+    #[\Override]
     public function has(string $key): bool
     {
         return $this->hasItem($key);
     }
 
+    #[\Override]
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
     }
 
+    #[\Override]
     public function hasPayloadIntegrity(): bool
     {
         return $this->options->integrityKey !== null;
     }
 
+    #[\Override]
     public function invalidateTag(string $tag): bool
     {
         return $this->invalidateTags([$tag]);
     }
 
+    #[\Override]
     public function invalidateTags(array $tags): bool
     {
         $tags = CacheInput::tags($tags);
@@ -475,37 +493,44 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         return $invalidated;
     }
 
+    #[\Override]
     public function isAuthoritative(): bool
     {
         return $this->authoritative;
     }
 
+    #[\Override]
     public function isFailOpen(): bool
     {
         return $this->options->failOpen;
     }
 
+    #[\Override]
     public function offsetExists(mixed $offset): bool
     {
         return $this->has($this->requireStringOffset($offset));
     }
 
+    #[\Override]
     public function offsetGet(mixed $offset): mixed
     {
         return $this->get($this->requireStringOffset($offset));
     }
 
+    #[\Override]
     public function offsetSet(mixed $offset, mixed $value): void
     {
         $this->set($this->requireStringOffset($offset), $value);
     }
 
+    #[\Override]
     public function offsetUnset(mixed $offset): void
     {
         $this->delete($this->requireStringOffset($offset));
     }
 
     /** @param callable(): mixed $resolver */
+    #[\Override]
     public function remember(
         string $key,
         callable $resolver,
@@ -581,16 +606,19 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         }
     }
 
+    #[\Override]
     public function save(CacheItemInterface $item): bool
     {
         return $this->backendBool(fn(): bool => $this->adapter->save($item));
     }
 
+    #[\Override]
     public function saveDeferred(CacheItemInterface $item): bool
     {
         return $this->backendBool(fn(): bool => $this->adapter->saveDeferred($item));
     }
 
+    #[\Override]
     public function set(string $key, mixed $value, mixed $ttl = null): bool
     {
         CacheInput::key($key);
@@ -606,6 +634,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         return $saved;
     }
 
+    #[\Override]
     public function setLockProvider(LockProviderInterface $lockProvider): self
     {
         $this->lockProvider = $lockProvider;
@@ -614,6 +643,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         return $this;
     }
 
+    #[\Override]
     public function setMetricsCollector(CacheMetricsCollectorInterface $metrics): self
     {
         $this->metrics = $metrics;
@@ -622,6 +652,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         return $this;
     }
 
+    #[\Override]
     public function setMetricsExportHook(?callable $hook): self
     {
         $this->metricsExportHook = $hook === null ? null : Closure::fromCallable($hook);
@@ -630,6 +661,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
     }
 
     /** @param iterable<mixed, mixed> $values */
+    #[\Override]
     public function setMultiple(iterable $values, mixed $ttl = null): bool
     {
         $normalized = [];
@@ -657,6 +689,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         return $saved;
     }
 
+    #[\Override]
     public function setTagged(string $key, mixed $value, array $tags, mixed $ttl = null): bool
     {
         CacheInput::key($key);
@@ -674,6 +707,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         return $this->setTaggedWithGenerations($key, $value, $generations, $ttlSeconds);
     }
 
+    #[\Override]
     public function useMemcachedLock(?\Memcached $client = null, string $prefix = 'cachelayer:lock:'): self
     {
         if (!$client instanceof \Memcached) {
@@ -683,6 +717,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         return $this->setLockProvider(new MemcachedLockProvider($client, $prefix));
     }
 
+    #[\Override]
     public function useRedisLock(?\Redis $client = null, string $prefix = 'cachelayer:lock:'): self
     {
         if (!$client instanceof \Redis) {
@@ -692,6 +727,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         return $this->setLockProvider(new RedisLockProvider($client, $prefix));
     }
 
+    #[\Override]
     public function useValkeyLock(?\Redis $client = null, string $prefix = 'cachelayer:lock:'): self
     {
         return $this->useRedisLock($client, $prefix);

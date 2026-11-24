@@ -49,6 +49,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         }
     }
 
+    #[\Override]
     public function clear(): bool
     {
         return $this->mutate(function (): bool {
@@ -86,6 +87,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         }
     }
 
+    #[\Override]
     public function deleteItem(string $key): bool
     {
         $this->discardDeferredKey($key);
@@ -101,6 +103,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
     }
 
     /** @param list<string> $keys */
+    #[\Override]
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
@@ -115,6 +118,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         });
     }
 
+    #[\Override]
     public function getItem(string $key): CacheItem
     {
         $pending = $this->deferredRead($key);
@@ -153,6 +157,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         throw new LogicException('A tiered cache must retain an authoritative pool.');
     }
 
+    #[\Override]
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
@@ -162,6 +167,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
      * @param list<string> $keys
      * @return array<string, CacheItem>
      */
+    #[\Override]
     public function multiFetch(array $keys): array
     {
         $remaining = $keys;
@@ -201,6 +207,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         return $incremented;
     }
 
+    #[\Override]
     public function save(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
@@ -221,6 +228,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
     }
 
     /** @param array<string, CacheItemInterface> $items */
+    #[\Override]
     public function saveItems(array $items): bool
     {
         if (!$this->supportsItems($items)) {

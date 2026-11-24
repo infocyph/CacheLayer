@@ -48,12 +48,14 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         });
     }
 
+    #[\Override]
     public function __destruct()
     {
         fclose($this->lockHandle);
         shm_detach($this->segment);
     }
 
+    #[\Override]
     public function atomicCompareAndSet(
         string $key,
         mixed $expected,
@@ -83,6 +85,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         });
     }
 
+    #[\Override]
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
         $this->discardDeferredKey($key);
@@ -92,6 +95,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         return $this->withExclusiveLock(fn(): CacheItemInterface => $this->consumeRecord($key, $mapped));
     }
 
+    #[\Override]
     public function atomicSetIfAbsent(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
@@ -118,6 +122,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         });
     }
 
+    #[\Override]
     public function clear(): bool
     {
         $this->deferred = [];
@@ -131,6 +136,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         );
     }
 
+    #[\Override]
     public function deleteItem(string $key): bool
     {
         $this->discardDeferredKey($key);
@@ -148,6 +154,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
      * @param array $keys The keys argument.
      * @phpstan-param list<string> $keys
      */
+    #[\Override]
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
@@ -159,6 +166,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         return $this->withExclusiveLock(fn(): bool => $this->updateStore([], $mappedKeys));
     }
 
+    #[\Override]
     public function getItem(string $key): CacheItem
     {
         $mapped = $this->map($key);
@@ -187,6 +195,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         return $this->withExclusiveLock(fn(): array => $this->initializeTagGenerations($tags));
     }
 
+    #[\Override]
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
@@ -196,6 +205,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
      * @param list<string> $keys
      * @return array<string, CacheItem>
      */
+    #[\Override]
     public function multiFetch(array $keys): array
     {
         return $this->withSharedLock(fn(): array => $this->fetchStoredItems($keys));
@@ -231,6 +241,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         return $this->storeTagGenerations($generations);
     }
 
+    #[\Override]
     public function save(CacheItemInterface $item): bool
     {
         return $this->saveEncoded($item, function (CacheItemInterface $saveItem, array $expires): bool {
@@ -247,6 +258,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
     }
 
     /** @param array<string, CacheItemInterface> $items */
+    #[\Override]
     public function saveItems(array $items): bool
     {
         $records = [];

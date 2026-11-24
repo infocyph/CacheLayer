@@ -38,6 +38,7 @@ final class AtomicCache implements AtomicCacheInterface
         return new self($adapter, $options, $metrics);
     }
 
+    #[\Override]
     public function compareAndSet(
         string $key,
         mixed $expected,
@@ -63,6 +64,7 @@ final class AtomicCache implements AtomicCacheInterface
         return $stored;
     }
 
+    #[\Override]
     public function getAndDelete(string $key, mixed $default = null): mixed
     {
         CacheInput::key($key);
@@ -81,6 +83,7 @@ final class AtomicCache implements AtomicCacheInterface
         return $item->get();
     }
 
+    #[\Override]
     public function setIfAbsent(
         string $key,
         mixed $value,

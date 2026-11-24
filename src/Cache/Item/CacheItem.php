@@ -32,6 +32,7 @@ final class CacheItem implements CacheItemInterface
         return $this->pool === $pool;
     }
 
+    #[\Override]
     public function expiresAfter(int|DateInterval|null $time): static
     {
         $now = new DateTimeImmutable();
@@ -44,6 +45,7 @@ final class CacheItem implements CacheItemInterface
         return $this;
     }
 
+    #[\Override]
     public function expiresAt(?DateTimeInterface $expiration): static
     {
         $this->expiration = $expiration;
@@ -51,11 +53,13 @@ final class CacheItem implements CacheItemInterface
         return $this;
     }
 
+    #[\Override]
     public function get(): mixed
     {
         return $this->value;
     }
 
+    #[\Override]
     public function getKey(): string
     {
         return $this->key;
@@ -67,6 +71,7 @@ final class CacheItem implements CacheItemInterface
         return $this->tags;
     }
 
+    #[\Override]
     public function isHit(): bool
     {
         return $this->hit
@@ -87,6 +92,7 @@ final class CacheItem implements CacheItemInterface
         return $this;
     }
 
+    #[\Override]
     public function set(mixed $value): static
     {
         $this->value = $value;

@@ -46,6 +46,7 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
         $this->cluster = $client;
     }
 
+    #[\Override]
     public function clear(): bool
     {
         for ($bucket = 0; $bucket < self::BUCKET_COUNT; ++$bucket) {
@@ -58,6 +59,7 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
         return true;
     }
 
+    #[\Override]
     public function deleteItem(string $key): bool
     {
         $this->discardDeferredKey($key);
@@ -66,6 +68,7 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
     }
 
     /** @param list<string> $keys */
+    #[\Override]
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
@@ -81,6 +84,7 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
         return $this->cluster;
     }
 
+    #[\Override]
     public function getItem(string $key): CacheItem
     {
         $bucket = $this->bucket($key);
@@ -119,6 +123,7 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
         return $generations;
     }
 
+    #[\Override]
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
@@ -128,6 +133,7 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
      * @param list<string> $keys
      * @return array<string, CacheItem>
      */
+    #[\Override]
     public function multiFetch(array $keys): array
     {
         $items = [];
@@ -160,6 +166,7 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
         return true;
     }
 
+    #[\Override]
     public function save(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
@@ -179,6 +186,7 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
     }
 
     /** @param array<string, CacheItemInterface> $items */
+    #[\Override]
     public function saveItems(array $items): bool
     {
         foreach ($items as $item) {

@@ -90,6 +90,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         return $directory . DIRECTORY_SEPARATOR . 'cache_' . CacheInput::namespace($namespace) . '.sqlite';
     }
 
+    #[\Override]
     public function clear(): bool
     {
         $statement = $this->pdo->prepare("DELETE FROM {$this->table} WHERE namespace = ?");
@@ -99,6 +100,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         return $cleared;
     }
 
+    #[\Override]
     public function deleteItem(string $key): bool
     {
         $this->discardDeferredKey($key);
@@ -111,6 +113,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
     }
 
     /** @param list<string> $keys */
+    #[\Override]
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
@@ -123,6 +126,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         return $this->pdo;
     }
 
+    #[\Override]
     public function getItem(string $key): CacheItem
     {
         $rows = $this->fetchRows(self::KIND_DATA, [$key]);
@@ -152,6 +156,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         );
     }
 
+    #[\Override]
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
@@ -161,6 +166,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
      * @param list<string> $keys
      * @return array<string, CacheItem>
      */
+    #[\Override]
     public function multiFetch(array $keys): array
     {
         $rows = $this->fetchRows(self::KIND_DATA, $keys);
@@ -207,6 +213,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         return $this->upsertRows($rows);
     }
 
+    #[\Override]
     public function save(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
@@ -226,6 +233,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
     }
 
     /** @param array<string, CacheItemInterface> $items */
+    #[\Override]
     public function saveItems(array $items): bool
     {
         $rows = [];

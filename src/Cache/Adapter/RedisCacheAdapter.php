@@ -91,6 +91,7 @@ LUA;
         $this->redis = $client ?? $this->connect($dsn);
     }
 
+    #[\Override]
     public function atomicCompareAndSet(
         string $key,
         mixed $expected,
@@ -126,6 +127,7 @@ LUA;
         return AdapterValueNormalizer::intOrZero($result) === 1;
     }
 
+    #[\Override]
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
         $this->discardDeferredKey($key);
@@ -143,6 +145,7 @@ LUA;
         return $this->genericItemFromRecord($key, $record);
     }
 
+    #[\Override]
     public function atomicSetIfAbsent(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
@@ -184,6 +187,7 @@ LUA;
         return AdapterValueNormalizer::intOrZero($result) === 1;
     }
 
+    #[\Override]
     public function clear(): bool
     {
         foreach ([$this->ns . ':d:*', $this->ns . ':m:*'] as $pattern) {
@@ -200,6 +204,7 @@ LUA;
         return true;
     }
 
+    #[\Override]
     public function deleteItem(string $key): bool
     {
         $this->discardDeferredKey($key);
@@ -211,6 +216,7 @@ LUA;
      * @param array $keys The keys argument.
      * @phpstan-param list<string> $keys
      */
+    #[\Override]
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
@@ -229,6 +235,7 @@ LUA;
         return $this->redis;
     }
 
+    #[\Override]
     public function getItem(string $key): CacheItem
     {
         $raw = $this->redis->get($this->map($key));
@@ -269,6 +276,7 @@ LUA;
         return $generations + $this->initializeTagGenerations($missing);
     }
 
+    #[\Override]
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
@@ -279,6 +287,7 @@ LUA;
      * @phpstan-param list<string> $keys
      * @phpstan-return array<string, CacheItem>
      */
+    #[\Override]
     public function multiFetch(array $keys): array
     {
         if ($keys === []) {
@@ -334,6 +343,7 @@ LUA;
         return $this->redis->mset($generations);
     }
 
+    #[\Override]
     public function save(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
@@ -356,6 +366,7 @@ LUA;
     }
 
     /** @param array<string, CacheItemInterface> $items */
+    #[\Override]
     public function saveItems(array $items): bool
     {
         if (!$this->supportsItems($items)) {

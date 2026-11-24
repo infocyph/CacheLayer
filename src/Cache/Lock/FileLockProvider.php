@@ -25,6 +25,7 @@ final readonly class FileLockProvider implements LockProviderInterface
         $this->retrySleepMicros = max(1_000, $retrySleepMicros);
     }
 
+    #[\Override]
     public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): ?LockHandle
     {
         if ($leaseSeconds <= 0) {
@@ -68,6 +69,7 @@ final readonly class FileLockProvider implements LockProviderInterface
         return new LockHandle($path, $token, $handle, $leaseSeconds);
     }
 
+    #[\Override]
     public function refresh(?LockHandle $handle, float $leaseSeconds): bool
     {
         if ($leaseSeconds <= 0) {
@@ -77,6 +79,7 @@ final readonly class FileLockProvider implements LockProviderInterface
         return $handle instanceof LockHandle && is_resource($handle->resource);
     }
 
+    #[\Override]
     public function release(?LockHandle $handle): void
     {
         if (!$handle instanceof LockHandle) {

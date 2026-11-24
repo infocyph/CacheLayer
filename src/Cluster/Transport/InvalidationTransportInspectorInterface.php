@@ -8,5 +8,6 @@ interface InvalidationTransportInspectorInterface extends InvalidationTransportI
 {
     public function countAfter(string $cluster, ?string $cursor): int;
 
+    #[\Override]
     public function newestAvailableId(string $cluster): ?string;
 }

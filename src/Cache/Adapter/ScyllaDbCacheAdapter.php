@@ -47,6 +47,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
         $this->createSchemaIfMissing();
     }
 
+    #[\Override]
     public function clear(): bool
     {
         for ($bucket = 0; $bucket < $this->bucketCount; $bucket++) {
@@ -64,6 +65,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
         return true;
     }
 
+    #[\Override]
     public function deleteItem(string $key): bool
     {
         $this->discardDeferredKey($key);
@@ -79,6 +81,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
      * @param array $keys The keys argument.
      * @phpstan-param list<string> $keys
      */
+    #[\Override]
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
@@ -93,6 +96,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
         return true;
     }
 
+    #[\Override]
     public function getItem(string $key): CacheItem
     {
         $row = $this->firstRow(
@@ -148,6 +152,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
         return $actual;
     }
 
+    #[\Override]
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
@@ -158,6 +163,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
      * @phpstan-param list<string> $keys
      * @phpstan-return array<string, CacheItem>
      */
+    #[\Override]
     public function multiFetch(array $keys): array
     {
         $items = [];
@@ -205,6 +211,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
         return $this->storeTagGenerations($generations);
     }
 
+    #[\Override]
     public function save(CacheItemInterface $item): bool
     {
         return $this->saveEncoded($item, function (CacheItemInterface $saveItem, array $expires): bool {
@@ -228,6 +235,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
     }
 
     /** @param array<string, CacheItemInterface> $items */
+    #[\Override]
     public function saveItems(array $items): bool
     {
         $active = [];

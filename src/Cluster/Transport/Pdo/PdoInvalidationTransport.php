@@ -31,6 +31,7 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
         }
     }
 
+    #[\Override]
     public function consumeAfter(string $cluster, ?string $cursor, int $limit): InvalidationBatch
     {
         if ($limit < 1) {
@@ -60,6 +61,7 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
         return new InvalidationBatch($events);
     }
 
+    #[\Override]
     public function countAfter(string $cluster, ?string $cursor): int
     {
         try {
@@ -82,6 +84,7 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
         return is_numeric($count) ? (int) $count : 0;
     }
 
+    #[\Override]
     public function isCursorBefore(string $cursor, string $oldestAvailableId): bool
     {
         $cursor = $this->eventId($cursor);
@@ -92,11 +95,13 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
             : strlen($cursor) < strlen($oldestAvailableId);
     }
 
+    #[\Override]
     public function newestAvailableId(string $cluster): ?string
     {
         return $this->eventBoundary($cluster, 'MAX');
     }
 
+    #[\Override]
     public function oldestAvailableId(string $cluster): ?string
     {
         try {
@@ -131,6 +136,7 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
         return $statement->rowCount();
     }
 
+    #[\Override]
     public function publish(InvalidationEvent $event): string
     {
         $ownsTransaction = !$this->connection->inTransaction();
@@ -162,6 +168,7 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
         }
     }
 
+    #[\Override]
     public function publishWithinTransaction(PDO $connection, InvalidationEvent $event): string
     {
         if ($connection !== $this->connection || !$connection->inTransaction()) {

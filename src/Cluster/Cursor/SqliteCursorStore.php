@@ -43,6 +43,7 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
         $this->createSchemaIfMissing();
     }
 
+    #[\Override]
     public function advance(string $eventId): void
     {
         if ($eventId === '') {
@@ -52,6 +53,7 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
         $this->write($eventId);
     }
 
+    #[\Override]
     public function current(): ?string
     {
         $cursor = $this->read(
@@ -64,16 +66,19 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
         return is_string($cursor) && $cursor !== '' ? $cursor : null;
     }
 
+    #[\Override]
     public function requiresRecovery(): bool
     {
         return !$this->scopeExists();
     }
 
+    #[\Override]
     public function reset(?string $eventId): void
     {
         $this->write($eventId);
     }
 
+    #[\Override]
     public function updatedAt(): ?int
     {
         $updatedAt = $this->read(

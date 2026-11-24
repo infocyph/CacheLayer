@@ -45,6 +45,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         }
     }
 
+    #[\Override]
     public function clear(): bool
     {
         $l2 = $this->attempt(fn(): bool => $this->l2->clear(), false, 'l2_failure');
@@ -80,6 +81,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         }
     }
 
+    #[\Override]
     public function deleteItem(string $key): bool
     {
         $this->discardDeferredKey($key);
@@ -94,6 +96,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
     }
 
     /** @param list<string> $keys */
+    #[\Override]
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
@@ -107,6 +110,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         return $l2 && $l1;
     }
 
+    #[\Override]
     public function getItem(string $key): CacheItem
     {
         $pending = $this->deferredRead($key);
@@ -171,6 +175,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         return $cached + $loaded;
     }
 
+    #[\Override]
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
@@ -185,6 +190,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
      * @param list<string> $keys
      * @return array<string, CacheItem>
      */
+    #[\Override]
     public function multiFetch(array $keys): array
     {
         [$results, $misses] = $this->readL1($keys);
@@ -233,6 +239,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         return $fenced && $stored;
     }
 
+    #[\Override]
     public function save(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
@@ -256,6 +263,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
     }
 
     /** @param array<string, CacheItemInterface> $items */
+    #[\Override]
     public function saveItems(array $items): bool
     {
         foreach ($items as $item) {
