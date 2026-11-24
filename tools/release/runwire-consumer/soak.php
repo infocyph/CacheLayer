@@ -56,18 +56,17 @@ for ($index = 0; $index < SEQUENTIAL_REQUESTS; ++$index) {
             try {
                 new CoroutineRuntime()->runRequest(
                     $request,
-                    static function (CoroutineScope $scope) use ($request): bool {
-                        return RunwireIntegration::share(
-                            $request,
-                            $scope,
-                            static function (): bool {
-                                RunwireIntegration::checkpoint();
+                    static fn(CoroutineScope $scope): bool => RunwireIntegration::share(
+                        $request,
+                        $scope,
+                        static function (): bool {
+                            RunwireIntegration::checkpoint();
 
-                                return true;
-                            },
-                        );
-                    },
+                            return true;
+                        },
+                    ),
                 );
+
                 throw new RuntimeException('Expired request unexpectedly completed during soak.');
             } catch (CancelledException) {
                 ++$deadlines;
@@ -80,19 +79,18 @@ for ($index = 0; $index < SEQUENTIAL_REQUESTS; ++$index) {
             try {
                 new CoroutineRuntime()->runRequest(
                     $request,
-                    static function (CoroutineScope $scope) use ($request): bool {
-                        return RunwireIntegration::share(
-                            $request,
-                            $scope,
-                            static function () use ($request): bool {
-                                $request->cancel(CancellationReason::HOST_CANCELLED);
-                                RunwireIntegration::checkpoint();
+                    static fn(CoroutineScope $scope): bool => RunwireIntegration::share(
+                        $request,
+                        $scope,
+                        static function () use ($request): bool {
+                            $request->cancel(CancellationReason::HOST_CANCELLED);
+                            RunwireIntegration::checkpoint();
 
-                                return true;
-                            },
-                        );
-                    },
+                            return true;
+                        },
+                    ),
                 );
+
                 throw new RuntimeException('Cancelled request unexpectedly completed during soak.');
             } catch (CancelledException) {
                 ++$cancellations;

@@ -61,7 +61,17 @@ final class CacheFixture
             throw new UnexpectedValueException('Child process did not exit normally.');
         }
 
-        return pcntl_wexitstatus($status);
+        return self::requireExitCode(pcntl_wexitstatus($status));
+    }
+
+    /** @throws UnexpectedValueException */
+    private static function requireExitCode(mixed $code): int
+    {
+        if (!is_int($code)) {
+            throw new UnexpectedValueException('Unable to read child exit status.');
+        }
+
+        return $code;
     }
 
     public static function redisMock(): \Redis&\PHPUnit\Framework\MockObject\MockObject

@@ -112,6 +112,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
 
     /**
      * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
     #[\Override]
     public function getItem(string $key): CacheItem
@@ -170,6 +171,10 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
         return $actual;
     }
 
+    /**
+     * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     #[\Override]
     public function hasItem(string $key): bool
     {

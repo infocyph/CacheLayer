@@ -246,7 +246,7 @@ test('remember rechecks after lock timeout before resolving', function (): void 
 
         /**
          * @throws CacheInvalidArgumentException
-         * @throws Infocyph\CacheLayer\Exceptions\CacheBackendException
+         * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
          */
         #[\Override]
         public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): ?LockHandle

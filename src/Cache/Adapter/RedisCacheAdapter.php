@@ -514,8 +514,8 @@ LUA;
     /** @param list<array{0:string, 1:int, 2:string}> $records */
     private function saveExpiring(array $records): bool
     {
-        $pipeline = $this->redis->multi(\Redis::PIPELINE);
-        if (!$pipeline instanceof \Redis) {
+        $pipeline = AdapterValueNormalizer::redisPipeline($this->redis->multi(\Redis::PIPELINE));
+        if ($pipeline === null) {
             return false;
         }
         foreach ($records as [$key, $ttl, $blob]) {

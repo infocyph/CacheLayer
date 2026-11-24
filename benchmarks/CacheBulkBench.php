@@ -261,6 +261,7 @@ final class CacheBulkBench
      * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
      * @throws \RuntimeException
      * @throws \Infocyph\CacheLayer\Cache\Lock\UnsupportedPdoLockDriver
+     * @throws \LogicException
      */
     public function setUpSingleSqlite(): void
     {
@@ -275,6 +276,7 @@ final class CacheBulkBench
      * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
      * @throws \RuntimeException
      * @throws \Infocyph\CacheLayer\Cache\Lock\UnsupportedPdoLockDriver
+     * @throws \LogicException
      */
     public function setUpSqlite(array $params): void
     {

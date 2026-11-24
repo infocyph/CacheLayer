@@ -22,20 +22,21 @@ final class CallableFingerprint
 
     public static function callable(callable $callable): string
     {
+        if (is_array($callable)) {
+            $target = is_object($callable[0])
+                ? self::objectIdentity($callable[0])
+                : 'class:' . $callable[0];
+
+            return 'array:' . $target . '::' . $callable[1];
+        }
         if ($callable instanceof Closure) {
             return self::closure($callable);
-        }
-        if (is_object($callable)) {
-            return 'invokable:' . self::objectIdentity($callable);
         }
         if (is_string($callable)) {
             return 'string:' . $callable;
         }
-        $target = is_object($callable[0])
-            ? self::objectIdentity($callable[0])
-            : 'class:' . $callable[0];
 
-        return 'array:' . $target . '::' . $callable[1];
+        return 'invokable:' . self::objectIdentity($callable);
     }
 
     public static function flush(): void

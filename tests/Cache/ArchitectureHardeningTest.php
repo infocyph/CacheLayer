@@ -61,13 +61,20 @@ final class ArchitectureHardeningTest extends AbstractCacheAdapter
         return true;
     }
 
-    /** @throws RuntimeException */
+    /**
+     * @throws RuntimeException
+     * @throws CacheInvalidArgumentException
+     */
     #[\Override]
     public function getItem(string $key): CacheItem
     {
         return $this->multiFetch([$key])[$key];
     }
 
+    /**
+     * @throws RuntimeException
+     * @throws CacheInvalidArgumentException
+     */
     #[\Override]
     public function hasItem(string $key): bool
     {
