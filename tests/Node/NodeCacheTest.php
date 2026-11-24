@@ -113,7 +113,7 @@ test('node fences failed single and bulk promotions under either failure policy'
     $l1->clear();
     $l1->failure = $bulk ? 'saveItems' : 'save';
     $l1->throws = $throws;
-    $read = $bulk ? fn() => $cache->getMultiple(['key']) : fn() => $cache->get('key');
+    $read = $bulk ? fn(): iterable => $cache->getMultiple(['key']) : fn(): mixed => $cache->get('key');
 
     if ($throws && !$failOpen) {
         expect($read)->toThrow(RuntimeException::class);

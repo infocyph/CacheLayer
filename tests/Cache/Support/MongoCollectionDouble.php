@@ -116,8 +116,14 @@ final class MongoCollectionDouble
 
         $matched = $existing === null ? 0 : 1;
         $document = $existing ?? ['_id' => $id];
-        $document = [...$document, ...($update['$setOnInsert'] ?? []), ...($update['$set'] ?? [])];
-        foreach ($update['$inc'] ?? [] as $field => $amount) {
+        $onInsert = $update['$setOnInsert'] ?? [];
+        $set = $update['$set'] ?? [];
+        $increments = $update['$inc'] ?? [];
+        if (!is_array($onInsert) || !is_array($set) || !is_array($increments)) {
+            throw new InvalidArgumentException('Invalid MongoDB update document.');
+        }
+        $document = [...$document, ...$onInsert, ...$set];
+        foreach ($increments as $field => $amount) {
             $document[$field] = (int) ($document[$field] ?? 0) + (int) $amount;
         }
         $this->docs[$id] = $document;

@@ -80,7 +80,7 @@ test('remember caches once and supports tag invalidation', function () use (&$fe
 
 test('get returns callable defaults without executing or caching them', function () use (&$featuresFixtureCache): void {
     $count = 0;
-    $default = function () use (&$count) {
+    $default = function () use (&$count): int {
         $count++;
         return 99;
     };

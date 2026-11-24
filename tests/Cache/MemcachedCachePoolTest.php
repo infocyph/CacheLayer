@@ -84,7 +84,7 @@ test('get returns default when key missing (memcached)', function () use (&$memc
 });
 
 test('get throws for invalid key (memcached)', function () use (&$memcachedFixtureCache): void {
-    expect(fn () => $memcachedFixtureCache->get('bad key', 'x'))
+    expect(fn (): mixed => $memcachedFixtureCache->get('bad key', 'x'))
         ->toThrow(CacheInvalidArgumentException::class);
 });
 

@@ -99,15 +99,21 @@ test('payload codec delegates only top-level closures to special serialization',
     $blob = $codec->encode(static fn(int $value): int => $value + 1, null);
     $closure = $codec->decode($blob)?->value;
     $resource = fopen('php://memory', 'r+');
-
-    expect($closure)->toBeInstanceOf(Closure::class)
-        ->and($closure(4))->toBe(5)
-        ->and(fn() => $codec->encode(['nested' => static fn(): int => 1], null))
-        ->toThrow(InvalidArgumentException::class)
-        ->and(fn() => $codec->encode($resource, null))
-        ->toThrow(InvalidArgumentException::class);
-
-    fclose($resource);
+    if ($resource === false) {
+        throw new \RuntimeException('Unable to open memory stream for the codec test.');
+    }
+    try {
+        if (!$closure instanceof Closure) {
+            throw new \RuntimeException('The codec did not restore the closure.');
+        }
+        expect($closure(4))->toBe(5)
+            ->and(fn(): string => $codec->encode(['nested' => static fn(): int => 1], null))
+            ->toThrow(InvalidArgumentException::class)
+            ->and(fn(): string => $codec->encode($resource, null))
+            ->toThrow(InvalidArgumentException::class);
+    } finally {
+        fclose($resource);
+    }
 });
 
 test('payload codec can disable closure serialization per cache instance', function () {

@@ -27,44 +27,45 @@ use Infocyph\CacheLayer\Node\NodeCacheConfig;
 use Infocyph\CacheLayer\Tests\Cluster\Support\InMemoryInvalidationTransport;
 use Infocyph\CacheLayer\Tests\Cluster\Support\RejectingClusterCacheAdapter;
 
-$clusterFixture = new class {
-    public string $clusterDirectory = '';
+$clusterFixture = null;
 
-    public InMemoryInvalidationTransport $transport;
-
-    public ClusterCacheConfig $clusterConfigA;
-
-    public ClusterCacheConfig $clusterConfigB;
-
-    public NodeCacheConfig $nodeConfigA;
-
-    public NodeCacheConfig $nodeConfigB;
-
-    public \Infocyph\CacheLayer\Cluster\ClusterRuntime $nodeA;
-
-    public \Infocyph\CacheLayer\Cluster\ClusterRuntime $nodeB;
-};
-
-beforeEach(function () use ($clusterFixture): void {
-    $clusterFixture->clusterDirectory = sys_get_temp_dir() . '/cachelayer-cluster-' . uniqid();
-    $clusterFixture->transport = new InMemoryInvalidationTransport();
-    $clusterFixture->clusterConfigA = new ClusterCacheConfig('test-cluster', 'node-a', 'memory-primary');
-    $clusterFixture->clusterConfigB = new ClusterCacheConfig('test-cluster', 'node-b', 'memory-primary');
-    $clusterFixture->nodeConfigA = new NodeCacheConfig(
-        $clusterFixture->clusterDirectory . '/node-a.sqlite',
+beforeEach(function () use (&$clusterFixture): void {
+    $clusterDirectory = sys_get_temp_dir() . '/cachelayer-cluster-' . uniqid();
+    $transport = new InMemoryInvalidationTransport();
+    $clusterConfigA = new ClusterCacheConfig('test-cluster', 'node-a', 'memory-primary');
+    $clusterConfigB = new ClusterCacheConfig('test-cluster', 'node-b', 'memory-primary');
+    $nodeConfigA = new NodeCacheConfig(
+        $clusterDirectory . '/node-a.sqlite',
         'application',
         apcuEnabled: false,
     );
-    $clusterFixture->nodeConfigB = new NodeCacheConfig(
-        $clusterFixture->clusterDirectory . '/node-b.sqlite',
+    $nodeConfigB = new NodeCacheConfig(
+        $clusterDirectory . '/node-b.sqlite',
         'application',
         apcuEnabled: false,
     );
-    $clusterFixture->nodeA = ClusterCache::create($clusterFixture->nodeConfigA, $clusterFixture->clusterConfigA, $clusterFixture->transport);
-    $clusterFixture->nodeB = ClusterCache::create($clusterFixture->nodeConfigB, $clusterFixture->clusterConfigB, $clusterFixture->transport);
+    $nodeA = ClusterCache::create($nodeConfigA, $clusterConfigA, $transport);
+    $nodeB = ClusterCache::create($nodeConfigB, $clusterConfigB, $transport);
+    $clusterFixture = new class($clusterDirectory, $transport, $clusterConfigA, $clusterConfigB, $nodeConfigA, $nodeConfigB, $nodeA, $nodeB) {
+        public function __construct(
+            public string $clusterDirectory,
+            public InMemoryInvalidationTransport $transport,
+            public ClusterCacheConfig $clusterConfigA,
+            public ClusterCacheConfig $clusterConfigB,
+            public NodeCacheConfig $nodeConfigA,
+            public NodeCacheConfig $nodeConfigB,
+            public \Infocyph\CacheLayer\Cluster\ClusterRuntime $nodeA,
+            public \Infocyph\CacheLayer\Cluster\ClusterRuntime $nodeB,
+        ) {}
+    };
+
 });
 
-afterEach(function () use ($clusterFixture): void {
+afterEach(function () use (&$clusterFixture): void {
+    if ($clusterFixture === null) {
+        return;
+    }
+
     if (!is_dir($clusterFixture->clusterDirectory)) {
         return;
     }
@@ -74,12 +75,20 @@ afterEach(function () use ($clusterFixture): void {
         RecursiveIteratorIterator::CHILD_FIRST,
     );
     foreach ($files as $file) {
+        if (!$file instanceof \SplFileInfo) {
+            throw new \UnexpectedValueException('Unexpected filesystem iterator entry.');
+        }
         $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
     }
     rmdir($clusterFixture->clusterDirectory);
+    $clusterFixture = null;
 });
 
-test('cluster key, tag, and namespace invalidations are replayed to another node', function () use ($clusterFixture): void {
+test('cluster key, tag, and namespace invalidations are replayed to another node', function () use (&$clusterFixture): void {
+    if ($clusterFixture === null) {
+        throw new \RuntimeException('Integration fixture setup did not run.');
+    }
+
     $clusterFixture->nodeA->cache()->set('product.42', 'A', 300);
     $clusterFixture->nodeB->cache()->set('product.42', 'B', 300);
 
@@ -105,7 +114,11 @@ test('cluster key, tag, and namespace invalidations are replayed to another node
         ->and($clusterFixture->nodeB->cache()->get('settings'))->toBeNull();
 });
 
-test('recovery clears a local node when its cursor predates retained events', function () use ($clusterFixture): void {
+test('recovery clears a local node when its cursor predates retained events', function () use (&$clusterFixture): void {
+    if ($clusterFixture === null) {
+        throw new \RuntimeException('Integration fixture setup did not run.');
+    }
+
     $clusterFixture->transport->publish(InvalidationEvent::key('test-cluster', 'application', 'first', 'writer'));
     $clusterFixture->transport->publish(InvalidationEvent::key('test-cluster', 'application', 'second', 'writer'));
     $clusterFixture->transport->publish(InvalidationEvent::key('test-cluster', 'application', 'third', 'writer'));
@@ -118,7 +131,11 @@ test('recovery clears a local node when its cursor predates retained events', fu
         ->and($clusterFixture->nodeB->recoverIfRequired())->toBeFalse();
 });
 
-test('the origin node advances its cursor without replaying its own invalidation', function () use ($clusterFixture): void {
+test('the origin node advances its cursor without replaying its own invalidation', function () use (&$clusterFixture): void {
+    if ($clusterFixture === null) {
+        throw new \RuntimeException('Integration fixture setup did not run.');
+    }
+
     $clusterFixture->nodeA->cache()->set('origin.only', 'value', 300);
     $clusterFixture->nodeA->invalidateKey('origin.only');
 
@@ -127,7 +144,11 @@ test('the origin node advances its cursor without replaying its own invalidation
         ->and($clusterFixture->nodeA->consume())->toBe(0);
 });
 
-test('cluster bulk tag invalidation publishes each unique tag once', function () use ($clusterFixture): void {
+test('cluster bulk tag invalidation publishes each unique tag once', function () use (&$clusterFixture): void {
+    if ($clusterFixture === null) {
+        throw new \RuntimeException('Integration fixture setup did not run.');
+    }
+
     $clusterFixture->nodeB->cache()->setTagged('products.list', 'products', ['products'], 300);
     $clusterFixture->nodeB->cache()->setTagged('search.list', 'search', ['search'], 300);
 
@@ -138,7 +159,11 @@ test('cluster bulk tag invalidation publishes each unique tag once', function ()
         ->and($clusterFixture->nodeB->cache()->get('search.list'))->toBeNull();
 });
 
-test('cursor progress is isolated by namespace on the same node and SQLite store', function () use ($clusterFixture): void {
+test('cursor progress is isolated by namespace on the same node and SQLite store', function () use (&$clusterFixture): void {
+    if ($clusterFixture === null) {
+        throw new \RuntimeException('Integration fixture setup did not run.');
+    }
+
     $transport = new InMemoryInvalidationTransport();
     $sqliteFile = $clusterFixture->clusterDirectory . '/shared-node.sqlite';
     $cluster = new ClusterCacheConfig('scope-cluster', 'shared-node', 'memory-scope');
@@ -164,7 +189,11 @@ test('cursor progress is isolated by namespace on the same node and SQLite store
         ->and($beta->status()->cursor)->toBe('1');
 });
 
-test('cursor progress is isolated by transport identity on the same node scope', function () use ($clusterFixture): void {
+test('cursor progress is isolated by transport identity on the same node scope', function () use (&$clusterFixture): void {
+    if ($clusterFixture === null) {
+        throw new \RuntimeException('Integration fixture setup did not run.');
+    }
+
     $transportA = new InMemoryInvalidationTransport();
     $transportB = new InMemoryInvalidationTransport();
     $sqliteFile = $clusterFixture->clusterDirectory . '/shared-transport-node.sqlite';
@@ -192,7 +221,11 @@ test('cursor progress is isolated by transport identity on the same node scope',
         ->and($runtimeB->status()->cursor)->toBe('1');
 });
 
-test('legacy cursor migration clears the affected scope before establishing new progress', function () use ($clusterFixture): void {
+test('legacy cursor migration clears the affected scope before establishing new progress', function () use (&$clusterFixture): void {
+    if ($clusterFixture === null) {
+        throw new \RuntimeException('Integration fixture setup did not run.');
+    }
+
     $sqliteFile = $clusterFixture->clusterDirectory . '/legacy-cursor.sqlite';
     $node = new NodeCacheConfig($sqliteFile, 'application', apcuEnabled: false);
     $cache = \Infocyph\CacheLayer\Node\NodeCache::create($node);
@@ -225,7 +258,11 @@ test('legacy cursor migration clears the affected scope before establishing new 
         ->and($runtime->recoverIfRequired())->toBeFalse();
 });
 
-test('namespace-scoped v2 cursor migration is isolated per transport identity', function () use ($clusterFixture): void {
+test('namespace-scoped v2 cursor migration is isolated per transport identity', function () use (&$clusterFixture): void {
+    if ($clusterFixture === null) {
+        throw new \RuntimeException('Integration fixture setup did not run.');
+    }
+
     $sqliteFile = $clusterFixture->clusterDirectory . '/v2-cursor.sqlite';
     $node = new NodeCacheConfig($sqliteFile, 'application', apcuEnabled: false);
     $cache = \Infocyph\CacheLayer\Node\NodeCache::create($node);
@@ -257,7 +294,11 @@ test('namespace-scoped v2 cursor migration is isolated per transport identity', 
 });
 
 
-test('scoped cursor persists across runtime restart and reset', function () use ($clusterFixture): void {
+test('scoped cursor persists across runtime restart and reset', function () use (&$clusterFixture): void {
+    if ($clusterFixture === null) {
+        throw new \RuntimeException('Integration fixture setup did not run.');
+    }
+
     $transport = new InMemoryInvalidationTransport();
     $sqliteFile = $clusterFixture->clusterDirectory . '/restart-node.sqlite';
     $node = new NodeCacheConfig($sqliteFile, 'application', apcuEnabled: false);
@@ -291,7 +332,11 @@ test('scoped cursor persists across runtime restart and reset', function () use 
         ->and($cursor->requiresRecovery())->toBeFalse();
 });
 
-test('cluster status reports cursor position, pending events, and consume results', function () use ($clusterFixture): void {
+test('cluster status reports cursor position, pending events, and consume results', function () use (&$clusterFixture): void {
+    if ($clusterFixture === null) {
+        throw new \RuntimeException('Integration fixture setup did not run.');
+    }
+
     $clusterFixture->transport->publish(InvalidationEvent::key('test-cluster', 'application', 'first', 'writer'));
     $clusterFixture->transport->publish(InvalidationEvent::key('test-cluster', 'application', 'second', 'writer'));
 
@@ -310,7 +355,11 @@ test('cluster status reports cursor position, pending events, and consume result
         ->and($after->lastConsumeError)->toBeNull();
 });
 
-test('cluster drain consumes a bounded sequence of event batches', function () use ($clusterFixture): void {
+test('cluster drain consumes a bounded sequence of event batches', function () use (&$clusterFixture): void {
+    if ($clusterFixture === null) {
+        throw new \RuntimeException('Integration fixture setup did not run.');
+    }
+
     $clusterFixture->transport->publish(InvalidationEvent::key('test-cluster', 'application', 'first', 'writer'));
     $clusterFixture->transport->publish(InvalidationEvent::key('test-cluster', 'application', 'second', 'writer'));
     $clusterFixture->transport->publish(InvalidationEvent::key('test-cluster', 'application', 'third', 'writer'));
@@ -319,7 +368,11 @@ test('cluster drain consumes a bounded sequence of event batches', function () u
         ->and($clusterFixture->nodeB->consume())->toBe(1);
 });
 
-test('PDO transport replays events, prunes them in batches, and participates in an outbox transaction', function () use ($clusterFixture): void {
+test('PDO transport replays events, prunes them in batches, and participates in an outbox transaction', function () use (&$clusterFixture): void {
+    if ($clusterFixture === null) {
+        throw new \RuntimeException('Integration fixture setup did not run.');
+    }
+
     $connection = new \PDO('sqlite:' . $clusterFixture->clusterDirectory . '/transport.sqlite');
     $transport = new PdoInvalidationTransport($connection, allowSqliteForTesting: true);
     $first = $transport->publish(InvalidationEvent::key('pdo-cluster', 'application', 'first', 'writer'));
@@ -343,14 +396,22 @@ test('PDO transport replays events, prunes them in batches, and participates in 
     expect($transport->consumeAfter('pdo-cluster', $second, 10)->events)->toBe([]);
 });
 
-test('PDO transport refuses SQLite unless it is explicitly test-only', function () use ($clusterFixture): void {
+test('PDO transport refuses SQLite unless it is explicitly test-only', function () use (&$clusterFixture): void {
+    if ($clusterFixture === null) {
+        throw new \RuntimeException('Integration fixture setup did not run.');
+    }
+
     $connection = new \PDO('sqlite:' . $clusterFixture->clusterDirectory . '/unsafe-transport.sqlite');
 
     expect(fn () => new PdoInvalidationTransport($connection))
         ->toThrow(\Infocyph\CacheLayer\Cluster\Exception\ClusterTransportException::class);
 });
 
-test('PDO transport can use a separately bootstrapped schema without DDL on construction', function () use ($clusterFixture): void {
+test('PDO transport can use a separately bootstrapped schema without DDL on construction', function () use (&$clusterFixture): void {
+    if ($clusterFixture === null) {
+        throw new \RuntimeException('Integration fixture setup did not run.');
+    }
+
     $connection = new \PDO('sqlite:' . $clusterFixture->clusterDirectory . '/preinstalled-transport.sqlite');
     PdoInvalidationSchema::install($connection, allowSqliteForTesting: true);
     $transport = new PdoInvalidationTransport(
@@ -403,7 +464,11 @@ test('invalidation events enforce identifier and timestamp invariants', function
         ))->toThrow(ClusterCacheException::class);
 });
 
-test('cluster configuration and runtime inputs enforce transport bounds before publication', function () use ($clusterFixture): void {
+test('cluster configuration and runtime inputs enforce transport bounds before publication', function () use (&$clusterFixture): void {
+    if ($clusterFixture === null) {
+        throw new \RuntimeException('Integration fixture setup did not run.');
+    }
+
     expect(fn() => new ClusterCacheConfig(str_repeat('c', 129), 'node', 'memory'))
         ->toThrow(\Infocyph\CacheLayer\Cluster\Exception\ClusterConfigurationException::class)
         ->and(fn() => new ClusterCacheConfig('cluster', str_repeat('n', 256), 'memory'))
@@ -416,7 +481,11 @@ test('cluster configuration and runtime inputs enforce transport bounds before p
         ->toThrow(ClusterCacheException::class);
 });
 
-test('poison event escape hatch clears local data before advancing the cursor', function () use ($clusterFixture): void {
+test('poison event escape hatch clears local data before advancing the cursor', function () use (&$clusterFixture): void {
+    if ($clusterFixture === null) {
+        throw new \RuntimeException('Integration fixture setup did not run.');
+    }
+
     $clusterFixture->nodeB->cache()->set('stale', 'value');
     $eventId = $clusterFixture->transport->publish(
         InvalidationEvent::key('test-cluster', 'application', 'poison', 'writer'),
@@ -428,7 +497,11 @@ test('poison event escape hatch clears local data before advancing the cursor', 
         ->and($clusterFixture->nodeB->status()->cursor)->toBe($eventId);
 });
 
-test('transactional outbox publishes with the source transaction and applies locally after commit', function () use ($clusterFixture): void {
+test('transactional outbox publishes with the source transaction and applies locally after commit', function () use (&$clusterFixture): void {
+    if ($clusterFixture === null) {
+        throw new \RuntimeException('Integration fixture setup did not run.');
+    }
+
     $connection = new \PDO('sqlite:' . $clusterFixture->clusterDirectory . '/outbox.sqlite');
     $transport = new PdoInvalidationTransport($connection, allowSqliteForTesting: true);
     $runtime = ClusterCache::create($clusterFixture->nodeConfigA, $clusterFixture->clusterConfigA, $transport);
@@ -446,7 +519,11 @@ test('transactional outbox publishes with the source transaction and applies loc
     expect($runtime->cache()->get('product.42'))->toBeNull();
 });
 
-test('transactional outbox events replay on their origin node after a post-commit crash window', function () use ($clusterFixture): void {
+test('transactional outbox events replay on their origin node after a post-commit crash window', function () use (&$clusterFixture): void {
+    if ($clusterFixture === null) {
+        throw new \RuntimeException('Integration fixture setup did not run.');
+    }
+
     $connection = new \PDO('sqlite:' . $clusterFixture->clusterDirectory . '/outbox-replay.sqlite');
     $transport = new PdoInvalidationTransport($connection, allowSqliteForTesting: true);
     $runtime = ClusterCache::create($clusterFixture->nodeConfigA, $clusterFixture->clusterConfigA, $transport);
@@ -460,7 +537,11 @@ test('transactional outbox events replay on their origin node after a post-commi
         ->and($runtime->cache()->get('product.42'))->toBeNull();
 });
 
-test('consumer keeps its cursor when local invalidation returns false', function () use ($clusterFixture): void {
+test('consumer keeps its cursor when local invalidation returns false', function () use (&$clusterFixture): void {
+    if ($clusterFixture === null) {
+        throw new \RuntimeException('Integration fixture setup did not run.');
+    }
+
     $adapter = new RejectingClusterCacheAdapter();
     $cache = new Cache($adapter);
     $transport = new InMemoryInvalidationTransport();
@@ -489,7 +570,11 @@ test('consumer keeps its cursor when local invalidation returns false', function
         ->and(array_keys($adapter->rejectedOperations))->toBe(['deleteItem']);
 });
 
-test('recovery keeps its cursor when the required clear returns false', function () use ($clusterFixture): void {
+test('recovery keeps its cursor when the required clear returns false', function () use (&$clusterFixture): void {
+    if ($clusterFixture === null) {
+        throw new \RuntimeException('Integration fixture setup did not run.');
+    }
+
     $adapter = new RejectingClusterCacheAdapter();
     $cache = new Cache($adapter);
     $transport = new InMemoryInvalidationTransport();
@@ -513,7 +598,11 @@ test('recovery keeps its cursor when the required clear returns false', function
 });
 
 
-test('recovery clears stale local state when retained invalidation history disappears completely', function () use ($clusterFixture): void {
+test('recovery clears stale local state when retained invalidation history disappears completely', function () use (&$clusterFixture): void {
+    if ($clusterFixture === null) {
+        throw new \RuntimeException('Integration fixture setup did not run.');
+    }
+
     $clusterFixture->transport->publish(
         InvalidationEvent::key('test-cluster', 'application', 'first', 'writer'),
     );
@@ -531,7 +620,11 @@ test('recovery clears stale local state when retained invalidation history disap
         ->and($clusterFixture->nodeB->recoverIfRequired())->toBeFalse();
 });
 
-test('recovery clears and replays when a recreated transport restarts behind the stored cursor', function () use ($clusterFixture): void {
+test('recovery clears and replays when a recreated transport restarts behind the stored cursor', function () use (&$clusterFixture): void {
+    if ($clusterFixture === null) {
+        throw new \RuntimeException('Integration fixture setup did not run.');
+    }
+
     $clusterFixture->transport->publish(
         InvalidationEvent::key('test-cluster', 'application', 'one', 'writer'),
     );
@@ -561,7 +654,11 @@ test('recovery clears and replays when a recreated transport restarts behind the
 });
 
 
-test('PDO recovery clears stale local state after complete retained-history loss', function () use ($clusterFixture): void {
+test('PDO recovery clears stale local state after complete retained-history loss', function () use (&$clusterFixture): void {
+    if ($clusterFixture === null) {
+        throw new \RuntimeException('Integration fixture setup did not run.');
+    }
+
     $connection = new PDO('sqlite:' . $clusterFixture->clusterDirectory . '/history-loss.sqlite');
     $transport = new PdoInvalidationTransport($connection, allowSqliteForTesting: true);
     $node = new NodeCacheConfig(
@@ -591,7 +688,11 @@ test('PDO recovery clears stale local state after complete retained-history loss
         ->and($runtime->recoverIfRequired())->toBeFalse();
 });
 
-test('a new history identity clears local state before exposing overlapping recreated events', function () use ($clusterFixture): void {
+test('a new history identity clears local state before exposing overlapping recreated events', function () use (&$clusterFixture): void {
+    if ($clusterFixture === null) {
+        throw new \RuntimeException('Integration fixture setup did not run.');
+    }
+
     $connection = new PDO('sqlite:' . $clusterFixture->clusterDirectory . '/epoch-events.sqlite');
     $transport = new PdoInvalidationTransport($connection, allowSqliteForTesting: true);
     $node = new NodeCacheConfig($clusterFixture->clusterDirectory . '/epoch-node.sqlite', 'application', apcuEnabled: false);
@@ -621,7 +722,11 @@ test('a new history identity clears local state before exposing overlapping recr
 });
 
 
-test('a failed initial clear leaves a new history scope uninitialized for retry', function () use ($clusterFixture): void {
+test('a failed initial clear leaves a new history scope uninitialized for retry', function () use (&$clusterFixture): void {
+    if ($clusterFixture === null) {
+        throw new \RuntimeException('Integration fixture setup did not run.');
+    }
+
     $cursor = new SqliteCursorStore(
         $clusterFixture->clusterDirectory . '/uninitialized.sqlite',
         'new-history',

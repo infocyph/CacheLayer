@@ -271,7 +271,7 @@ test('runtime failures are fail-open by default and optionally propagate', funct
     $closedAdapter = new ArchitectureHardeningTest();
     $closed = new Cache($closedAdapter, options: new CacheOptions(failOpen: false));
     $closedAdapter->throwOnRead = true;
-    expect(fn() => $closed->get('key'))->toThrow(CacheBackendException::class);
+    expect(fn(): mixed => $closed->get('key'))->toThrow(CacheBackendException::class);
 });
 
 test('authentication state capabilities expose effective cache policy', function () {

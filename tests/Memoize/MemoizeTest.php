@@ -46,7 +46,7 @@ it('remember() returns Memoizer when called with no object', function () {
 it('remember() caches per-instance callables', function () {
     $obj = new stdClass;
     $counter = 0;
-    $fn = function () use (&$counter) {
+    $fn = function () use (&$counter): int {
         return ++$counter;
     };
 
@@ -61,14 +61,14 @@ it('remember() caches per-instance callables', function () {
 it('once() keeps distinct source lines independent', function () {
     $counter = 0;
 
-    $value = (function () use (&$counter) {
-        return once(function () use (&$counter) {
+    $value = (function () use (&$counter): mixed {
+        return once(function () use (&$counter): int {
             return ++$counter;
         });
     })();
 
-    $valueAgain = (function () use (&$counter) {
-        return once(function () use (&$counter) {
+    $valueAgain = (function () use (&$counter): mixed {
+        return once(function () use (&$counter): int {
             return ++$counter;
         });
     })();

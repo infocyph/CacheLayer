@@ -280,7 +280,7 @@ it('borrows an explicit runtime without global binding and restores nested task 
         \Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration::share($request, null, static function () use ($runtime, $request, $nested): void {
             expect(\Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration::runtime())->toBe($runtime)
                 ->and(\Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration::current()?->request)->toBe($request);
-            expect(fn() => \Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration::share($nested, null, static function (): void {
+            expect(fn(): mixed => \Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration::share($nested, null, static function (): void {
                 throw new RuntimeException('nested failure');
             }))->toThrow(RuntimeException::class, 'nested failure');
             expect(\Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration::current()?->request)->toBe($request);
@@ -297,15 +297,15 @@ it('keeps explicitly passed request scopes separate across overlapping Fibers', 
     $runtime = \Infocyph\Runwire\RuntimeContext::standalone();
     $one = \Infocyph\Runwire\RequestContext::create($runtime);
     $two = \Infocyph\Runwire\RequestContext::create($runtime);
-    $work = static fn($request) => \Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration::share($request, null, static function () use ($request): object {
+    $work = static fn(\Infocyph\Runwire\RequestContext $request): mixed => \Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration::share($request, null, static function () use ($request): object {
         $memoizer = \Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration::memoizer();
         Fiber::suspend($memoizer);
         expect(\Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration::current()?->request)->toBe($request);
 
         return $request;
     }, $runtime);
-    $first = new Fiber(static fn() => $work($one));
-    $second = new Fiber(static fn() => $work($two));
+    $first = new Fiber(static fn(): mixed => $work($one));
+    $second = new Fiber(static fn(): mixed => $work($two));
     try {
         $firstMemoizer = $first->start();
         $secondMemoizer = $second->start();
@@ -353,7 +353,7 @@ it('unwinds suspended nested Fibers after the host discards their binding', func
     $runtime = cacheLayerRunwireContext(concurrent: true);
     RunwireIntegration::bind($runtime);
     $request = RequestContext::create($runtime);
-    $fiber = new Fiber(static fn() => RunwireIntegration::share($request, null, static function () use ($request, $throw): void {
+    $fiber = new Fiber(static fn(): mixed => RunwireIntegration::share($request, null, static function () use ($request, $throw): void {
         RunwireIntegration::share($request, null, static function () use ($throw): void {
             Fiber::suspend();
             if ($throw) {
@@ -366,7 +366,7 @@ it('unwinds suspended nested Fibers after the host discards their binding', func
     $replacement === null ? RunwireIntegration::release() : RunwireIntegration::bind($replacement);
 
     if ($throw) {
-        expect(fn() => $fiber->resume())->toThrow(RuntimeException::class, 'callback failure');
+        expect(fn(): mixed => $fiber->resume())->toThrow(RuntimeException::class, 'callback failure');
     } else {
         $fiber->resume();
     }
@@ -382,7 +382,7 @@ it('rejects a completed request before application work executes', function (): 
     $request->complete();
     $ran = false;
 
-    expect(fn() => RunwireIntegration::share($request, null, function () use (&$ran): void {
+    expect(fn(): mixed => RunwireIntegration::share($request, null, function () use (&$ran): void {
         $ran = true;
     }, $runtime))->toThrow(LogicException::class, 'Completed request');
     expect($ran)->toBeFalse();
@@ -398,7 +398,7 @@ it('rejects cancelled or expired requests before application work executes', fun
     }
     $ran = false;
 
-    expect(fn() => RunwireIntegration::share($request, null, function () use (&$ran): void {
+    expect(fn(): mixed => RunwireIntegration::share($request, null, function () use (&$ran): void {
         $ran = true;
     }, $runtime))->toThrow(CancelledException::class);
     expect($ran)->toBeFalse();

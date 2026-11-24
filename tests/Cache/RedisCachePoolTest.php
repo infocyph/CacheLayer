@@ -105,7 +105,7 @@ test('get returns default when key missing (redis)', function () use (&$redisFix
 });
 
 test('get throws for invalid key (redis)', function () use (&$redisFixtureCache): void {
-    expect(fn () => $redisFixtureCache->get('bad key', 'v'))
+    expect(fn (): mixed => $redisFixtureCache->get('bad key', 'v'))
         ->toThrow(CacheInvalidArgumentException::class);
 });
 
@@ -573,10 +573,12 @@ test('Redis authentication failures do not expose supplied passwords in exceptio
             \Infocyph\CacheLayer\Support\RedisConnection::connect(
                 sprintf('redis://:%s@%s:%d', rawurlencode($secret), $redisHost, $redisPort),
             );
-            test()->fail('Expected Redis authentication with the synthetic secret to fail.');
         } catch (Throwable $failure) {
             expect((string) $failure)->not->toContain($secret);
+
+            return;
         }
+        \PHPUnit\Framework\Assert::fail('Expected Redis authentication with the synthetic secret to fail.');
     } finally {
         if (is_string($previousIgnoreArgs)) {
             ini_set('zend.exception_ignore_args', $previousIgnoreArgs);
@@ -589,7 +591,7 @@ test('Redis authentication failures do not expose supplied passwords in exceptio
 
 test('Redis clear and delete propagate a refused native delete operation', function (): void {
     $client = $this->createMock(Redis::class);
-    $client->method('scan')->willReturnCallback(static function (&$cursor): array {
+    $client->method('scan')->willReturnCallback(static function (mixed &$cursor): array {
         $cursor = 0;
 
         return ['refused:d:key'];

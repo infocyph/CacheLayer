@@ -69,33 +69,38 @@ function cacheLayerBackgroundWorkerContext(): array
     ];
 }
 
-$runwireFixture = new class {
-    public string $runwireWorkerDirectory = '';
+$runwireFixture = null;
 
-    public InMemoryInvalidationTransport $runwireWorkerTransport;
-
-    public NodeCacheConfig $runwireWorkerNodeConfig;
-
-    public \Infocyph\CacheLayer\Cluster\ClusterRuntime $runwireWorkerCluster;
-};
-
-beforeEach(function () use ($runwireFixture): void {
-    $runwireFixture->runwireWorkerDirectory = sys_get_temp_dir() . '/cachelayer-runwire-worker-' . uniqid();
-    $runwireFixture->runwireWorkerTransport = new InMemoryInvalidationTransport();
-    $runwireFixture->runwireWorkerNodeConfig = new NodeCacheConfig(
-        $runwireFixture->runwireWorkerDirectory . '/node.sqlite',
+beforeEach(function () use (&$runwireFixture): void {
+    $runwireWorkerDirectory = sys_get_temp_dir() . '/cachelayer-runwire-worker-' . uniqid();
+    $runwireWorkerTransport = new InMemoryInvalidationTransport();
+    $runwireWorkerNodeConfig = new NodeCacheConfig(
+        $runwireWorkerDirectory . '/node.sqlite',
         'application',
         apcuEnabled: false,
     );
-    $runwireFixture->runwireWorkerCluster = ClusterCache::create(
-        $runwireFixture->runwireWorkerNodeConfig,
+    $runwireWorkerCluster = ClusterCache::create(
+        $runwireWorkerNodeConfig,
         new ClusterCacheConfig('runwire-cluster', 'node-a', 'runwire-memory'),
-        $runwireFixture->runwireWorkerTransport,
+        $runwireWorkerTransport,
     );
     RunwireIntegration::release();
+    $runwireFixture = new class($runwireWorkerDirectory, $runwireWorkerTransport, $runwireWorkerNodeConfig, $runwireWorkerCluster) {
+        public function __construct(
+            public string $runwireWorkerDirectory,
+            public InMemoryInvalidationTransport $runwireWorkerTransport,
+            public NodeCacheConfig $runwireWorkerNodeConfig,
+            public \Infocyph\CacheLayer\Cluster\ClusterRuntime $runwireWorkerCluster,
+        ) {}
+    };
+
 });
 
-afterEach(function () use ($runwireFixture): void {
+afterEach(function () use (&$runwireFixture): void {
+    if ($runwireFixture === null) {
+        return;
+    }
+
     RunwireIntegration::release();
     if (!is_dir($runwireFixture->runwireWorkerDirectory)) {
         return;
@@ -106,12 +111,20 @@ afterEach(function () use ($runwireFixture): void {
         RecursiveIteratorIterator::CHILD_FIRST,
     );
     foreach ($files as $file) {
+        if (!$file instanceof \SplFileInfo) {
+            throw new \UnexpectedValueException('Unexpected filesystem iterator entry.');
+        }
         $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
     }
     rmdir($runwireFixture->runwireWorkerDirectory);
+    $runwireFixture = null;
 });
 
-it('polls invalidations in bounded cycles on the normal path', function () use ($runwireFixture): void {
+it('polls invalidations in bounded cycles on the normal path', function () use (&$runwireFixture): void {
+    if ($runwireFixture === null) {
+        throw new \RuntimeException('Integration fixture setup did not run.');
+    }
+
     foreach (['one', 'two', 'three'] as $key) {
         $runwireFixture->runwireWorkerTransport->publish(
             InvalidationEvent::key('runwire-cluster', 'application', $key, 'writer'),
@@ -122,7 +135,11 @@ it('polls invalidations in bounded cycles on the normal path', function () use (
         ->and($runwireFixture->runwireWorkerCluster->consume())->toBe(1);
 });
 
-it('uses the shared Runwire task scope for cooperative polling waits', function () use ($runwireFixture): void {
+it('uses the shared Runwire task scope for cooperative polling waits', function () use (&$runwireFixture): void {
+    if ($runwireFixture === null) {
+        throw new \RuntimeException('Integration fixture setup did not run.');
+    }
+
     $runtime = cacheLayerWorkerRuntimeContext();
     $request = RequestContext::create($runtime);
     $coroutines = new CoroutineRuntime();
@@ -155,7 +172,11 @@ it('uses the shared Runwire task scope for cooperative polling waits', function 
         ->and($order)->toBe(['child', 'after']);
 });
 
-it('propagates Runwire cancellation instead of replaying worker operations through fallback', function () use ($runwireFixture): void {
+it('propagates Runwire cancellation instead of replaying worker operations through fallback', function () use (&$runwireFixture): void {
+    if ($runwireFixture === null) {
+        throw new \RuntimeException('Integration fixture setup did not run.');
+    }
+
     $runtime = cacheLayerWorkerRuntimeContext();
     $request = RequestContext::create($runtime);
     $coroutines = new CoroutineRuntime();
@@ -183,7 +204,11 @@ it('propagates Runwire cancellation instead of replaying worker operations throu
 });
 
 
-it('runs bounded invalidation consumption inside the host-owned Runwire worker scope', function () use ($runwireFixture): void {
+it('runs bounded invalidation consumption inside the host-owned Runwire worker scope', function () use (&$runwireFixture): void {
+    if ($runwireFixture === null) {
+        throw new \RuntimeException('Integration fixture setup did not run.');
+    }
+
     foreach (['one', 'two', 'three'] as $key) {
         $runwireFixture->runwireWorkerTransport->publish(
             InvalidationEvent::key('runwire-cluster', 'application', $key, 'writer'),
@@ -216,7 +241,11 @@ it('runs bounded invalidation consumption inside the host-owned Runwire worker s
     fclose($readyParent);
 });
 
-it('runs bounded node maintenance inside the host-owned Runwire worker scope', function () use ($runwireFixture): void {
+it('runs bounded node maintenance inside the host-owned Runwire worker scope', function () use (&$runwireFixture): void {
+    if ($runwireFixture === null) {
+        throw new \RuntimeException('Integration fixture setup did not run.');
+    }
+
     $connection = NodeSqliteConnection::create($runwireFixture->runwireWorkerNodeConfig);
     $statement = $connection->prepare(
         'INSERT INTO cachelayer_node_entries (namespace, cache_key, payload, expires_at) VALUES (?, ?, ?, ?)',
@@ -257,7 +286,11 @@ it('runs bounded node maintenance inside the host-owned Runwire worker scope', f
     fclose($readyParent);
 });
 
-it('keeps worker automation inactive when the shared runtime lacks Runwire coroutine capabilities', function () use ($runwireFixture): void {
+it('keeps worker automation inactive when the shared runtime lacks Runwire coroutine capabilities', function () use (&$runwireFixture): void {
+    if ($runwireFixture === null) {
+        throw new \RuntimeException('Integration fixture setup did not run.');
+    }
+
     $runtime = RuntimeContext::fromCapabilities(
         new RuntimeCapabilities(driver: RuntimeDriver::NATIVE),
         'cachelayer-worker-fallback',
@@ -280,7 +313,11 @@ it('keeps worker automation inactive when the shared runtime lacks Runwire corou
 });
 
 
-it('turns an unhandled CacheLayer consumer failure into a Runwire worker stop', function () use ($runwireFixture): void {
+it('turns an unhandled CacheLayer consumer failure into a Runwire worker stop', function () use (&$runwireFixture): void {
+    if ($runwireFixture === null) {
+        throw new \RuntimeException('Integration fixture setup did not run.');
+    }
+
     $transport = new class implements InvalidationTransportInterface
     {
         #[\Override]
@@ -354,7 +391,11 @@ it('turns an unhandled CacheLayer consumer failure into a Runwire worker stop', 
     fclose($readyParent);
 });
 
-it('does not take worker or loop ownership for unsupported worker topology', function () use ($runwireFixture): void {
+it('does not take worker or loop ownership for unsupported worker topology', function () use (&$runwireFixture): void {
+    if ($runwireFixture === null) {
+        throw new \RuntimeException('Integration fixture setup did not run.');
+    }
+
     $runtime = cacheLayerWorkerRuntimeContext();
     RunwireIntegration::bind($runtime);
 

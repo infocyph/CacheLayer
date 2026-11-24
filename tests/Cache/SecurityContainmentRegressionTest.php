@@ -91,7 +91,6 @@ test('Redis DSN errors never echo credentials', function () {
 
     try {
         RedisConnection::connect($dsn);
-        test()->fail('Expected invalid Redis DSN.');
     } catch (Throwable $failure) {
         for ($current = $failure; $current instanceof Throwable; $current = $current->getPrevious()) {
             expect($current->getMessage())->not->toContain($secret)
@@ -99,11 +98,14 @@ test('Redis DSN errors never echo credentials', function () {
         }
         expect((string) $failure)->not->toContain($secret)
             ->and((string) $failure)->not->toContain($dsn);
+
+        return;
     } finally {
         if ($previous !== false) {
             ini_set('zend.exception_ignore_args', $previous);
         }
     }
+    \PHPUnit\Framework\Assert::fail('Expected invalid Redis DSN.');
 });
 
 test('secret-bearing public parameters are marked sensitive', function () {
@@ -222,7 +224,9 @@ PHP;
         ],
         $pipes,
     );
-    expect(is_resource($process))->toBeTrue();
+    if (!is_resource($process)) {
+        throw new \RuntimeException('Unable to launch codec isolation subprocess.');
+    }
     fclose($pipes[0]);
     $stdout = stream_get_contents($pipes[1]);
     $stderr = stream_get_contents($pipes[2]);
