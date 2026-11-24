@@ -34,6 +34,7 @@ final class NullCacheAdapter extends AbstractCacheAdapter
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
+
         return true;
     }
 

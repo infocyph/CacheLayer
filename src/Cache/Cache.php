@@ -797,7 +797,6 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
 
         $generations = [];
         foreach ($tags as $tag) {
-            $tag = (string) $tag;
             $generation = $stored[$tag] ?? null;
             if (!is_string($generation) || strlen($generation) !== 32 || !ctype_xdigit($generation)) {
                 return null;
@@ -815,10 +814,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
     private function fetchItems(array $keys): array
     {
         $items = $this->adapter->getItems($keys);
-        /** @var list<CacheItemInterface> $normalized */
-        $normalized = array_values(is_array($items) ? $items : iterator_to_array($items));
-
-        return $normalized;
+        return array_values(is_array($items) ? $items : iterator_to_array($items));
     }
 
     private function jitteredTtl(?int $ttl): ?int

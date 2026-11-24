@@ -60,6 +60,21 @@ trait SecuresFilesystemDirectories
         return $stored;
     }
 
+    protected function deleteFile(string $path): bool
+    {
+        if (!is_file($path)) {
+            return true;
+        }
+
+        set_error_handler(static fn(): bool => true);
+
+        try {
+            return unlink($path);
+        } finally {
+            restore_error_handler();
+        }
+    }
+
     /** @param (Closure(string): void)|null $beforeDelete */
     private function clearDirectoryFiles(string $directory, string $suffix, ?Closure $beforeDelete = null): bool
     {
@@ -81,20 +96,5 @@ trait SecuresFilesystemDirectories
         }
 
         return $ok;
-    }
-
-    protected function deleteFile(string $path): bool
-    {
-        if (!is_file($path)) {
-            return true;
-        }
-
-        set_error_handler(static fn(): bool => true);
-
-        try {
-            return unlink($path);
-        } finally {
-            restore_error_handler();
-        }
     }
 }

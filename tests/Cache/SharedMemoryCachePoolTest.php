@@ -194,3 +194,22 @@ test('shared memory atomic consume discards deferred overlays without resurrecti
 
     $cache->clear();
 });
+
+test('shared memory commits queued items before the adapter is collected', function (): void {
+    $namespace = 'shm-deferred-destruction';
+    $reader = new SharedMemoryCacheAdapter($namespace);
+    $reader->clear();
+
+    try {
+        $writer = new SharedMemoryCacheAdapter($namespace);
+        $item = $writer->createItem('pending')->set('saved-on-release');
+        expect($writer->saveDeferred($item))->toBeTrue()
+            ->and($reader->getItem('pending')->isHit())->toBeFalse();
+        unset($item, $writer);
+        gc_collect_cycles();
+
+        expect($reader->getItem('pending')->get())->toBe('saved-on-release');
+    } finally {
+        $reader->clear();
+    }
+});

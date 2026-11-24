@@ -142,13 +142,10 @@ final class Memoizer
      */
     private static function evictOldestIfFull(array &$cache): void
     {
-        if (count($cache) < self::CACHE_LIMIT) {
+        if ($cache === [] || count($cache) < self::CACHE_LIMIT) {
             return;
         }
 
-        $oldest = array_key_first($cache);
-        if ($oldest !== null) {
-            unset($cache[$oldest]);
-        }
+        unset($cache[array_key_first($cache)]);
     }
 }

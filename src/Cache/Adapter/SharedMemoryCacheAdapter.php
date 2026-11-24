@@ -41,8 +41,9 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         $this->lockHandle = $this->openLockHandle();
 
         $this->withExclusiveLock(function (): void {
-            if (!shm_has_var($this->segment, self::VAR_ID)) {
-                shm_put_var($this->segment, self::VAR_ID, [self::OWNER_KEY => $this->ownerIdentity()]);
+            if (!shm_has_var($this->segment, self::VAR_ID)
+                && !$this->store([self::OWNER_KEY => $this->ownerIdentity()])) {
+                throw new RuntimeException('Unable to initialize the shared-memory cache');
             }
             $this->loadStore();
         });
@@ -51,7 +52,9 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
     #[\Override]
     public function __destruct()
     {
-        fclose($this->lockHandle);
+        parent::__destruct();
+        $handle = $this->lockHandle;
+        fclose($handle);
         shm_detach($this->segment);
     }
 
