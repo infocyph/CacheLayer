@@ -148,6 +148,9 @@ final class RedisClusterDouble
         return true;
     }
 
+    /**
+     * @throws RuntimeException
+     */
     public function multi(int $mode): self
     {
         if ($mode !== 1) {

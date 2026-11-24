@@ -45,6 +45,7 @@ final class NodeCacheBench
     /**
      * @throws \Psr\Cache\InvalidArgumentException
      * @throws \LogicException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
      */
     #[Bench\BeforeMethods('setUpFullHit')]
     #[Bench\AfterMethods('tearDown')]
@@ -58,6 +59,7 @@ final class NodeCacheBench
     /**
      * @throws \Psr\Cache\InvalidArgumentException
      * @throws \LogicException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
      */
     #[Bench\BeforeMethods('setUpMixedHit')]
     #[Bench\AfterMethods('tearDown')]
@@ -103,6 +105,7 @@ final class NodeCacheBench
      * @throws \RuntimeException
      * @throws \Infocyph\CacheLayer\Node\Exception\NodeCacheConfigurationException
      * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \LogicException
      */
     private function createNodeCache(): array
     {

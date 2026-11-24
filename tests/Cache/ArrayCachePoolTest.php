@@ -83,7 +83,10 @@ test('deferred commit uses one bulk persistence call and retains failures', func
             return new CacheItem($this, $key);
         }
 
-        /** @return array<string, CacheItem> */
+        /**
+         * @return array<string, CacheItem>
+         * @throws CacheInvalidArgumentException
+         */
         #[\Override]
         public function multiFetch(array $keys): array
         {

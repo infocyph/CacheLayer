@@ -15,6 +15,9 @@ final class InMemoryInvalidationTransport implements InvalidationTransportInspec
 
     private int $nextId = 1;
 
+    /**
+     * @throws \Infocyph\CacheLayer\Cluster\Exception\ClusterCacheException
+     */
     #[\Override]
     public function consumeAfter(string $cluster, ?string $cursor, int $limit): InvalidationBatch
     {
@@ -61,6 +64,9 @@ final class InMemoryInvalidationTransport implements InvalidationTransportInspec
         return count($this->consumeAfter($cluster, $cursor, PHP_INT_MAX)->events);
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Cluster\Exception\ClusterCacheException
+     */
     #[\Override]
     public function publish(InvalidationEvent $event): string
     {

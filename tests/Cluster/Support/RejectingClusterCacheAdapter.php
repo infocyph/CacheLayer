@@ -43,6 +43,9 @@ final class RejectingClusterCacheAdapter extends AbstractCacheAdapter
         return $this->reject('hasItem', $key);
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     #[\Override]
     public function multiFetch(array $keys): array
     {

@@ -73,7 +73,11 @@ final class ArchitectureHardeningTest extends AbstractCacheAdapter
         return $this->getItem($key)->isHit();
     }
 
-    /** @return array<string, CacheItem> */
+    /**
+     * @return array<string, CacheItem>
+     * @throws RuntimeException
+     * @throws CacheInvalidArgumentException
+     */
     #[\Override]
     public function multiFetch(array $keys): array
     {
@@ -103,6 +107,9 @@ final class ArchitectureHardeningTest extends AbstractCacheAdapter
         return $this->saveItems([$item->getKey() => $item]);
     }
 
+    /**
+     * @throws CacheInvalidArgumentException
+     */
     #[\Override]
     public function saveItems(array $items): bool
     {
@@ -127,6 +134,9 @@ final class ArchitectureHardeningTest extends AbstractCacheAdapter
         return true;
     }
 
+    /**
+     * @throws RuntimeException
+     */
     #[\Override]
     public function getTagGenerations(array $tags): array
     {

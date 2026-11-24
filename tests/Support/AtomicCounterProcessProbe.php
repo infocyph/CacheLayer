@@ -9,6 +9,9 @@ use RuntimeException;
 
 final class AtomicCounterProcessProbe
 {
+    /**
+     * @throws RuntimeException
+     */
     public static function initializedWinners(
         string $backend,
         string $host,

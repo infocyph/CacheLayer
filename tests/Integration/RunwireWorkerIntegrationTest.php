@@ -33,6 +33,9 @@ use Infocyph\Runwire\Supervisor\Enum\ShutdownReason;
 use Infocyph\Runwire\Supervisor\Enum\WorkerRole;
 use Infocyph\Runwire\Supervisor\WorkerContext;
 
+/**
+ * @throws \InvalidArgumentException
+ */
 function cacheLayerWorkerRuntimeContext(): RuntimeContext
 {
     return RuntimeContext::fromCapabilities(
@@ -49,7 +52,11 @@ function cacheLayerWorkerRuntimeContext(): RuntimeContext
 }
 
 
-/** @return array{WorkerContext, resource} */
+/**
+ * @return array{WorkerContext, resource}
+ * @throws RuntimeException
+ * @throws \Throwable
+ */
 function cacheLayerBackgroundWorkerContext(): array
 {
     $readyPair = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
@@ -325,6 +332,9 @@ it('turns an unhandled CacheLayer consumer failure into a Runwire worker stop', 
 
     $transport = new class implements InvalidationTransportInterface
     {
+        /**
+         * @throws RuntimeException
+         */
         #[\Override]
         public function consumeAfter(string $cluster, ?string $cursor, int $limit): InvalidationBatch
         {

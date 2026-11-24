@@ -15,6 +15,9 @@ use Infocyph\Runwire\Runtime\Enum\RuntimeDriver;
 use Infocyph\Runwire\RuntimeCapabilities;
 use Infocyph\Runwire\RuntimeContext;
 
+/**
+ * @throws InvalidArgumentException
+ */
 function cacheLayerRunwireContext(bool $persistent = true, bool $concurrent = false): RuntimeContext
 {
     return RuntimeContext::fromCapabilities(

@@ -141,6 +141,9 @@ it('memoize trait caches values within object', function () {
 
         public int $count = 0;
 
+        /**
+         * @throws \RuntimeException
+         */
         public function next(): int
         {
             $value = $this->memoize(__METHOD__, fn (): int => ++$this->count);

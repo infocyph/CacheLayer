@@ -241,6 +241,10 @@ test('remember rechecks after lock timeout before resolving', function (): void 
     $provider = new class($cache) implements LockProviderInterface {
         public function __construct(private Cache $cache) {}
 
+        /**
+         * @throws CacheInvalidArgumentException
+         * @throws Infocyph\CacheLayer\Exceptions\CacheBackendException
+         */
         #[\Override]
         public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): ?LockHandle
         {

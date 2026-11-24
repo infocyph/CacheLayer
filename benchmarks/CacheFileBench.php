@@ -65,6 +65,7 @@ final class CacheFileBench
      * @throws \LogicException
      * @throws \UnexpectedValueException
      * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
+     * @throws \Psr\SimpleCache\InvalidArgumentException
      */
     #[Bench\BeforeMethods(['setUp'])]
     #[Bench\AfterMethods(['tearDown'])]
@@ -88,6 +89,7 @@ final class CacheFileBench
      * @throws \Psr\Cache\InvalidArgumentException
      * @throws \LogicException
      * @throws \UnexpectedValueException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
      */
     #[Bench\BeforeMethods(['setUp'])]
     #[Bench\AfterMethods(['tearDown'])]
@@ -113,6 +115,7 @@ final class CacheFileBench
      * @throws \Psr\Cache\InvalidArgumentException
      * @throws \LogicException
      * @throws \UnexpectedValueException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
      */
     #[Bench\BeforeMethods(['setUp'])]
     #[Bench\AfterMethods(['tearDown'])]

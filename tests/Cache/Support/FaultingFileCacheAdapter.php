@@ -44,6 +44,9 @@ final class FaultingFileCacheAdapter extends FileCacheAdapter
         return !$this->fails('saveItems') && parent::saveItems($items);
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function fails(string $operation): bool
     {
         if ($this->failure !== $operation) {

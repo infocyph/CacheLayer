@@ -53,6 +53,12 @@ function cpuMicros(array $start, array $end): int
         + usageValue($end, 'ru_stime.tv_usec') - usageValue($start, 'ru_stime.tv_usec');
 }
 
+/**
+ * @throws Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+ * @throws Infocyph\CacheLayer\Exceptions\CacheBackendException
+ * @throws RuntimeException
+ * @throws Psr\Cache\InvalidArgumentException
+ */
 function runCacheOperation(Cache $cache, int $index): void
 {
     $tenant = $index % 32;
@@ -102,6 +108,10 @@ function metricTotal(array $metrics, string $metric): int
     return $total;
 }
 
+/**
+ * @throws InvalidArgumentException
+ * @throws LogicException
+ */
 function executeCacheRequest(
     RuntimeContext $runtime,
     Cache $cache,
@@ -128,7 +138,11 @@ function executeCacheRequest(
     }
 }
 
-/** @return array<string, int|float> */
+/**
+ * @return array<string, int|float>
+ * @throws Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+ * @throws RuntimeException
+ */
 function workload(RuntimeContext $runtime, bool $integrated): array
 {
     $cache = Cache::memory($integrated ? 'runwire-on' : 'runwire-off');
@@ -189,7 +203,17 @@ function workload(RuntimeContext $runtime, bool $integrated): array
     ];
 }
 
-/** @return array<string, int|float> */
+/**
+ * @return array<string, int|float>
+ * @throws Infocyph\CacheLayer\Node\Exception\NodeCacheConfigurationException
+ * @throws Infocyph\CacheLayer\Cluster\Exception\ClusterTransportException
+ * @throws Infocyph\CacheLayer\Cluster\Exception\ClusterConfigurationException
+ * @throws RuntimeException
+ * @throws Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+ * @throws Infocyph\CacheLayer\Cluster\Exception\ClusterCacheException
+ * @throws Throwable
+ * @throws Infocyph\CacheLayer\Node\Exception\NodeCacheStorageException
+ */
 function invalidationAndMaintenance(): array
 {
     $base = sys_get_temp_dir() . '/cachelayer-runwire-cert-' . bin2hex(random_bytes(6));

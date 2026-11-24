@@ -85,6 +85,9 @@ test('node preserves the mutation failure when L1 cleanup also throws', function
             return parent::save($item);
         }
 
+        /**
+         * @throws RuntimeException
+         */
         #[\Override]
         public function clear(): bool
         {
@@ -130,6 +133,9 @@ test('node fences L1 when copying a committed value into L1 throws', function (b
     $l1 = new class('node.copy', $nodeFixtureDirectory . '/l1') extends \Infocyph\CacheLayer\Cache\Adapter\FileCacheAdapter {
         public bool $fault = false;
 
+        /**
+         * @throws RuntimeException
+         */
         #[\Override]
         public function createItem(string $key): CacheItemInterface
         {
@@ -155,6 +161,9 @@ test('node fences L1 when a tag metadata mutation throws', function (string $ope
     $l1 = new class('node.tags.' . uniqid()) extends ApcuCacheAdapter {
         public ?string $failure = null;
 
+        /**
+         * @throws RuntimeException
+         */
         #[\Override]
         public function rotateTagGenerations(array $tags): bool
         {
@@ -165,6 +174,9 @@ test('node fences L1 when a tag metadata mutation throws', function (string $ope
             return parent::rotateTagGenerations($tags);
         }
 
+        /**
+         * @throws RuntimeException
+         */
         #[\Override]
         public function storeTagGenerations(array $generations): bool
         {
@@ -409,6 +421,9 @@ test('node disables a failed L1 before it can serve stale data', function () use
             return array_key_exists($key, $this->values);
         }
 
+        /**
+         * @throws \Psr\Cache\InvalidArgumentException
+         */
         #[\Override]
         public function multiFetch(array $keys): array
         {

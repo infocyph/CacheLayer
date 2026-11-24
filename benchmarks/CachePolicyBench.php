@@ -103,6 +103,8 @@ final class CachePolicyBench
      * @throws \Psr\Cache\InvalidArgumentException
      * @throws \UnexpectedValueException
      * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
+     * @throws \LogicException
+     * @throws \Psr\SimpleCache\InvalidArgumentException
      */
     public function benchRememberContendedTimeout(): int
     {
@@ -164,6 +166,7 @@ final class CachePolicyBench
      * @throws \Psr\Cache\InvalidArgumentException
      * @throws \UnexpectedValueException
      * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
+     * @throws \Psr\SimpleCache\InvalidArgumentException
      */
     public function benchRememberMiss(): int
     {
@@ -182,6 +185,7 @@ final class CachePolicyBench
      * @throws \Psr\SimpleCache\InvalidArgumentException
      * @throws \Psr\Cache\InvalidArgumentException
      * @throws \UnexpectedValueException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
      */
     public function benchTaggedGet(): int
     {
@@ -199,6 +203,7 @@ final class CachePolicyBench
     /**
      * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      * @throws \Psr\SimpleCache\InvalidArgumentException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
      */
     public function benchTaggedSet(): int
     {
