@@ -19,99 +19,105 @@ if (! in_array('sqlite', PDO::getAvailableDrivers(), true)) {
 }
 
 /* ── bootstrap / teardown ────────────────────────────────────────── */
-beforeEach(function () {
-    $this->dbFile = sys_get_temp_dir().'/pest_sqlite_'.uniqid().'.sqlite';
-    $this->cache = Cache::sqlite('tests', $this->dbFile, new CacheOptions(allowClosures: true));
+$sqliteFixtureDbFile = '';
+$sqliteFixtureCache = Cache::nullStore();
+
+beforeEach(function () use (&$sqliteFixtureDbFile, &$sqliteFixtureCache): void {
+    $sqliteFixtureDbFile = sys_get_temp_dir().'/pest_sqlite_'.uniqid().'.sqlite';
+    $sqliteFixtureCache = Cache::sqlite('tests', $sqliteFixtureDbFile, new CacheOptions(allowClosures: true));
 });
 
-afterEach(function () {
+afterEach(function () use (&$sqliteFixtureDbFile, &$sqliteFixtureCache): void {
     // Release SQLite handles before unlink on Windows.
-    $this->cache = null;
+    $sqliteFixtureCache = Cache::nullStore();
     gc_collect_cycles();
-    if (is_file($this->dbFile)) {
-        unlink($this->dbFile);
+    if (is_file($sqliteFixtureDbFile)) {
+        unlink($sqliteFixtureDbFile);
     }
 });
 
 /* ── 1. convenience set / get ───────────────────────────────────── */
-test('sqlite set()/get()', function () {
-    expect($this->cache->get('none'))->toBeNull()
-        ->and($this->cache->set('foo', 'bar'))->toBeTrue()
-        ->and($this->cache->get('foo'))->toBe('bar');
+test('sqlite set()/get()', function () use (&$sqliteFixtureCache): void {
+    expect($sqliteFixtureCache->get('none'))->toBeNull()
+        ->and($sqliteFixtureCache->set('foo', 'bar'))->toBeTrue()
+        ->and($sqliteFixtureCache->get('foo'))->toBe('bar');
 });
 
 /* ─── PSR-16 get($key, $default) ───────────────────────────────── */
-test('get returns default when key missing (sqlite)', function () {
-    expect($this->cache->get('none', 'dflt'))->toBe('dflt');
+test('get returns default when key missing (sqlite)', function () use (&$sqliteFixtureCache): void {
+    expect($sqliteFixtureCache->get('none', 'dflt'))->toBe('dflt');
 
     $default = static fn(): string => 'val';
-    expect($this->cache->get('compute', $default))->toBe($default)
-        ->and($this->cache->has('compute'))->toBeFalse();
+    expect($sqliteFixtureCache->get('compute', $default))->toBe($default)
+        ->and($sqliteFixtureCache->has('compute'))->toBeFalse();
 });
 
-test('get throws for invalid key (sqlite)', function () {
-    expect(fn () => $this->cache->get('bad key', 'v'))
+test('get throws for invalid key (sqlite)', function () use (&$sqliteFixtureCache): void {
+    expect(fn () => $sqliteFixtureCache->get('bad key', 'v'))
         ->toThrow(CacheInvalidArgumentException::class);
 });
 
 /* ── 2. PSR-6 behaviour ─────────────────────────────────────────── */
-test('getItem()/save() (sqlite)', function () {
-    $item = $this->cache->getItem('psr');
+test('getItem()/save() (sqlite)', function () use (&$sqliteFixtureCache): void {
+    $item = $sqliteFixtureCache->getItem('psr');
+    assert($item instanceof CacheItem);
     expect($item)->toBeInstanceOf(CacheItem::class)
         ->and($item->isHit())->toBeFalse();
 
     $item->set(42)->save();
-    expect($this->cache->getItem('psr')->get())->toBe(42);
+    expect($sqliteFixtureCache->getItem('psr')->get())->toBe(42);
 });
 
 /* ── 3. deferred queue ──────────────────────────────────────────── */
-test('saveDeferred() & commit() (sqlite)', function () {
-    $this->cache->getItem('a')->set('A')->saveDeferred();
-    expect($this->cache->get('a'))->toBe('A');
+test('saveDeferred() & commit() (sqlite)', function () use (&$sqliteFixtureCache): void {
+    \Infocyph\CacheLayer\Tests\Support\CacheFixture::item($sqliteFixtureCache, 'a')->set('A')->saveDeferred();
+    expect($sqliteFixtureCache->get('a'))->toBe('A');
 
-    $this->cache->commit();
-    expect($this->cache->get('a'))->toBe('A');
+    $sqliteFixtureCache->commit();
+    expect($sqliteFixtureCache->get('a'))->toBe('A');
 });
 
 /* ── 4. ArrayAccess ─────────────────────────────────────────────── */
-test('ArrayAccess (sqlite)', function () {
-    $this->cache['x'] = 5;
-    expect($this->cache['x'])->toBe(5)
-        ->and(method_exists($this->cache, '__get'))->toBeFalse();
+test('ArrayAccess (sqlite)', function () use (&$sqliteFixtureCache): void {
+    $sqliteFixtureCache['x'] = 5;
+    expect($sqliteFixtureCache['x'])->toBe(5)
+        ->and(method_exists($sqliteFixtureCache, '__get'))->toBeFalse();
 });
 
 /* ── 6. TTL expiration ─────────────────────────────────────────── */
-test('expiration honours TTL (sqlite)', function () {
-    $this->cache->getItem('ttl')->set('x')->expiresAfter(1)->save();
+test('expiration honours TTL (sqlite)', function () use (&$sqliteFixtureCache): void {
+    \Infocyph\CacheLayer\Tests\Support\CacheFixture::item($sqliteFixtureCache, 'ttl')->set('x')->expiresAfter(1)->save();
     usleep(2_000_000);
-    expect($this->cache->hasItem('ttl'))->toBeFalse();
+    expect($sqliteFixtureCache->hasItem('ttl'))->toBeFalse();
 });
 
 /* ── 7. closure round-trip ──────────────────────────────────────── */
-test('closure survives sqlite', function () {
-    $fn = fn ($n) => $n + 3;
-    $this->cache->getItem('cb')->set($fn)->save();
-    expect(($this->cache->getItem('cb')->get())(4))->toBe(7);
+test('closure survives sqlite', function () use (&$sqliteFixtureCache): void {
+    $fn = fn (int $n): int => $n + 3;
+    \Infocyph\CacheLayer\Tests\Support\CacheFixture::item($sqliteFixtureCache, 'cb')->set($fn)->save();
+    $restored = $sqliteFixtureCache->getItem('cb')->get();
+    assert($restored instanceof Closure);
+    expect($restored(4))->toBe(7);
 });
 
 /* ── 9. invalid key guard ───────────────────────────────────────── */
-test('invalid key throws (sqlite)', function () {
-    expect(fn () => $this->cache->set('bad key', 'v'))
+test('invalid key throws (sqlite)', function () use (&$sqliteFixtureCache): void {
+    expect(fn () => $sqliteFixtureCache->set('bad key', 'v'))
         ->toThrow(InvalidArgumentException::class);
 });
 
 /* ── 10. clear wipes all entries ───────────────────────────────── */
-test('clear() flushes table (sqlite)', function () {
-    $this->cache->set('z', 9);
-    $this->cache->clear();
-    expect($this->cache->hasItem('z'))->toBeFalse();
+test('clear() flushes table (sqlite)', function () use (&$sqliteFixtureCache): void {
+    $sqliteFixtureCache->set('z', 9);
+    $sqliteFixtureCache->clear();
+    expect($sqliteFixtureCache->hasItem('z'))->toBeFalse();
 });
 
-test('SQLite adapter multiFetch()', function () {
-    $this->cache->set('s1', 'A');
-    $this->cache->set('s2', 'B');
+test('SQLite adapter multiFetch()', function () use (&$sqliteFixtureCache): void {
+    $sqliteFixtureCache->set('s1', 'A');
+    $sqliteFixtureCache->set('s2', 'B');
 
-    $items = $this->cache->getItems(['s1', 's2', 'void']);
+    $items = iterator_to_array($sqliteFixtureCache->getItems(['s1', 's2', 'void']));
 
     expect($items['s1']->get())->toBe('A')
         ->and($items['s2']->get())->toBe('B')

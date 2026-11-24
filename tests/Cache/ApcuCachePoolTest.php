@@ -24,96 +24,100 @@ if (! apcu_enabled()) {
 }
 
 /* ── boilerplate ──────────────────────────────────────────────────── */
-beforeEach(function () {
+$apcuFixtureCache = Cache::nullStore();
+
+beforeEach(function () use (&$apcuFixtureCache): void {
     apcu_clear_cache();                           // fresh memory
-    $this->cache = Cache::apcu('tests', new CacheOptions(allowClosures: true));          // APCu-backed pool
+    $apcuFixtureCache = Cache::apcu('tests', new CacheOptions(allowClosures: true));          // APCu-backed pool
 });
 
-afterEach(function () {
+afterEach(function (): void {
     apcu_clear_cache();
 });
 
 /* ─── convenience get()/set() ─────────────────────────────────────── */
-test('convenience set() and get() (apcu)', function () {
-    expect($this->cache->get('nope'))->toBeNull()
-        ->and($this->cache->set('foo', 'bar', 60))->toBeTrue()
-        ->and($this->cache->get('foo'))->toBe('bar');
+test('convenience set() and get() (apcu)', function () use (&$apcuFixtureCache): void {
+    expect($apcuFixtureCache->get('nope'))->toBeNull()
+        ->and($apcuFixtureCache->set('foo', 'bar', 60))->toBeTrue()
+        ->and($apcuFixtureCache->get('foo'))->toBe('bar');
 });
 
 /* ─── PSR-16 get($key, $default) ─────────────────────────────────── */
-test('get returns default when key missing (apcu)', function () {
+test('get returns default when key missing (apcu)', function () use (&$apcuFixtureCache): void {
     // Scalar default
-    expect($this->cache->get('missing', 'default'))->toBe('default');
+    expect($apcuFixtureCache->get('missing', 'default'))->toBe('default');
 
     $default = static fn(): string => 'computed';
-    expect($this->cache->get('dyn', $default))->toBe($default)
-        ->and($this->cache->has('dyn'))->toBeFalse();
+    expect($apcuFixtureCache->get('dyn', $default))->toBe($default)
+        ->and($apcuFixtureCache->has('dyn'))->toBeFalse();
 });
 
-test('get throws for invalid key (apcu)', function () {
-    expect(fn () => $this->cache->get('bad key', 'x'))
+test('get throws for invalid key (apcu)', function () use (&$apcuFixtureCache): void {
+    expect(fn () => $apcuFixtureCache->get('bad key', 'x'))
         ->toThrow(CacheInvalidArgumentException::class);
 });
 
 /* ─── PSR-6 behaviour ─────────────────────────────────────────────── */
-test('PSR-6 getItem()/save() (apcu)', function () {
-    $item = $this->cache->getItem('psr');
+test('PSR-6 getItem()/save() (apcu)', function () use (&$apcuFixtureCache): void {
+    $item = $apcuFixtureCache->getItem('psr');
+    assert($item instanceof CacheItem);
     expect($item)->toBeInstanceOf(CacheItem::class)
         ->and($item->isHit())->toBeFalse();
 
     $item->set(99)->expiresAfter(null)->save();
-    expect($this->cache->getItem('psr')->get())->toBe(99);
+    expect($apcuFixtureCache->getItem('psr')->get())->toBe(99);
 });
 
 /* ─── deferred queue ──────────────────────────────────────────────── */
-test('saveDeferred() and commit() (apcu)', function () {
-    $this->cache->getItem('x')->set('X')->saveDeferred();
-    expect($this->cache->get('x'))->toBe('X');
+test('saveDeferred() and commit() (apcu)', function () use (&$apcuFixtureCache): void {
+    \Infocyph\CacheLayer\Tests\Support\CacheFixture::item($apcuFixtureCache, 'x')->set('X')->saveDeferred();
+    expect($apcuFixtureCache->get('x'))->toBe('X');
 
-    $this->cache->commit();
-    expect($this->cache->get('x'))->toBe('X');
+    $apcuFixtureCache->commit();
+    expect($apcuFixtureCache->get('x'))->toBe('X');
 });
 
 /* ─── ArrayAccess ─────────────────────────────────────────────────── */
-test('ArrayAccess (apcu)', function () {
-    $this->cache['k'] = 11;
-    expect($this->cache['k'])->toBe(11)
-        ->and(method_exists($this->cache, '__get'))->toBeFalse();
+test('ArrayAccess (apcu)', function () use (&$apcuFixtureCache): void {
+    $apcuFixtureCache['k'] = 11;
+    expect($apcuFixtureCache['k'])->toBe(11)
+        ->and(method_exists($apcuFixtureCache, '__get'))->toBeFalse();
 });
 
 /* ─── TTL / expiration ───────────────────────────────────────────── */
-test('expiration honours TTL (apcu)', function () {
-    $this->cache->getItem('ttl')->set('live')->expiresAfter(1)->save();
+test('expiration honours TTL (apcu)', function () use (&$apcuFixtureCache): void {
+    \Infocyph\CacheLayer\Tests\Support\CacheFixture::item($apcuFixtureCache, 'ttl')->set('live')->expiresAfter(1)->save();
     usleep(2_000_000);
-    expect($this->cache->hasItem('ttl'))->toBeFalse();
+    expect($apcuFixtureCache->hasItem('ttl'))->toBeFalse();
 });
 
 /* ─── closure round-trip ──────────────────────────────────────────── */
-test('closure value survives APCu', function () {
-    $fn = fn ($n) => $n + 5;
-    $this->cache->getItem('cb')->set($fn)->save();
-    $g = $this->cache->getItem('cb')->get();
+test('closure value survives APCu', function () use (&$apcuFixtureCache): void {
+    $fn = fn (int $n): int => $n + 5;
+    \Infocyph\CacheLayer\Tests\Support\CacheFixture::item($apcuFixtureCache, 'cb')->set($fn)->save();
+    $g = $apcuFixtureCache->getItem('cb')->get();
+    assert($g instanceof Closure);
     expect($g(10))->toBe(15);
 });
 
 /* ─── invalid key triggers exception ─────────────────────────────── */
-test('invalid key throws (apcu)', function () {
-    expect(fn () => $this->cache->set('bad key', 'v'))
+test('invalid key throws (apcu)', function () use (&$apcuFixtureCache): void {
+    expect(fn () => $apcuFixtureCache->set('bad key', 'v'))
         ->toThrow(InvalidArgumentException::class);
 });
 
 /* ─── clear() empties cache ───────────────────────────────────────── */
-test('clear() wipes all entries (apcu)', function () {
-    $this->cache->set('q', '1');
-    $this->cache->clear();
-    expect($this->cache->hasItem('q'))->toBeFalse();
+test('clear() wipes all entries (apcu)', function () use (&$apcuFixtureCache): void {
+    $apcuFixtureCache->set('q', '1');
+    $apcuFixtureCache->clear();
+    expect($apcuFixtureCache->hasItem('q'))->toBeFalse();
 });
 
-test('APCu adapter multiFetch()', function () {
-    $this->cache->set('x', 'X');
-    $this->cache->set('y', 'Y');
+test('APCu adapter multiFetch()', function () use (&$apcuFixtureCache): void {
+    $apcuFixtureCache->set('x', 'X');
+    $apcuFixtureCache->set('y', 'Y');
 
-    $items = $this->cache->getItems(['x', 'y', 'z']);
+    $items = iterator_to_array($apcuFixtureCache->getItems(['x', 'y', 'z']));
 
     expect($items['x']->isHit())->toBeTrue()
         ->and($items['x']->get())->toBe('X')

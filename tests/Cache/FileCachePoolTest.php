@@ -9,136 +9,141 @@ use Infocyph\CacheLayer\Cache\CacheOptions;
 use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 
-beforeEach(function () {
+$fileFixtureCacheDir = '';
+$fileFixtureCache = Cache::nullStore();
+
+beforeEach(function () use (&$fileFixtureCacheDir, &$fileFixtureCache): void {
     /* fresh temp directory for each run */
-    $this->cacheDir = sys_get_temp_dir().'/pest_cache_'.uniqid();
+    $fileFixtureCacheDir = sys_get_temp_dir().'/pest_cache_'.uniqid();
 
     /* build a file-backed cachepool via static factory */
-    $this->cache = Cache::file('tests', $this->cacheDir, new CacheOptions(allowClosures: true));
+    $fileFixtureCache = Cache::file('tests', $fileFixtureCacheDir, new CacheOptions(allowClosures: true));
 });
 
-afterEach(function () {
+afterEach(function () use (&$fileFixtureCacheDir): void {
     /* recursive dir cleanup */
-    if (! is_dir($this->cacheDir)) {
+    if (! is_dir($fileFixtureCacheDir)) {
         return;
     }
 
-    $it = new RecursiveDirectoryIterator($this->cacheDir, FilesystemIterator::SKIP_DOTS);
+    $it = new RecursiveDirectoryIterator($fileFixtureCacheDir, FilesystemIterator::SKIP_DOTS);
     $rim = new RecursiveIteratorIterator($it, RecursiveIteratorIterator::CHILD_FIRST);
 
     foreach ($rim as $file) {
         $file->isDir() ? rmdir($file->getRealPath()) : unlink($file->getRealPath());
     }
-    rmdir($this->cacheDir);
+    rmdir($fileFixtureCacheDir);
 });
 
 /* ───────────────────────────────────────────────────────────── */
 
 /* ─── convenience set()/get() ─────────────────────────────────── */
-test('convenience set() and get()', function () {
-    expect($this->cache->get('nope'))->toBeNull()
-        ->and($this->cache->set('foo', 'bar', 60))->toBeTrue()
-        ->and($this->cache->get('foo'))->toBe('bar');
+test('convenience set() and get()', function () use (&$fileFixtureCache): void {
+    expect($fileFixtureCache->get('nope'))->toBeNull()
+        ->and($fileFixtureCache->set('foo', 'bar', 60))->toBeTrue()
+        ->and($fileFixtureCache->get('foo'))->toBe('bar');
 });
 
 /* ─── PSR-16 get($key, $default) ───────────────────────────────── */
-test('get returns default when key missing (file)', function () {
+test('get returns default when key missing (file)', function () use (&$fileFixtureCache): void {
     // Scalar default
-    expect($this->cache->get('missing', 'def'))->toBe('def');
+    expect($fileFixtureCache->get('missing', 'def'))->toBe('def');
 
     $default = static fn(): string => 'xyz';
-    expect($this->cache->get('x', $default))->toBe($default)
-        ->and($this->cache->has('x'))->toBeFalse();
+    expect($fileFixtureCache->get('x', $default))->toBe($default)
+        ->and($fileFixtureCache->has('x'))->toBeFalse();
 });
 
-test('get throws for invalid key (file)', function () {
-    expect(fn () => $this->cache->get('bad key', 'v'))
+test('get throws for invalid key (file)', function () use (&$fileFixtureCache): void {
+    expect(fn () => $fileFixtureCache->get('bad key', 'v'))
         ->toThrow(CacheInvalidArgumentException::class);
 });
 
 /* ─── PSR-6 getItem()/save() ───────────────────────────────────── */
-test('PSR-6 getItem()/save()', function () {
-    $item = $this->cache->getItem('psr');
+test('PSR-6 getItem()/save()', function () use (&$fileFixtureCache): void {
+    $item = $fileFixtureCache->getItem('psr');
+    assert($item instanceof CacheItem);
 
     expect($item)->toBeInstanceOf(CacheItem::class)
         ->and($item->isHit())->toBeFalse();
 
     $item->set(123)->expiresAfter(null)->save();
 
-    $fetched = $this->cache->getItem('psr');
+    $fetched = $fileFixtureCache->getItem('psr');
     expect($fetched->isHit())->toBeTrue()
         ->and($fetched->get())->toBe(123);
 });
 
-test('saveDeferred() and commit()', function () {
-    expect($this->cache->get('a'))->toBeNull();
+test('saveDeferred() and commit()', function () use (&$fileFixtureCache): void {
+    expect($fileFixtureCache->get('a'))->toBeNull();
 
-    $this->cache->getItem('a')->set('A')->saveDeferred();
-    $this->cache->getItem('b')->set('B')->saveDeferred();
+    \Infocyph\CacheLayer\Tests\Support\CacheFixture::item($fileFixtureCache, 'a')->set('A')->saveDeferred();
+    \Infocyph\CacheLayer\Tests\Support\CacheFixture::item($fileFixtureCache, 'b')->set('B')->saveDeferred();
 
-    expect($this->cache->get('a'))->toBe('A');
+    expect($fileFixtureCache->get('a'))->toBe('A');
 
-    $this->cache->commit();
+    $fileFixtureCache->commit();
 
-    expect($this->cache->get('a'))->toBe('A')
-        ->and($this->cache->get('b'))->toBe('B');
+    expect($fileFixtureCache->get('a'))->toBe('A')
+        ->and($fileFixtureCache->get('b'))->toBe('B');
 });
 
-test('ArrayAccess support', function () {
-    $this->cache['x'] = 10;
+test('ArrayAccess support', function () use (&$fileFixtureCache): void {
+    $fileFixtureCache['x'] = 10;
 
-    expect(isset($this->cache['x']))->toBeTrue()
-        ->and($this->cache['x'])->toBe(10);
+    expect(isset($fileFixtureCache['x']))->toBeTrue()
+        ->and($fileFixtureCache['x'])->toBe(10);
 
-    unset($this->cache['x']);
-    expect(isset($this->cache['x']))->toBeFalse();
+    unset($fileFixtureCache['x']);
+    expect(isset($fileFixtureCache['x']))->toBeFalse();
 });
 
-test('runtime storage configuration is immutable', function () {
-    expect(method_exists($this->cache, '__get'))->toBeFalse()
-        ->and(method_exists($this->cache, 'setNamespaceAndDirectory'))->toBeFalse();
+test('runtime storage configuration is immutable', function () use (&$fileFixtureCache): void {
+    expect(method_exists($fileFixtureCache, '__get'))->toBeFalse()
+        ->and(method_exists($fileFixtureCache, 'setNamespaceAndDirectory'))->toBeFalse();
 });
 
-test('expiration honours TTL', function () {
-    $this->cache->getItem('ttl')->set('x')->expiresAfter(1)->save();
+test('expiration honours TTL', function () use (&$fileFixtureCache): void {
+    \Infocyph\CacheLayer\Tests\Support\CacheFixture::item($fileFixtureCache, 'ttl')->set('x')->expiresAfter(1)->save();
     usleep(2_000_000);
-    expect($this->cache->getItem('ttl')->isHit())->toBeFalse();
+    expect($fileFixtureCache->getItem('ttl')->isHit())->toBeFalse();
 });
 
-test('closure round-trips via ClosureSerializer', function () {
-    $double = fn (int $n) => $n * 2;
-    $this->cache->getItem('cb')->set($double)->save();
-    $restored = $this->cache->getItem('cb')->get();
+test('closure round-trips via ClosureSerializer', function () use (&$fileFixtureCache): void {
+    $double = fn (int $n): int => $n * 2;
+    \Infocyph\CacheLayer\Tests\Support\CacheFixture::item($fileFixtureCache, 'cb')->set($double)->save();
+    $restored = $fileFixtureCache->getItem('cb')->get();
+    assert($restored instanceof Closure);
     expect($restored(7))->toBe(14);
 });
 
-test('invalid cache key throws', function () {
-    expect(fn () => $this->cache->set('space key', 'v'))
+test('invalid cache key throws', function () use (&$fileFixtureCache): void {
+    expect(fn () => $fileFixtureCache->set('space key', 'v'))
         ->toThrow(InvalidArgumentException::class);
 });
 
-test('persistence across pool instances', function () {
-    $this->cache->set('persist', 'yes');
+test('persistence across pool instances', function () use (&$fileFixtureCacheDir, &$fileFixtureCache): void {
+    $fileFixtureCache->set('persist', 'yes');
 
-    $again = Cache::file('tests', $this->cacheDir); // new instance
+    $again = Cache::file('tests', $fileFixtureCacheDir); // new instance
     expect($again->get('persist'))->toBe('yes');
 });
 
-test('clear() removes everything', function () {
-    $this->cache->set('a', 1);
-    $this->cache->set('b', 2);
+test('clear() removes everything', function () use (&$fileFixtureCache): void {
+    $fileFixtureCache->set('a', 1);
+    $fileFixtureCache->set('b', 2);
 
-    $this->cache->clear();
+    $fileFixtureCache->clear();
 
-    expect($this->cache->hasItem('a'))->toBeFalse()
-        ->and($this->cache->hasItem('b'))->toBeFalse();
+    expect($fileFixtureCache->hasItem('a'))->toBeFalse()
+        ->and($fileFixtureCache->hasItem('b'))->toBeFalse();
 });
 
-test('file adapter bulk getItems()', function () {
-    $this->cache->set('a', 1);
-    $this->cache->set('b', 2);
+test('file adapter bulk getItems()', function () use (&$fileFixtureCache): void {
+    $fileFixtureCache->set('a', 1);
+    $fileFixtureCache->set('b', 2);
 
-    $items = $this->cache->getItems(['a', 'b', 'c']);
+    $items = iterator_to_array($fileFixtureCache->getItems(['a', 'b', 'c']));
 
     expect($items['a']->isHit())->toBeTrue()
         ->and($items['a']->get())->toBe(1)
@@ -146,9 +151,9 @@ test('file adapter bulk getItems()', function () {
         ->and($items['c']->isHit())->toBeFalse();
 });
 
-test('clear uses the literal cache directory and preserves neighboring stores', function () {
-    $literal = Cache::file('clear', $this->cacheDir . '/[store]');
-    $neighbor = Cache::file('clear', $this->cacheDir . '/s');
+test('clear uses the literal cache directory and preserves neighboring stores', function () use (&$fileFixtureCacheDir): void {
+    $literal = Cache::file('clear', $fileFixtureCacheDir . '/[store]');
+    $neighbor = Cache::file('clear', $fileFixtureCacheDir . '/s');
     expect($literal->set('key', 'literal'))->toBeTrue()
         ->and($literal->setTagged('tagged', 'literal', ['tag']))->toBeTrue()
         ->and($neighbor->set('key', 'neighbor'))->toBeTrue()

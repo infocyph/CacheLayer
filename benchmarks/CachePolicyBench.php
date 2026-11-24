@@ -63,6 +63,7 @@ final class CachePolicyBench
     public function benchRememberContendedTimeout(): int
     {
         $lock = new class implements LockProviderInterface {
+            #[\Override]
             public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): ?LockHandle
             {
                 unset($key, $waitSeconds, $leaseSeconds);
@@ -70,6 +71,7 @@ final class CachePolicyBench
                 return null;
             }
 
+            #[\Override]
             public function refresh(?LockHandle $handle, float $leaseSeconds): bool
             {
                 unset($handle, $leaseSeconds);
@@ -77,6 +79,7 @@ final class CachePolicyBench
                 return false;
             }
 
+            #[\Override]
             public function release(?LockHandle $handle): void
             {
                 unset($handle);

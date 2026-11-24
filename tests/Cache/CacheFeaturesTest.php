@@ -180,6 +180,7 @@ test('remember uses configured lock provider', function () {
     $provider = new class ($calls) implements LockProviderInterface {
         public function __construct(private array &$calls) {}
 
+        #[\Override]
         public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): ?LockHandle
         {
             if ($waitSeconds < 0 || $leaseSeconds <= 0) {
@@ -190,11 +191,13 @@ test('remember uses configured lock provider', function () {
             return new LockHandle($key, 'tkn', leaseSeconds: $leaseSeconds);
         }
 
+        #[\Override]
         public function refresh(?LockHandle $handle, float $leaseSeconds): bool
         {
             return $handle instanceof LockHandle && $leaseSeconds > 0;
         }
 
+        #[\Override]
         public function release(?LockHandle $handle): void
         {
             if (!$handle instanceof LockHandle) {
@@ -227,6 +230,7 @@ test('remember rechecks after lock timeout before resolving', function () {
     $provider = new class($cache) implements LockProviderInterface {
         public function __construct(private Cache $cache) {}
 
+        #[\Override]
         public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): ?LockHandle
         {
             expect($key)->not->toBeEmpty()
@@ -237,6 +241,7 @@ test('remember rechecks after lock timeout before resolving', function () {
             return null;
         }
 
+        #[\Override]
         public function refresh(?LockHandle $handle, float $leaseSeconds): bool
         {
             expect($handle)->toBeInstanceOf(LockHandle::class)
@@ -245,6 +250,7 @@ test('remember rechecks after lock timeout before resolving', function () {
             return false;
         }
 
+        #[\Override]
         public function release(?LockHandle $handle): void {}
     };
     $runs = 0;
@@ -261,6 +267,7 @@ test('remember rechecks after lock timeout before resolving', function () {
 test('remember never stores after lock ownership is lost', function () {
     $cache = Cache::memory('lost-lock');
     $provider = new class implements LockProviderInterface {
+        #[\Override]
         public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): ?LockHandle
         {
             expect($waitSeconds)->toBeGreaterThanOrEqual(0);
@@ -268,6 +275,7 @@ test('remember never stores after lock ownership is lost', function () {
             return new LockHandle($key, 'owner', leaseSeconds: $leaseSeconds);
         }
 
+        #[\Override]
         public function refresh(?LockHandle $handle, float $leaseSeconds): bool
         {
             expect($handle)->toBeInstanceOf(LockHandle::class)
@@ -276,6 +284,7 @@ test('remember never stores after lock ownership is lost', function () {
             return false;
         }
 
+        #[\Override]
         public function release(?LockHandle $handle): void {}
     };
     $cache->setLockProvider($provider);
@@ -290,6 +299,7 @@ test('remember lock identities include the cache namespace', function () {
     $provider = new class($keys) implements LockProviderInterface {
         public function __construct(private array &$keys) {}
 
+        #[\Override]
         public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): ?LockHandle
         {
             expect($waitSeconds)->toBeGreaterThanOrEqual(0);
@@ -298,6 +308,7 @@ test('remember lock identities include the cache namespace', function () {
             return new LockHandle($key, bin2hex(random_bytes(16)), leaseSeconds: $leaseSeconds);
         }
 
+        #[\Override]
         public function refresh(?LockHandle $handle, float $leaseSeconds): bool
         {
             expect($handle)->toBeInstanceOf(LockHandle::class)
@@ -306,6 +317,7 @@ test('remember lock identities include the cache namespace', function () {
             return true;
         }
 
+        #[\Override]
         public function release(?LockHandle $handle): void {}
     };
     Cache::memory('tenant-a')->setLockProvider($provider)->remember('same', fn(): int => 1);

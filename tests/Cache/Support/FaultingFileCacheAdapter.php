@@ -14,26 +14,31 @@ final class FaultingFileCacheAdapter extends FileCacheAdapter
 
     public bool $throws = true;
 
+    #[\Override]
     public function clear(): bool
     {
         return !$this->fails('clear') && parent::clear();
     }
 
+    #[\Override]
     public function deleteItem(string $key): bool
     {
         return !$this->fails('deleteItem') && parent::deleteItem($key);
     }
 
+    #[\Override]
     public function deleteItems(array $keys): bool
     {
         return !$this->fails('deleteItems') && parent::deleteItems($keys);
     }
 
+    #[\Override]
     public function save(CacheItemInterface $item): bool
     {
         return !$this->fails('save') && parent::save($item);
     }
 
+    #[\Override]
     public function saveItems(array $items): bool
     {
         return !$this->fails('saveItems') && parent::saveItems($items);

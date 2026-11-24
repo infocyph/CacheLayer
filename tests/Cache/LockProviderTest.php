@@ -134,6 +134,7 @@ test('strict PDO locks reject unsupported drivers during construction', function
         {
         }
 
+        #[\Override]
         public function getAttribute(int $attribute): mixed
         {
             unset($attribute);
@@ -153,6 +154,7 @@ test('strict PDO locks allow native drivers without a fallback', function (): vo
             {
             }
 
+            #[\Override]
             public function getAttribute(int $attribute): mixed
             {
                 unset($attribute);
@@ -179,6 +181,7 @@ test('PDO lock providers report their native driver capability', function (): vo
 
 test('PDO lock providers accept an explicit non-file fallback', function (): void {
     $fallback = new class implements LockProviderInterface {
+        #[\Override]
         public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): ?LockHandle
         {
             unset($key, $waitSeconds, $leaseSeconds);
@@ -186,6 +189,7 @@ test('PDO lock providers accept an explicit non-file fallback', function (): voi
             return null;
         }
 
+        #[\Override]
         public function refresh(?LockHandle $handle, float $leaseSeconds): bool
         {
             unset($handle, $leaseSeconds);
@@ -193,6 +197,7 @@ test('PDO lock providers accept an explicit non-file fallback', function (): voi
             return false;
         }
 
+        #[\Override]
         public function release(?LockHandle $handle): void
         {
             unset($handle);
@@ -203,6 +208,7 @@ test('PDO lock providers accept an explicit non-file fallback', function (): voi
         {
         }
 
+        #[\Override]
         public function getAttribute(int $attribute): mixed
         {
             unset($attribute);
@@ -220,6 +226,7 @@ test('MySQL PDO locks use the native lock path', function (): void {
         {
         }
 
+        #[\Override]
         public function getAttribute(int $attribute): mixed
         {
             unset($attribute);
@@ -227,6 +234,7 @@ test('MySQL PDO locks use the native lock path', function (): void {
             return 'mysql';
         }
 
+        #[\Override]
         public function prepare(string $query, array $options = []): PDOStatement|false
         {
             unset($query, $options);
@@ -234,6 +242,7 @@ test('MySQL PDO locks use the native lock path', function (): void {
             return $this->successfulStatement();
         }
 
+        #[\Override]
         public function query(string $query, ?int $fetchMode = null, mixed ...$fetchModeArgs): PDOStatement|false
         {
             unset($query, $fetchMode, $fetchModeArgs);
@@ -248,6 +257,7 @@ test('MySQL PDO locks use the native lock path', function (): void {
                 {
                 }
 
+                #[\Override]
                 public function execute(?array $params = null): bool
                 {
                     unset($params);
@@ -255,6 +265,7 @@ test('MySQL PDO locks use the native lock path', function (): void {
                     return true;
                 }
 
+                #[\Override]
                 public function fetchColumn(int $column = 0): mixed
                 {
                     unset($column);
@@ -281,6 +292,7 @@ test('PostgreSQL PDO locks accept native boolean results', function (): void {
         {
         }
 
+        #[\Override]
         public function getAttribute(int $attribute): mixed
         {
             unset($attribute);
@@ -288,6 +300,7 @@ test('PostgreSQL PDO locks accept native boolean results', function (): void {
             return 'pgsql';
         }
 
+        #[\Override]
         public function prepare(string $query, array $options = []): PDOStatement|false
         {
             unset($query, $options);
@@ -295,6 +308,7 @@ test('PostgreSQL PDO locks accept native boolean results', function (): void {
             return $this->successfulStatement();
         }
 
+        #[\Override]
         public function query(string $query, ?int $fetchMode = null, mixed ...$fetchModeArgs): PDOStatement|false
         {
             unset($query, $fetchMode, $fetchModeArgs);
@@ -309,6 +323,7 @@ test('PostgreSQL PDO locks accept native boolean results', function (): void {
                 {
                 }
 
+                #[\Override]
                 public function execute(?array $params = null): bool
                 {
                     unset($params);
@@ -316,6 +331,7 @@ test('PostgreSQL PDO locks accept native boolean results', function (): void {
                     return true;
                 }
 
+                #[\Override]
                 public function fetchColumn(int $column = 0): mixed
                 {
                     unset($column);

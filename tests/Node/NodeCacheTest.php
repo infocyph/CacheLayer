@@ -64,6 +64,7 @@ test('node preserves the mutation failure when L1 cleanup also throws', function
     $l1 = new class('node.cleanup', $this->nodeCacheDirectory . '/l1') extends \Infocyph\CacheLayer\Cache\Adapter\FileCacheAdapter {
         public bool $fault = false;
 
+        #[\Override]
         public function save(CacheItemInterface $item): bool
         {
             if ($this->fault) {
@@ -73,6 +74,7 @@ test('node preserves the mutation failure when L1 cleanup also throws', function
             return parent::save($item);
         }
 
+        #[\Override]
         public function clear(): bool
         {
             if ($this->fault) {
@@ -117,6 +119,7 @@ test('node fences L1 when copying a committed value into L1 throws', function (b
     $l1 = new class('node.copy', $this->nodeCacheDirectory . '/l1') extends \Infocyph\CacheLayer\Cache\Adapter\FileCacheAdapter {
         public bool $fault = false;
 
+        #[\Override]
         public function createItem(string $key): CacheItemInterface
         {
             if ($this->fault) {
@@ -141,6 +144,7 @@ test('node fences L1 when a tag metadata mutation throws', function (string $ope
     $l1 = new class('node.tags.' . uniqid()) extends ApcuCacheAdapter {
         public ?string $failure = null;
 
+        #[\Override]
         public function rotateTagGenerations(array $tags): bool
         {
             if ($this->failure === 'rotate') {
@@ -150,6 +154,7 @@ test('node fences L1 when a tag metadata mutation throws', function (string $ope
             return parent::rotateTagGenerations($tags);
         }
 
+        #[\Override]
         public function storeTagGenerations(array $generations): bool
         {
             if ($this->failure === 'store') {
@@ -212,6 +217,7 @@ test('node cache uses the configured shared lock provider for remember operation
 
         public int $released = 0;
 
+        #[\Override]
         public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): ?LockHandle
         {
             if ($waitSeconds < 0 || $leaseSeconds <= 0) {
@@ -223,11 +229,13 @@ test('node cache uses the configured shared lock provider for remember operation
             return new LockHandle($key, 'test-lock', leaseSeconds: $leaseSeconds);
         }
 
+        #[\Override]
         public function refresh(?LockHandle $handle, float $leaseSeconds): bool
         {
             return $handle instanceof LockHandle && $leaseSeconds > 0;
         }
 
+        #[\Override]
         public function release(?LockHandle $handle): void
         {
             if (!$handle instanceof LockHandle) {
@@ -347,6 +355,7 @@ test('node disables a failed L1 before it can serve stale data', function () {
         /** @var array<string, mixed> */
         private array $values = [];
 
+        #[\Override]
         public function clear(): bool
         {
             $this->values = [];
@@ -354,6 +363,7 @@ test('node disables a failed L1 before it can serve stale data', function () {
             return true;
         }
 
+        #[\Override]
         public function deleteItem(string $key): bool
         {
             unset($this->values[$key]);
@@ -361,6 +371,7 @@ test('node disables a failed L1 before it can serve stale data', function () {
             return true;
         }
 
+        #[\Override]
         public function deleteItems(array $keys): bool
         {
             foreach ($keys as $key) {
@@ -370,6 +381,7 @@ test('node disables a failed L1 before it can serve stale data', function () {
             return true;
         }
 
+        #[\Override]
         public function getItem(string $key): CacheItem
         {
             return array_key_exists($key, $this->values)
@@ -377,11 +389,13 @@ test('node disables a failed L1 before it can serve stale data', function () {
                 : new CacheItem($this, $key);
         }
 
+        #[\Override]
         public function hasItem(string $key): bool
         {
             return array_key_exists($key, $this->values);
         }
 
+        #[\Override]
         public function multiFetch(array $keys): array
         {
             $items = [];
@@ -392,6 +406,7 @@ test('node disables a failed L1 before it can serve stale data', function () {
             return $items;
         }
 
+        #[\Override]
         public function save(CacheItemInterface $item): bool
         {
             if ($this->rejectWrites || !$this->supportsItem($item)) {
@@ -403,6 +418,7 @@ test('node disables a failed L1 before it can serve stale data', function () {
             return true;
         }
 
+        #[\Override]
         public function saveItems(array $items): bool
         {
             if ($this->rejectWrites || !$this->supportsItems($items)) {
@@ -481,6 +497,7 @@ test('node lock identity includes the SQLite store', function () {
     $provider = new class ($keys) implements LockProviderInterface {
         public function __construct(private array &$keys) {}
 
+        #[\Override]
         public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): ?LockHandle
         {
             unset($waitSeconds);
@@ -489,11 +506,13 @@ test('node lock identity includes the SQLite store', function () {
             return new LockHandle($key, bin2hex(random_bytes(16)), leaseSeconds: $leaseSeconds);
         }
 
+        #[\Override]
         public function refresh(?LockHandle $handle, float $leaseSeconds): bool
         {
             return $handle instanceof LockHandle && $leaseSeconds > 0;
         }
 
+        #[\Override]
         public function release(?LockHandle $handle): void {}
     };
 

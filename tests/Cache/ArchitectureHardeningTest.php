@@ -35,6 +35,7 @@ final class ArchitectureHardeningTest extends AbstractCacheAdapter
 
     public bool $throwOnTagRead = false;
 
+    #[\Override]
     public function clear(): bool
     {
         $this->records = [];
@@ -43,11 +44,13 @@ final class ArchitectureHardeningTest extends AbstractCacheAdapter
         return true;
     }
 
+    #[\Override]
     public function deleteItem(string $key): bool
     {
         return $this->deleteItems([$key]);
     }
 
+    #[\Override]
     public function deleteItems(array $keys): bool
     {
         $this->deleteBatches++;
@@ -58,17 +61,20 @@ final class ArchitectureHardeningTest extends AbstractCacheAdapter
         return true;
     }
 
+    #[\Override]
     public function getItem(string $key): CacheItem
     {
         return $this->multiFetch([$key])[$key];
     }
 
+    #[\Override]
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
     }
 
     /** @return array<string, CacheItem> */
+    #[\Override]
     public function multiFetch(array $keys): array
     {
         $this->readBatches++;
@@ -91,11 +97,13 @@ final class ArchitectureHardeningTest extends AbstractCacheAdapter
         return $items;
     }
 
+    #[\Override]
     public function save(CacheItemInterface $item): bool
     {
         return $this->saveItems([$item->getKey() => $item]);
     }
 
+    #[\Override]
     public function saveItems(array $items): bool
     {
         $this->saveBatches++;
@@ -121,6 +129,7 @@ final class ArchitectureHardeningTest extends AbstractCacheAdapter
         return true;
     }
 
+    #[\Override]
     public function getTagGenerations(array $tags): array
     {
         $this->tagFetchBatches++;
@@ -135,6 +144,7 @@ final class ArchitectureHardeningTest extends AbstractCacheAdapter
         return $generations;
     }
 
+    #[\Override]
     public function rotateTagGenerations(array $tags): bool
     {
         foreach ($tags as $tag) {

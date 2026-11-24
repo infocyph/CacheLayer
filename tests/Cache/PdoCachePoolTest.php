@@ -10,32 +10,34 @@ if (! in_array('sqlite', PDO::getAvailableDrivers(), true)) {
     throw new RuntimeException('PDO SQLite is required for the configured cache test matrix.');
 }
 
-beforeEach(function () {
-    $this->cache = Cache::pdo('pdo-tests', 'sqlite::memory:');
+$pdoFixtureCache = Cache::nullStore();
+
+beforeEach(function () use (&$pdoFixtureCache): void {
+    $pdoFixtureCache = Cache::pdo('pdo-tests', 'sqlite::memory:');
 });
 
-test('pdo adapter set and get with sqlite', function () {
-    expect($this->cache->set('alpha', 11))->toBeTrue()
-        ->and($this->cache->get('alpha'))->toBe(11);
+test('pdo adapter set and get with sqlite', function () use (&$pdoFixtureCache): void {
+    expect($pdoFixtureCache->set('alpha', 11))->toBeTrue()
+        ->and($pdoFixtureCache->get('alpha'))->toBe(11);
 });
 
-test('pdo adapter ttl expiry with sqlite', function () {
-    $this->cache->set('ttl', 'v', 1);
+test('pdo adapter ttl expiry with sqlite', function () use (&$pdoFixtureCache): void {
+    $pdoFixtureCache->set('ttl', 'v', 1);
     usleep(2_000_000);
 
-    expect($this->cache->get('ttl'))->toBeNull();
+    expect($pdoFixtureCache->get('ttl'))->toBeNull();
 });
 
-test('pdo adapter bulk delete with sqlite', function () {
-    $this->cache->set('a', 'A');
-    $this->cache->set('b', 'B');
-    $this->cache->deleteMultiple(['a']);
+test('pdo adapter bulk delete with sqlite', function () use (&$pdoFixtureCache): void {
+    $pdoFixtureCache->set('a', 'A');
+    $pdoFixtureCache->set('b', 'B');
+    $pdoFixtureCache->deleteMultiple(['a']);
 
-    expect($this->cache->get('a'))->toBeNull()
-        ->and($this->cache->get('b'))->toBe('B');
+    expect($pdoFixtureCache->get('a'))->toBeNull()
+        ->and($pdoFixtureCache->get('b'))->toBe('B');
 });
 
-test('pdo defaults to sqlite driver when no dsn is provided', function () {
+test('pdo defaults to sqlite driver when no dsn is provided', function (): void {
     $namespace = 'pdo-default-'.uniqid();
     $cache = Cache::pdo($namespace);
     $cache->set('x', 'X');
@@ -50,7 +52,7 @@ test('pdo defaults to sqlite driver when no dsn is provided', function () {
     }
 });
 
-test('pdo factory configures pdo lock provider', function () {
+test('pdo factory configures pdo lock provider', function (): void {
     $cache = Cache::pdo('pdo-lock-tests', 'sqlite::memory:');
     $prop = (new ReflectionObject($cache))->getProperty('lockProvider');
     $provider = $prop->getValue($cache);

@@ -13,31 +13,37 @@ final class RejectingClusterCacheAdapter extends AbstractCacheAdapter
     /** @var array<string, mixed> */
     public array $rejectedOperations = [];
 
+    #[\Override]
     public function clear(): bool
     {
         return $this->reject('clear');
     }
 
+    #[\Override]
     public function deleteItem(string $key): bool
     {
         return $this->reject('deleteItem', $key);
     }
 
+    #[\Override]
     public function deleteItems(array $keys): bool
     {
         return $this->reject('deleteItems', $keys);
     }
 
+    #[\Override]
     public function getItem(string $key): CacheItem
     {
         return $this->genericMiss($key);
     }
 
+    #[\Override]
     public function hasItem(string $key): bool
     {
         return $this->reject('hasItem', $key);
     }
 
+    #[\Override]
     public function multiFetch(array $keys): array
     {
         $items = [];
@@ -48,11 +54,13 @@ final class RejectingClusterCacheAdapter extends AbstractCacheAdapter
         return $items;
     }
 
+    #[\Override]
     public function save(CacheItemInterface $item): bool
     {
         return $this->reject('save', $item);
     }
 
+    #[\Override]
     public function saveItems(array $items): bool
     {
         return $this->reject('saveItems', $items);

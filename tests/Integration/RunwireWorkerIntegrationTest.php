@@ -267,6 +267,7 @@ it('keeps worker automation inactive when the shared runtime lacks Runwire corou
 it('turns an unhandled CacheLayer consumer failure into a Runwire worker stop', function (): void {
     $transport = new class implements InvalidationTransportInterface
     {
+        #[\Override]
         public function consumeAfter(string $cluster, ?string $cursor, int $limit): InvalidationBatch
         {
             unset($cluster, $cursor, $limit);
@@ -274,6 +275,7 @@ it('turns an unhandled CacheLayer consumer failure into a Runwire worker stop', 
             throw new RuntimeException('intentional invalidation backend failure');
         }
 
+        #[\Override]
         public function isCursorBefore(string $cursor, string $oldestAvailableId): bool
         {
             unset($cursor, $oldestAvailableId);
@@ -281,6 +283,7 @@ it('turns an unhandled CacheLayer consumer failure into a Runwire worker stop', 
             return false;
         }
 
+        #[\Override]
         public function newestAvailableId(string $cluster): ?string
         {
             unset($cluster);
@@ -288,6 +291,7 @@ it('turns an unhandled CacheLayer consumer failure into a Runwire worker stop', 
             return null;
         }
 
+        #[\Override]
         public function oldestAvailableId(string $cluster): ?string
         {
             unset($cluster);
@@ -295,6 +299,7 @@ it('turns an unhandled CacheLayer consumer failure into a Runwire worker stop', 
             return null;
         }
 
+        #[\Override]
         public function publish(InvalidationEvent $event): string
         {
             unset($event);
