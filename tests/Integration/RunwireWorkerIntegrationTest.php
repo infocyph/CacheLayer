@@ -245,7 +245,7 @@ it('runs bounded invalidation consumption inside the host-owned Runwire worker s
     $loop->run();
 
     expect($runwireFixture->runwireWorkerCluster->consume())->toBe(0)
-        ->and($task?->state())->toBe(TaskState::CANCELLED)
+        ->and($task->state())->toBe(TaskState::CANCELLED)
         ->and($worker->acceptingBackgroundWork())->toBeFalse();
 
     $worker->close();
@@ -291,7 +291,7 @@ it('runs bounded node maintenance inside the host-owned Runwire worker scope', f
         $connection,
         "SELECT COUNT(*) FROM cachelayer_node_entries WHERE cache_key = 'expired-runwire'",
     ))->toBe(0)
-        ->and($task?->state())->toBe(TaskState::CANCELLED)
+        ->and($task->state())->toBe(TaskState::CANCELLED)
         ->and($worker->backgroundDrainExpired())->toBeFalse();
 
     $worker->close();
@@ -397,7 +397,7 @@ it('turns an unhandled CacheLayer consumer failure into a Runwire worker stop', 
 
     $loop->run();
 
-    expect($task?->state())->toBe(TaskState::FAILED)
+    expect($task->state())->toBe(TaskState::FAILED)
         ->and($worker->stopping())->toBeTrue()
         ->and($worker->shutdownReason())->toBe(ShutdownReason::FATAL_RUNTIME_ERROR)
         ->and($worker->backgroundDrainExpired())->toBeFalse();

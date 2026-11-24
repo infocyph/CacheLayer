@@ -13,7 +13,6 @@ use InvalidArgumentException;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use Infocyph\CacheLayer\Cache\CacheOptions;
-use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 
 $fileFixtureCacheDir = '';
@@ -71,11 +70,8 @@ test('get throws for invalid key (file)', function () use (&$fileFixtureCache): 
 
 /* ─── PSR-6 getItem()/save() ───────────────────────────────────── */
 test('PSR-6 getItem()/save()', function () use (&$fileFixtureCache): void {
-    $item = $fileFixtureCache->getItem('psr');
-    assert($item instanceof CacheItem);
-
-    expect($item)->toBeInstanceOf(CacheItem::class)
-        ->and($item->isHit())->toBeFalse();
+    $item = \Infocyph\CacheLayer\Tests\Support\CacheFixture::item($fileFixtureCache, 'psr');
+    expect($item->isHit())->toBeFalse();
 
     $item->set(123)->expiresAfter(null)->save();
 
@@ -109,8 +105,8 @@ test('ArrayAccess support', function () use (&$fileFixtureCache): void {
 });
 
 test('runtime storage configuration is immutable', function () use (&$fileFixtureCache): void {
-    expect(method_exists($fileFixtureCache, '__get'))->toBeFalse()
-        ->and(method_exists($fileFixtureCache, 'setNamespaceAndDirectory'))->toBeFalse();
+    expect((new \ReflectionClass($fileFixtureCache))->hasMethod('__get'))->toBeFalse()
+        ->and((new \ReflectionClass($fileFixtureCache))->hasMethod('setNamespaceAndDirectory'))->toBeFalse();
 });
 
 test('expiration honours TTL', function () use (&$fileFixtureCache): void {

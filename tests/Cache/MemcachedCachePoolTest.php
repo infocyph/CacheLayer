@@ -19,7 +19,6 @@ use InvalidArgumentException;
 use Memcached;
 use RuntimeException;
 use Infocyph\CacheLayer\Cache\CacheOptions;
-use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Cache\Lock\MemcachedLockProvider;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 use Infocyph\CacheLayer\Support\MemcachedValueGuard;
@@ -90,10 +89,8 @@ test('get throws for invalid key (memcached)', function () use (&$memcachedFixtu
 
 /* ─── PSR-6 getItem()/save() ───────────────────────────────────── */
 test('PSR-6 getItem()/save()', function () use (&$memcachedFixtureCache): void {
-    $it = $memcachedFixtureCache->getItem('psr');
-    assert($it instanceof CacheItem);
-    expect($it)->toBeInstanceOf(CacheItem::class)
-        ->and($it->isHit())->toBeFalse();
+    $it = \Infocyph\CacheLayer\Tests\Support\CacheFixture::item($memcachedFixtureCache, 'psr');
+    expect($it->isHit())->toBeFalse();
 
     $it->set(321)->save();
     expect($memcachedFixtureCache->getItem('psr')->get())->toBe(321);
@@ -110,7 +107,7 @@ test('saveDeferred() + commit()', function () use (&$memcachedFixtureCache): voi
 test('ArrayAccess is the only property-like access', function () use (&$memcachedFixtureCache): void {
     $memcachedFixtureCache['x'] = 7;
     expect($memcachedFixtureCache['x'])->toBe(7)
-        ->and(method_exists($memcachedFixtureCache, '__get'))->toBeFalse();
+        ->and((new \ReflectionClass($memcachedFixtureCache))->hasMethod('__get'))->toBeFalse();
 });
 
 test('TTL expiration', function () use (&$memcachedFixtureCache): void {
@@ -144,9 +141,8 @@ test('clear only rotates this namespace generation', function () use ($memcached
 test('an expired Memcached lock owner cannot delete its replacement', function () use (&$memcachedFixtureClient): void {
     $provider = new MemcachedLockProvider($memcachedFixtureClient);
     $oldOwner = $provider->acquire('reports', 0.0, 30.0);
-    expect($oldOwner)->not->toBeNull();
     if ($oldOwner === null) {
-        return;
+        throw new RuntimeException('Unable to acquire the initial Memcached lock.');
     }
 
     $memcachedFixtureClient->set($oldOwner->key, 'replacement-token', 30);
@@ -199,12 +195,12 @@ test('Memcached atomic writes and leases normalize long TTLs', function () use (
 
     $provider = new MemcachedLockProvider($memcachedFixtureClient);
     $handle = $provider->acquire('long-lease', 0.0, (float) $longTtl);
-    expect($handle)->not->toBeNull();
-    if ($handle !== null) {
-        expect($memcachedFixtureClient->get($handle->key))->toBe($handle->token)
-            ->and($provider->refresh($handle, (float) $longTtl))->toBeTrue();
-        $provider->release($handle);
+    if ($handle === null) {
+        throw new RuntimeException('Unable to acquire the long Memcached lease.');
     }
+    expect($memcachedFixtureClient->get($handle->key))->toBe($handle->token)
+        ->and($provider->refresh($handle, (float) $longTtl))->toBeTrue();
+    $provider->release($handle);
 });
 
 

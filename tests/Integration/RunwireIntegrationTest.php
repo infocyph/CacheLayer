@@ -110,22 +110,22 @@ it('keeps concurrent request memoizers isolated by fiber', function (): void {
         return ++$runsB;
     };
 
-    $fiberA = new Fiber(static fn(): int => RunwireIntegration::share(
+    $fiberA = new Fiber(static fn(): mixed => RunwireIntegration::share(
         $requestA,
         null,
-        static function () use ($loaderA): int {
+        static function () use ($loaderA): mixed {
             $first = memoize($loaderA);
-            Fiber::suspend($first);
+            expect(Fiber::suspend($first))->toBeNull();
 
             return memoize($loaderA);
         },
     ));
-    $fiberB = new Fiber(static fn(): int => RunwireIntegration::share(
+    $fiberB = new Fiber(static fn(): mixed => RunwireIntegration::share(
         $requestB,
         null,
-        static function () use ($loaderB): int {
+        static function () use ($loaderB): mixed {
             $first = memoize($loaderB);
-            Fiber::suspend($first);
+            expect(Fiber::suspend($first))->toBeNull();
 
             return memoize($loaderB);
         },
@@ -201,7 +201,7 @@ it('replaces runtime bindings without retaining a previous worker request scope'
     RunwireIntegration::share(
         $oldRequest,
         null,
-        static fn(): int => memoize(static fn(): int => 1),
+        static fn(): mixed => memoize(static fn(): int => 1),
     );
     RunwireIntegration::bind($secondRuntime);
 
@@ -228,6 +228,9 @@ it('releases request-owned memoizers across repeated persistent request lifecycl
             null,
             static fn(): mixed => memoize(),
         );
+        if (!$memoizer instanceof \Infocyph\CacheLayer\Memoize\Memoizer) {
+            throw new RuntimeException('Expected a request-owned memoizer.');
+        }
         $references[] = WeakReference::create($memoizer);
         $request->complete();
         unset($memoizer, $request);
@@ -302,7 +305,7 @@ it('keeps explicitly passed request scopes separate across overlapping Fibers', 
     $two = \Infocyph\Runwire\RequestContext::create($runtime);
     $work = static fn(\Infocyph\Runwire\RequestContext $request): mixed => \Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration::share($request, null, static function () use ($request): object {
         $memoizer = \Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration::memoizer();
-        Fiber::suspend($memoizer);
+        expect(Fiber::suspend($memoizer))->toBeNull();
         expect(\Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration::current()?->request)->toBe($request);
 
         return $request;
@@ -358,7 +361,7 @@ it('unwinds suspended nested Fibers after the host discards their binding', func
     $request = RequestContext::create($runtime);
     $fiber = new Fiber(static fn(): mixed => RunwireIntegration::share($request, null, static function () use ($request, $throw): void {
         RunwireIntegration::share($request, null, static function () use ($throw): void {
-            Fiber::suspend();
+            expect(Fiber::suspend())->toBeNull();
             if ($throw) {
                 throw new RuntimeException('callback failure');
             }

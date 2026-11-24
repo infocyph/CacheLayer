@@ -109,7 +109,6 @@ it('memoizer distinguishes closure captures and object instances', function () {
 
 it('memoizer distinguishes separate reference captures from the same source', function () {
     $first = 10;
-    $second = 10;
     $factory = static function (int &$capture): Closure {
         return static function () use (&$capture): int {
             return $capture;
@@ -183,7 +182,7 @@ it('keeps global and per-object memoization buckets bounded', function () {
 
     $static = $staticCache->getValue($memoizer);
     $perObject = $weakMap[$object];
-    if (!is_array($static) || !is_array($perObject)) {
+    if (!is_array($static)) {
         throw new \RuntimeException('Expected memoization buckets.');
     }
     expect($static)->toHaveCount(2_048)
@@ -242,25 +241,25 @@ it('memoizer fingerprints recursive closure captures without traversing their gr
     $arrayClosure = static fn(): int => count($recursive);
 
     $selfClosure = null;
-    $selfClosure = static function () use (&$selfClosure): int {
-        return $selfClosure instanceof Closure ? 7 : 0;
+    $selfClosure = static function () use (&$selfClosure): string {
+        return 'self:' . get_debug_type($selfClosure);
     };
 
     $left = null;
     $right = null;
-    $left = static function () use (&$right): int {
-        return $right instanceof Closure ? 11 : 0;
+    $left = static function () use (&$right): string {
+        return 'right:' . get_debug_type($right);
     };
-    $right = static function () use (&$left): int {
-        return $left instanceof Closure ? 13 : 0;
+    $right = static function () use (&$left): string {
+        return 'left:' . get_debug_type($left);
     };
 
     expect(memoize($arrayClosure))->toBe(1)
         ->and(memoize($arrayClosure))->toBe(1)
-        ->and(memoize($selfClosure))->toBe(7)
-        ->and(memoize($selfClosure))->toBe(7)
-        ->and(memoize($left))->toBe(11)
-        ->and(memoize($right))->toBe(13);
+        ->and(memoize($selfClosure))->toBe('self:Closure')
+        ->and(memoize($selfClosure))->toBe('self:Closure')
+        ->and(memoize($left))->toBe('right:Closure')
+        ->and(memoize($right))->toBe('left:Closure');
 });
 
 it('flushing an isolated memoizer does not invalidate another memoizer identity map', function () {

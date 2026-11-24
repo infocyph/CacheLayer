@@ -160,6 +160,9 @@ final class RunwireIntegration
 
     /**
      * Borrow an explicit host runtime for this callback without global lifecycle ownership.
+     * @template T
+     * @param callable(): T $callback
+     * @return T
      * @throws \LogicException
      * @throws \Infocyph\Runwire\Exception\CancelledException
      */

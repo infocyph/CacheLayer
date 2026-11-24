@@ -242,11 +242,11 @@ test('namespaces are strictly validated instead of normalized', function () {
     expect(fn() => Cache::memory('tenant/a'))->toThrow(CacheInvalidArgumentException::class)
         ->and(fn() => Cache::memory('tenant:a'))->toThrow(CacheInvalidArgumentException::class)
         ->and(fn() => Cache::memory(str_repeat('n', 65)))->toThrow(CacheInvalidArgumentException::class)
-        ->and(Cache::memory('tenant-a.v1'))->toBeInstanceOf(Cache::class);
+        ->and(Cache::memory('tenant-a.v1')->set('valid', true))->toBeTrue();
 });
 
 test('cache options do not load process environment state', function () {
-    expect(method_exists(CacheOptions::class, 'fromEnvironment'))->toBeFalse();
+    expect((new \ReflectionClass(CacheOptions::class))->hasMethod('fromEnvironment'))->toBeFalse();
 });
 
 test('missing tag metadata cannot resurrect a tagged record', function () {

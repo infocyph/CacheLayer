@@ -15,7 +15,7 @@ test('cache exposes atomic capability only when the adapter guarantees it', func
     $weakMap = Cache::weakMap('atomic-weak-map');
     $null = Cache::nullStore();
 
-    expect($memory)->toBeInstanceOf(AtomicCacheProviderInterface::class)
+    expect((new ReflectionClass($memory))->implementsInterface(AtomicCacheProviderInterface::class))->toBeTrue()
         ->and($memory->atomic())->toBeInstanceOf(AtomicCacheInterface::class)
         ->and($weakMap->atomic())->toBeInstanceOf(AtomicCacheInterface::class)
         ->and($null->atomic())->toBeNull();

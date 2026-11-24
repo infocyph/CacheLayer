@@ -17,7 +17,6 @@ use Closure;
 use InvalidArgumentException;
 use RuntimeException;
 use Infocyph\CacheLayer\Cache\CacheOptions;
-use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 
 /* ── require CLI APCu ─────────────────────────────────────────────── */
@@ -64,10 +63,8 @@ test('get throws for invalid key (apcu)', function () use (&$apcuFixtureCache): 
 
 /* ─── PSR-6 behaviour ─────────────────────────────────────────────── */
 test('PSR-6 getItem()/save() (apcu)', function () use (&$apcuFixtureCache): void {
-    $item = $apcuFixtureCache->getItem('psr');
-    assert($item instanceof CacheItem);
-    expect($item)->toBeInstanceOf(CacheItem::class)
-        ->and($item->isHit())->toBeFalse();
+    $item = \Infocyph\CacheLayer\Tests\Support\CacheFixture::item($apcuFixtureCache, 'psr');
+    expect($item->isHit())->toBeFalse();
 
     $item->set(99)->expiresAfter(null)->save();
     expect($apcuFixtureCache->getItem('psr')->get())->toBe(99);
@@ -86,7 +83,7 @@ test('saveDeferred() and commit() (apcu)', function () use (&$apcuFixtureCache):
 test('ArrayAccess (apcu)', function () use (&$apcuFixtureCache): void {
     $apcuFixtureCache['k'] = 11;
     expect($apcuFixtureCache['k'])->toBe(11)
-        ->and(method_exists($apcuFixtureCache, '__get'))->toBeFalse();
+        ->and((new \ReflectionClass($apcuFixtureCache))->hasMethod('__get'))->toBeFalse();
 });
 
 /* ─── TTL / expiration ───────────────────────────────────────────── */

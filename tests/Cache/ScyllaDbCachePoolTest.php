@@ -50,7 +50,9 @@ test('scylladb cache factory accepts injected session', function () use ($scylla
 
 test('scylladb cache factory handles the optional extension explicitly', function (): void {
     if (OptionalCassandra::available()) {
-        expect(Cache::scylla('scylla-tests'))->toBeInstanceOf(Cache::class);
+        $cache = Cache::scylla('scylla-tests');
+        expect($cache->set('optional-extension', true))->toBeTrue()
+            ->and($cache->get('optional-extension'))->toBeTrue();
 
         return;
     }

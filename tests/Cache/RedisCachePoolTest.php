@@ -21,7 +21,6 @@ use RuntimeException;
 use Throwable;
 use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Cache\CacheOptions;
-use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Counter\AtomicCounters;
 use Infocyph\CacheLayer\Counter\Exception\AtomicCounterException;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
@@ -111,10 +110,8 @@ test('get throws for invalid key (redis)', function () use (&$redisFixtureCache)
 
 /* ── 2. PSR-6 behaviour ─────────────────────────────────────────── */
 test('getItem()/save() (redis)', function () use (&$redisFixtureCache): void {
-    $it = $redisFixtureCache->getItem('psr');
-    assert($it instanceof CacheItem);
-    expect($it)->toBeInstanceOf(CacheItem::class)
-        ->and($it->isHit())->toBeFalse();
+    $it = \Infocyph\CacheLayer\Tests\Support\CacheFixture::item($redisFixtureCache, 'psr');
+    expect($it->isHit())->toBeFalse();
 
     $it->set(777)->save();
     expect($redisFixtureCache->getItem('psr')->get())->toBe(777);
@@ -133,7 +130,7 @@ test('saveDeferred() & commit() (redis)', function () use (&$redisFixtureCache):
 test('ArrayAccess (redis)', function () use (&$redisFixtureCache): void {
     $redisFixtureCache['k'] = 12;
     expect($redisFixtureCache['k'])->toBe(12)
-        ->and(method_exists($redisFixtureCache, '__get'))->toBeFalse();
+        ->and((new \ReflectionClass($redisFixtureCache))->hasMethod('__get'))->toBeFalse();
 });
 
 /* ── 6. TTL expiration ─────────────────────────────────────────── */

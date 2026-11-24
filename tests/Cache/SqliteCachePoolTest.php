@@ -16,7 +16,6 @@ use InvalidArgumentException;
 use PDO;
 use RuntimeException;
 use Infocyph\CacheLayer\Cache\CacheOptions;
-use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 
 /* ── Skip entire suite if SQLite missing ─────────────────────────── */
@@ -65,10 +64,8 @@ test('get throws for invalid key (sqlite)', function () use (&$sqliteFixtureCach
 
 /* ── 2. PSR-6 behaviour ─────────────────────────────────────────── */
 test('getItem()/save() (sqlite)', function () use (&$sqliteFixtureCache): void {
-    $item = $sqliteFixtureCache->getItem('psr');
-    assert($item instanceof CacheItem);
-    expect($item)->toBeInstanceOf(CacheItem::class)
-        ->and($item->isHit())->toBeFalse();
+    $item = \Infocyph\CacheLayer\Tests\Support\CacheFixture::item($sqliteFixtureCache, 'psr');
+    expect($item->isHit())->toBeFalse();
 
     $item->set(42)->save();
     expect($sqliteFixtureCache->getItem('psr')->get())->toBe(42);
@@ -87,7 +84,7 @@ test('saveDeferred() & commit() (sqlite)', function () use (&$sqliteFixtureCache
 test('ArrayAccess (sqlite)', function () use (&$sqliteFixtureCache): void {
     $sqliteFixtureCache['x'] = 5;
     expect($sqliteFixtureCache['x'])->toBe(5)
-        ->and(method_exists($sqliteFixtureCache, '__get'))->toBeFalse();
+        ->and((new \ReflectionClass($sqliteFixtureCache))->hasMethod('__get'))->toBeFalse();
 });
 
 /* ── 6. TTL expiration ─────────────────────────────────────────── */
