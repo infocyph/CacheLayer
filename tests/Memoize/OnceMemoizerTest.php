@@ -12,8 +12,8 @@ it('caches repeated calls from the same caller', function () {
     $memoizer = OnceMemoizer::instance();
     $counter = 0;
 
-    $run = function () use ($memoizer, &$counter): int {
-        return $memoizer->once(function () use (&$counter) {
+    $run = function () use ($memoizer, &$counter): mixed {
+        return $memoizer->once(function () use (&$counter): int {
             return ++$counter;
         });
     };
@@ -31,16 +31,16 @@ it('isolates cache entries by caller context', function () {
 
     $caller = new class
     {
-        public function one(int &$counter): int
+        public function one(int &$counter): mixed
         {
-            return OnceMemoizer::instance()->once(function () use (&$counter) {
+            return OnceMemoizer::instance()->once(function () use (&$counter): int {
                 return ++$counter;
             });
         }
 
-        public function two(int &$counter): int
+        public function two(int &$counter): mixed
         {
-            return OnceMemoizer::instance()->once(function () use (&$counter) {
+            return OnceMemoizer::instance()->once(function () use (&$counter): int {
                 return ++$counter;
             });
         }
@@ -75,12 +75,15 @@ it('keeps internal cache bounded', function () {
     $cacheProp->setValue($memoizer, $seedCache);
     $orderProp->setValue($memoizer, $seedOrder);
 
-    $value = (function () use ($memoizer): string {
+    $value = (function () use ($memoizer): mixed {
         return $memoizer->once(static fn (): string => 'fresh');
     })();
 
     $cache = $cacheProp->getValue($memoizer);
     $order = $orderProp->getValue($memoizer);
+    if (!is_array($cache) || !is_array($order)) {
+        throw new RuntimeException('Expected memoization cache and order arrays.');
+    }
 
     expect($value)->toBe('fresh')
         ->and(count($cache))->toBe(2048)
@@ -92,8 +95,8 @@ it('flush resets cache state', function () {
     $memoizer = OnceMemoizer::instance();
     $counter = 0;
 
-    $run = function () use (&$counter, $memoizer): int {
-        return $memoizer->once(function () use (&$counter) {
+    $run = function () use (&$counter, $memoizer): mixed {
+        return $memoizer->once(function () use (&$counter): int {
             return ++$counter;
         });
     };

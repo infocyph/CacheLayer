@@ -234,8 +234,9 @@ test('MySQL PDO locks use the native lock path', function (): void {
             return 'mysql';
         }
 
+        /** @param array<int,mixed> $options */
         #[\Override]
-        public function prepare(string $query, array $options = []): PDOStatement|false
+        public function prepare(string $query, array $options = []): PDOStatement
         {
             unset($query, $options);
 
@@ -243,7 +244,7 @@ test('MySQL PDO locks use the native lock path', function (): void {
         }
 
         #[\Override]
-        public function query(string $query, ?int $fetchMode = null, mixed ...$fetchModeArgs): PDOStatement|false
+        public function query(string $query, ?int $fetchMode = null, mixed ...$fetchModeArgs): PDOStatement
         {
             unset($query, $fetchMode, $fetchModeArgs);
 
@@ -257,6 +258,7 @@ test('MySQL PDO locks use the native lock path', function (): void {
                 {
                 }
 
+                /** @param array<array-key,mixed>|null $params */
                 #[\Override]
                 public function execute(?array $params = null): bool
                 {
@@ -300,8 +302,9 @@ test('PostgreSQL PDO locks accept native boolean results', function (): void {
             return 'pgsql';
         }
 
+        /** @param array<int,mixed> $options */
         #[\Override]
-        public function prepare(string $query, array $options = []): PDOStatement|false
+        public function prepare(string $query, array $options = []): PDOStatement
         {
             unset($query, $options);
 
@@ -309,7 +312,7 @@ test('PostgreSQL PDO locks accept native boolean results', function (): void {
         }
 
         #[\Override]
-        public function query(string $query, ?int $fetchMode = null, mixed ...$fetchModeArgs): PDOStatement|false
+        public function query(string $query, ?int $fetchMode = null, mixed ...$fetchModeArgs): PDOStatement
         {
             unset($query, $fetchMode, $fetchModeArgs);
 
@@ -323,6 +326,7 @@ test('PostgreSQL PDO locks accept native boolean results', function (): void {
                 {
                 }
 
+                /** @param array<array-key,mixed>|null $params */
                 #[\Override]
                 public function execute(?array $params = null): bool
                 {

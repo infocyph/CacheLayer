@@ -26,6 +26,9 @@ afterEach(function () use (&$featuresFixtureCacheDir): void {
     $it = new RecursiveDirectoryIterator($featuresFixtureCacheDir, FilesystemIterator::SKIP_DOTS);
     $rim = new RecursiveIteratorIterator($it, RecursiveIteratorIterator::CHILD_FIRST);
     foreach ($rim as $file) {
+        if (!$file instanceof SplFileInfo) {
+            throw new RuntimeException('Unexpected filesystem iterator entry.');
+        }
         $path = $file->getRealPath();
         if ($path === false || !file_exists($path)) {
             continue;
@@ -163,12 +166,16 @@ test('file tag rotations remain valid during concurrent updates', function () us
             pcntl_exec(PHP_BINARY, ['-r', '']);
             throw new RuntimeException('Unable to terminate concurrency-test worker.');
         }
-        if ($pid > 0) {
-            $children[] = $pid;
+        if ($pid < 0) {
+            throw new RuntimeException('Unable to fork a tag rotation worker.');
         }
+        $children[] = $pid;
     }
     foreach ($children as $pid) {
-        pcntl_waitpid($pid, $status);
+        $status = 0;
+        if (pcntl_waitpid($pid, $status) !== $pid || !pcntl_wifexited($status)) {
+            throw new RuntimeException('Tag rotation worker did not exit normally.');
+        }
         expect(pcntl_wexitstatus($status))->toBe(0);
     }
 
@@ -181,6 +188,7 @@ test('remember uses configured lock provider', function () use (&$featuresFixtur
     $calls = ['acquire' => 0, 'release' => 0];
 
     $provider = new class ($calls) implements LockProviderInterface {
+        /** @param array{acquire:int,release:int} $calls */
         public function __construct(private array &$calls) {}
 
         #[\Override]
@@ -271,7 +279,7 @@ test('remember never stores after lock ownership is lost', function (): void {
     $cache = Cache::memory('lost-lock');
     $provider = new class implements LockProviderInterface {
         #[\Override]
-        public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): ?LockHandle
+        public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): LockHandle
         {
             expect($waitSeconds)->toBeGreaterThanOrEqual(0);
 
@@ -300,10 +308,11 @@ test('remember never stores after lock ownership is lost', function (): void {
 test('remember lock identities include the cache namespace', function (): void {
     $keys = [];
     $provider = new class($keys) implements LockProviderInterface {
+        /** @param list<string> $keys */
         public function __construct(private array &$keys) {}
 
         #[\Override]
-        public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): ?LockHandle
+        public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): LockHandle
         {
             expect($waitSeconds)->toBeGreaterThanOrEqual(0);
             $this->keys[] = $key;

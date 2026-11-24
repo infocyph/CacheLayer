@@ -54,6 +54,9 @@ test('cache treats a corrupted signed record as a miss and deletes it', function
 
     $store = new ReflectionProperty($adapter, 'store');
     $records = $store->getValue($adapter);
+    if (!is_array($records) || !is_string($records['signed-cleanup:d:record'] ?? null)) {
+        throw new \RuntimeException('Expected a signed cache record.');
+    }
     $records['signed-cleanup:d:record'] .= 'tampered';
     $store->setValue($adapter, $records);
 
@@ -260,8 +263,10 @@ test('payload codec preserves valid uppercase generations and null values', func
     $generation = str_repeat('AB', 16);
     $record = $codec->decode($codec->encode(null, null, ['group' => $generation], $generation));
 
-    expect($record)->not->toBeNull()
-        ->and($record->value)->toBeNull()
+    if ($record === null) {
+        throw new \RuntimeException('Expected the codec to restore the valid record.');
+    }
+    expect($record->value)->toBeNull()
         ->and($record->namespaceGeneration)->toBe($generation)
         ->and($record->tags)->toBe(['group' => $generation]);
 });
