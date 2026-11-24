@@ -45,6 +45,7 @@ final class RedisConnection
      * @param string|array|null $credentials The optional Redis credentials.
      * @phpstan-param string|array{string, string}|null $credentials
      * @throws RuntimeException
+     * @psalm-suppress PossiblyInvalidArgument -- Redis ACL arrays are supported; remove when Psalm #14796 is fixed.
      */
     private static function authenticate(\Redis $connection, #[\SensitiveParameter] string|array|null $credentials): void
     {

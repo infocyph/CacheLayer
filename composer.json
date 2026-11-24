@@ -95,6 +95,14 @@
                             "tests/Cache/MongoDbRealCachePoolTest.php"
                         ],
                         "reason": "Temporary PHP 8.6-only skip for the two real MongoDB tests when mongodb/mongodb 2.4.2 or 2.5.1 triggers the vendor is_integer() deprecation in Operation/Find.php. Keep all other runtime and backend tests; remove when upstream is fixed."
+                    },
+                    {
+                        "directive": "@psalm-suppress",
+                        "issue": "PossiblyInvalidArgument",
+                        "paths": [
+                            "src/Support/RedisConnection.php"
+                        ],
+                        "reason": "Psalm 7.12.0 and 7.17.0 incorrectly narrow Redis::auth credentials to string; phpredis supports username/password ACL arrays. Remove when https://github.com/vimeo/psalm/issues/14796 is fixed and hosted analysis passes without the suppression."
                     }
                 ]
             }
