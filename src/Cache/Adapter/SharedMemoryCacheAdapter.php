@@ -187,7 +187,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
 
     /**
      * @param list<string> $tags
-     * @return array<string, string>
+     * @return array<int|string, string>
      */
     #[\Override]
     public function getTagGenerations(array $tags): array
@@ -213,7 +213,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
 
     /**
      * @param list<string> $tags
-     * @return array<string, string>
+     * @return array<int|string, string>
      */
     #[\Override]
     public function readTagGenerations(array $tags): array
@@ -282,7 +282,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         return $this->withExclusiveLock(fn(): bool => $this->updateStore($records, $expired));
     }
 
-    /** @param array<string, string> $generations */
+    /** @param array<int|string, string> $generations */
     #[\Override]
     public function storeTagGenerations(array $generations): bool
     {
@@ -402,7 +402,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
 
     /**
      * @param list<string> $tags
-     * @return array<string, string>
+     * @return array<int|string, string>
      */
     private function initializeTagGenerations(array $tags): array
     {

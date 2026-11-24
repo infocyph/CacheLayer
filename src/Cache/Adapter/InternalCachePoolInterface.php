@@ -25,7 +25,7 @@ interface InternalCachePoolInterface extends CacheItemPoolInterface
 
     /**
      * @param list<string> $tags
-     * @return array<string, string>
+     * @return array<int|string, string>
      */
     public function getTagGenerations(array $tags): array;
 

@@ -154,7 +154,7 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
 
     /**
      * @param list<string> $tags
-     * @return array<string, string>
+     * @return array<int|string, string>
      */
     #[\Override]
     public function getTagGenerations(array $tags): array
@@ -231,7 +231,10 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
         return $items;
     }
 
-    /** @param list<string> $tags */
+    /**
+     * @param list<string> $tags
+     * @return array<int|string, string>
+     */
     #[\Override]
     public function readTagGenerations(array $tags): array
     {
@@ -372,7 +375,7 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
         }
     }
 
-    /** @param array<string, string> $generations */
+    /** @param array<int|string, string> $generations */
     #[\Override]
     public function storeTagGenerations(array $generations): bool
     {
@@ -415,7 +418,7 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
         }
     }
 
-    /** @param array<string, string> $generations */
+    /** @param array<int|string, string> $generations */
     private function insertTagGenerationsIfMissing(array $generations): bool
     {
         $this->assertWritableTransaction();

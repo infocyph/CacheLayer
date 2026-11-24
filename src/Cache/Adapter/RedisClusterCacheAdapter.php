@@ -72,6 +72,7 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
+        $keys = array_values($keys);
 
         return array_all(
             $this->groupByBucket($keys),
@@ -102,7 +103,7 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
 
     /**
      * @param list<string> $tags
-     * @return array<string, string>
+     * @return array<int|string, string>
      */
     #[\Override]
     public function getTagGenerations(array $tags): array

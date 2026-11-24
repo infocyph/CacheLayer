@@ -779,7 +779,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
 
     /**
      * @param list<string> $tags
-     * @return array<string, string>|null
+     * @return array<int|string, string>|null
      */
     private function captureTagGenerations(array $tags): ?array
     {
@@ -860,7 +860,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         return $offset;
     }
 
-    /** @param array<string, string> $generations */
+    /** @param array<int|string, string> $generations */
     private function setTaggedWithGenerations(
         string $key,
         mixed $value,
@@ -883,7 +883,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         return 'cachelayer:remember:' . hash('xxh128', $this->namespace . "\0" . $key);
     }
 
-    /** @param array<string, string>|null $generations */
+    /** @param array<int|string, string>|null $generations */
     private function storeRemembered(
         string $key,
         mixed $value,
@@ -901,7 +901,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         }
     }
 
-    /** @param array<string, string> $generations */
+    /** @param array<int|string, string> $generations */
     private function storeResolved(string $key, mixed $value, ?int $ttl, array $generations): void
     {
         if ($ttl !== null && $ttl <= 0) {
@@ -918,7 +918,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         $this->setTaggedWithGenerations($key, $value, $generations, $ttlSeconds);
     }
 
-    /** @param array<string, string> $expected */
+    /** @param array<int|string, string> $expected */
     private function tagGenerationsUnchanged(array $expected): bool
     {
         if ($expected === []) {

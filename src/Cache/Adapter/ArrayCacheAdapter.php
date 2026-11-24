@@ -13,7 +13,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
 {
     private readonly string $ns;
 
-    /** @var array<string, string> */
+    /** @var array<int|string, string> */
     private array $metadata = [];
 
     /** @var array<string, string> */
@@ -141,7 +141,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
 
     /**
      * @param list<string> $tags
-     * @return array<string, string>
+     * @return array<int|string, string>
      */
     #[\Override]
     public function getTagGenerations(array $tags): array
@@ -188,7 +188,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
 
     /**
      * @param list<string> $tags
-     * @return array<string, string>
+     * @return array<int|string, string>
      */
     #[\Override]
     public function readTagGenerations(array $tags): array
@@ -240,7 +240,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
         return true;
     }
 
-    /** @param array<string, string> $generations */
+    /** @param array<int|string, string> $generations */
     #[\Override]
     public function storeTagGenerations(array $generations): bool
     {

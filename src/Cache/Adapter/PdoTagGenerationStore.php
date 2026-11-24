@@ -17,7 +17,7 @@ final class PdoTagGenerationStore
 
     /**
      * @param list<string> $tags
-     * @return array<string, string>
+     * @return array<int|string, string>
      */
     public static function getOrInitialize(
         PDO $pdo,
@@ -47,13 +47,13 @@ final class PdoTagGenerationStore
         }
 
         foreach ($missing as $tag => $candidate) {
-            self::insertIfMissing($pdo, $driver, $table, $namespace, $tag, $candidate);
+            self::insertIfMissing($pdo, $driver, $table, $namespace, (string) $tag, $candidate);
         }
         if ($missing === []) {
             return $generations;
         }
 
-        $actual = self::fetch($pdo, $table, $namespace, array_keys($missing));
+        $actual = self::fetch($pdo, $table, $namespace, array_map(strval(...), array_keys($missing)));
         foreach ($missing as $tag => $_candidate) {
             $generation = self::normalize($actual[$tag] ?? null);
             if ($generation === null) {
@@ -67,7 +67,7 @@ final class PdoTagGenerationStore
 
     /**
      * @param list<string> $tags
-     * @return array<string, string>
+     * @return array<int|string, string>
      */
     private static function fetch(PDO $pdo, string $table, string $namespace, array $tags): array
     {

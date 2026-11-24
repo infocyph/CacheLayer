@@ -368,9 +368,13 @@ test('a stale file lock handle cannot release its replacement', function (): voi
     } finally {
         $provider->release($first);
         $provider->release($second);
-        foreach (new FilesystemIterator($directory, FilesystemIterator::SKIP_DOTS) as $file) {
-            unlink($file->getPathname());
+        if (is_dir($directory)) {
+            foreach (new DirectoryIterator($directory) as $file) {
+                if ($file->isFile()) {
+                    unlink($file->getPathname());
+                }
+            }
+            rmdir($directory);
         }
-        rmdir($directory);
     }
 });

@@ -85,6 +85,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
+        $keys = array_values($keys);
         foreach ($this->groupByBucket($keys) as $bucket => $group) {
             $marks = implode(',', array_fill(0, count($group), '?'));
             $this->executeCql(
@@ -124,7 +125,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
 
     /**
      * @param list<string> $tags
-     * @return array<string, string>
+     * @return array<int|string, string>
      */
     #[\Override]
     public function getTagGenerations(array $tags): array
@@ -176,7 +177,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
 
     /**
      * @param list<string> $tags
-     * @return array<string, string>
+     * @return array<int|string, string>
      */
     #[\Override]
     public function readTagGenerations(array $tags): array
@@ -271,7 +272,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
         return true;
     }
 
-    /** @param array<string, string> $generations */
+    /** @param array<int|string, string> $generations */
     #[\Override]
     public function storeTagGenerations(array $generations): bool
     {

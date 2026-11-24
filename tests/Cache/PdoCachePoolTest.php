@@ -64,3 +64,14 @@ test('pdo factory configures pdo lock provider', function () {
 
     expect($provider)->toBeInstanceOf(FileLockProvider::class);
 });
+
+test('PDO cache supports numeric-looking tag names without changing their identity', function (): void {
+    $cache = Cache::pdo('pdo-numeric-tags', 'sqlite::memory:');
+    expect($cache->setTagged('first', 'A', ['123']))->toBeTrue()
+        ->and($cache->setTagged('second', 'B', ['0123']))->toBeTrue()
+        ->and($cache->get('first'))->toBe('A')
+        ->and($cache->get('second'))->toBe('B')
+        ->and($cache->invalidateTag('123'))->toBeTrue()
+        ->and($cache->has('first'))->toBeFalse()
+        ->and($cache->get('second'))->toBe('B');
+});

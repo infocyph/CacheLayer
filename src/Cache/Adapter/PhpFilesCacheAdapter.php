@@ -131,7 +131,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
 
     /**
      * @param list<string> $tags
-     * @return array<string, string>
+     * @return array<int|string, string>
      */
     #[\Override]
     public function getTagGenerations(array $tags): array

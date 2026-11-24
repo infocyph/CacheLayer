@@ -36,7 +36,7 @@ final class CacheTagSnapshots
         return $tags;
     }
 
-    /** @param array<string, string> $generations */
+    /** @param array<int|string, string> $generations */
     public static function isCurrent(CacheItem $item, array $generations): bool
     {
         foreach ($item->getTagGenerations() as $tag => $expected) {
@@ -69,7 +69,7 @@ final class CacheTagSnapshots
 
     /**
      * @param array<string, CacheItemInterface> $items
-     * @param array<string, string> $generations
+     * @param array<int|string, string> $generations
      * @param callable(string): CacheItemInterface $miss
      * @return array{items:array<string, CacheItemInterface>, stale:list<string>}
      */

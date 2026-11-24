@@ -192,7 +192,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
 
     /**
      * @param list<string> $tags
-     * @return array<string, string>
+     * @return array<int|string, string>
      */
     #[\Override]
     public function getTagGenerations(array $tags): array
@@ -237,8 +237,8 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         }
         $byId = [];
         foreach ($documents as $document) {
-            $row = AdapterValueNormalizer::fromJsonOrArrayLike($document);
-            if ($row === null || !is_string($row['_id'] ?? null)) {
+            $row = AdapterValueNormalizer::fromJsonOrArrayLike($document) ?? [];
+            if (!is_string($row['_id'] ?? null)) {
                 continue;
             }
             $byId[$row['_id']] = $row;
@@ -260,7 +260,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
 
     /**
      * @param list<string> $tags
-     * @return array<string, string>
+     * @return array<int|string, string>
      */
     #[\Override]
     public function readTagGenerations(array $tags): array
@@ -355,7 +355,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return true;
     }
 
-    /** @param array<string, string> $generations */
+    /** @param array<int|string, string> $generations */
     #[\Override]
     public function storeTagGenerations(array $generations): bool
     {

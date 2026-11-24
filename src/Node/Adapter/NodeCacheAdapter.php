@@ -149,7 +149,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
 
     /**
      * @param list<string> $tags
-     * @return array<string, string>
+     * @return array<int|string, string>
      */
     #[\Override]
     public function getTagGenerations(array $tags): array
@@ -212,7 +212,10 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         return $ordered;
     }
 
-    /** @param list<string> $tags */
+    /**
+     * @param list<string> $tags
+     * @return array<int|string, string>
+     */
     #[\Override]
     public function readTagGenerations(array $tags): array
     {
@@ -288,7 +291,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         return $l1Stored;
     }
 
-    /** @param array<string, string> $generations */
+    /** @param array<int|string, string> $generations */
     #[\Override]
     public function storeTagGenerations(array $generations): bool
     {
@@ -362,7 +365,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
 
     /**
      * @param list<string> $tags
-     * @return array<string, string>
+     * @return array<int|string, string>
      */
     private function freshGenerations(array $tags): array
     {

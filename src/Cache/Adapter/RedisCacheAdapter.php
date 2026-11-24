@@ -252,7 +252,7 @@ LUA;
 
     /**
      * @param list<string> $tags
-     * @return array<string, string>
+     * @return array<int|string, string>
      */
     #[\Override]
     public function getTagGenerations(array $tags): array
@@ -436,8 +436,8 @@ LUA;
     }
 
     /**
-     * @param array<string, mixed> $missing
-     * @return array<string, string>
+     * @param array<int|string, mixed> $missing
+     * @return array<int|string, string>
      */
     private function initializeTagGenerations(array $missing): array
     {

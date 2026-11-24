@@ -98,7 +98,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
 
     /**
      * @param list<string> $tags
-     * @return array<string, string>
+     * @return array<int|string, string>
      */
     #[\Override]
     public function getTagGenerations(array $tags): array
@@ -162,7 +162,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
 
     /**
      * @param list<string> $tags
-     * @return array<string, string>
+     * @return array<int|string, string>
      */
     #[\Override]
     public function readTagGenerations(array $tags): array
@@ -243,7 +243,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
         );
     }
 
-    /** @param array<string, string> $generations */
+    /** @param array<int|string, string> $generations */
     #[\Override]
     public function storeTagGenerations(array $generations): bool
     {

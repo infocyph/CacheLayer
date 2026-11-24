@@ -21,7 +21,7 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
 
     private bool $committing = false;
 
-    /** @var array<string, string> */
+    /** @var array<int|string, string> */
     private array $localMetadata = [];
 
     private ?CacheOptions $options = null;
@@ -136,7 +136,7 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
 
     /**
      * @param list<string> $tags
-     * @return array<string, string>
+     * @return array<int|string, string>
      */
     #[\Override]
     public function getTagGenerations(array $tags): array

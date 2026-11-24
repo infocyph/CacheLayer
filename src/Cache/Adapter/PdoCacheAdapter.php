@@ -117,6 +117,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
+        $keys = array_values($keys);
 
         return $this->deleteByKind(self::KIND_DATA, $keys);
     }
@@ -142,7 +143,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
 
     /**
      * @param list<string> $tags
-     * @return array<string, string>
+     * @return array<int|string, string>
      */
     #[\Override]
     public function getTagGenerations(array $tags): array

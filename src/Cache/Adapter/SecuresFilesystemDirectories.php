@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Infocyph\CacheLayer\Cache\Adapter;
 
 use Closure;
-use FilesystemIterator;
+use DirectoryIterator;
 use Infocyph\CacheLayer\Support\FilesystemTrust;
 use RuntimeException;
 use UnexpectedValueException;
@@ -64,7 +64,7 @@ trait SecuresFilesystemDirectories
     private function clearDirectoryFiles(string $directory, string $suffix, ?Closure $beforeDelete = null): bool
     {
         try {
-            $files = new FilesystemIterator($directory, FilesystemIterator::SKIP_DOTS);
+            $files = new DirectoryIterator($directory);
         } catch (UnexpectedValueException) {
             return false;
         }
