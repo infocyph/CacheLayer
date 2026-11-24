@@ -152,6 +152,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
     /**
      * @param list<string> $tags
      * @return array<int|string, string>
+     * @throws RuntimeException
      */
     #[\Override]
     public function getTagGenerations(array $tags): array
@@ -388,7 +389,10 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         return $rows;
     }
 
-    /** @param list<array{0:string, 1:string, 2:string, 3:int|null}> $rows */
+    /**
+     * @param list<array{0:string, 1:string, 2:string, 3:int|null}> $rows
+     * @throws PDOException
+     */
     private function upsertChunk(array $rows): bool
     {
         if (!in_array($this->driver, ['pgsql', 'sqlite', 'mysql', 'mariadb'], true)) {

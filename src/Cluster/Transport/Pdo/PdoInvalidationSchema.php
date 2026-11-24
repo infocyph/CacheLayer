@@ -36,6 +36,9 @@ final class PdoInvalidationSchema
         }
     }
 
+    /**
+     * @throws ClusterTransportException
+     */
     public static function validateConnection(PDO $connection, bool $allowSqliteForTesting = false): string
     {
         return self::driver($connection, $allowSqliteForTesting);

@@ -91,6 +91,9 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         );
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     #[\Override]
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
@@ -257,6 +260,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
     /**
      * @param list<string> $keys
      * @return array<string, CacheItem>
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
     #[\Override]
     public function multiFetch(array $keys): array
@@ -441,6 +445,9 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         return $this->namespace . ':m:tag:' . $tag;
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function namespaceGeneration(mixed $value = null): string
     {
         $value ??= $this->client->get($this->generationKey());
@@ -469,6 +476,9 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         return true;
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function tagGeneration(string $key, mixed $value): string
     {
         return $this->initializeGeneration(

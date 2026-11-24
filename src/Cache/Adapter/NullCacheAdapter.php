@@ -69,6 +69,7 @@ final class NullCacheAdapter extends AbstractCacheAdapter
      * @param array $keys The keys argument.
      * @phpstan-param list<string> $keys
      * @phpstan-return array<string, CacheItem>
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
     #[\Override]
     public function multiFetch(array $keys): array

@@ -30,6 +30,7 @@ final readonly class MemcachedLockProvider implements LockProviderInterface
 
     /**
      * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
      */
     #[\Override]
     public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): ?LockHandle
@@ -47,6 +48,7 @@ final readonly class MemcachedLockProvider implements LockProviderInterface
 
     /**
      * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
      */
     #[\Override]
     public function refresh(?LockHandle $handle, float $leaseSeconds): bool

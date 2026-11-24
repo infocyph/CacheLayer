@@ -19,6 +19,9 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
 {
     private string $driver;
 
+    /**
+     * @throws ClusterTransportException
+     */
     public function __construct(
         private PDO $connection,
         bool $allowSqliteForTesting = false,
@@ -91,6 +94,9 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
         return is_numeric($count) ? (int) $count : 0;
     }
 
+    /**
+     * @throws ClusterTransportException
+     */
     #[\Override]
     public function isCursorBefore(string $cursor, string $oldestAvailableId): bool
     {
@@ -102,6 +108,9 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
             : strlen($cursor) < strlen($oldestAvailableId);
     }
 
+    /**
+     * @throws ClusterTransportException
+     */
     #[\Override]
     public function newestAvailableId(string $cluster): ?string
     {
@@ -375,6 +384,9 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
         return 'DELETE FROM ' . PdoInvalidationSchema::EVENT_TABLE . ' WHERE event_id IN (' . $selection . ')';
     }
 
+    /**
+     * @throws ClusterTransportException
+     */
     private function publishLocked(PDO $connection, InvalidationEvent $event): string
     {
         $this->lockCluster($connection, $event->cluster);

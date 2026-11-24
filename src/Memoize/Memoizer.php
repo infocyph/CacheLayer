@@ -121,6 +121,7 @@ final class Memoizer
      * @param string $signature The signature argument.
      * @param array $params The params argument.
      * @phpstan-param array<array-key, mixed> $params
+     * @throws \InvalidArgumentException
      */
     private static function buildCacheKey(string $signature, array $params): string
     {

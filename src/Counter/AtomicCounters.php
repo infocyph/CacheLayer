@@ -26,6 +26,9 @@ final class AtomicCounters
         return new RedisAtomicCounterStore($client ?? self::connect($dsn), $namespace);
     }
 
+    /**
+     * @throws AtomicCounterException
+     */
     public static function valkey(
         string $namespace = 'default',
         #[\SensitiveParameter]
@@ -37,6 +40,7 @@ final class AtomicCounters
 
     /**
      * @throws AtomicCounterException
+     * @throws \RuntimeException
      */
     private static function connect(#[\SensitiveParameter] string $dsn): \Redis
     {

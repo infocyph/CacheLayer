@@ -131,6 +131,9 @@ LUA;
         return AdapterValueNormalizer::intOrZero($result) === 1;
     }
 
+    /**
+     * @throws CacheInvalidArgumentException
+     */
     #[\Override]
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
@@ -296,6 +299,7 @@ LUA;
      * @param array $keys The keys argument.
      * @phpstan-param list<string> $keys
      * @phpstan-return array<string, CacheItem>
+     * @throws CacheInvalidArgumentException
      */
     #[\Override]
     public function multiFetch(array $keys): array
@@ -459,6 +463,7 @@ LUA;
     /**
      * @param array<int|string, mixed> $missing
      * @return array<int|string, string>
+     * @throws RuntimeException
      */
     private function initializeTagGenerations(array $missing): array
     {

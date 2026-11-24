@@ -23,11 +23,17 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
 
     private string $metadataDirectory;
 
+    /**
+     * @throws CacheInvalidArgumentException
+     */
     public function __construct(string $namespace = 'default', ?string $baseDir = null)
     {
         $this->createDirectory($namespace, $baseDir);
     }
 
+    /**
+     * @throws RuntimeException
+     */
     #[\Override]
     public function atomicCompareAndSet(string $key, mixed $expected, CacheItemInterface $replacement): bool
     {
@@ -49,6 +55,10 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
         });
     }
 
+    /**
+     * @throws CacheInvalidArgumentException
+     * @throws RuntimeException
+     */
     #[\Override]
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
@@ -67,6 +77,9 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
         });
     }
 
+    /**
+     * @throws RuntimeException
+     */
     #[\Override]
     public function atomicSetIfAbsent(CacheItemInterface $item): bool
     {
@@ -97,6 +110,9 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
         return $ok;
     }
 
+    /**
+     * @throws RuntimeException
+     */
     #[\Override]
     public function deleteItem(string $key): bool
     {
@@ -221,6 +237,7 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
 
     /**
      * @throws CacheInvalidArgumentException
+     * @throws RuntimeException
      */
     private function createDirectory(string $ns, ?string $baseDir): void
     {
@@ -292,6 +309,9 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
         return $this->metadataDirectory . hash('xxh128', $tag) . '.generation';
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function persistItem(CacheItemInterface $item): bool
     {
         return $this->withKeyLock($item->getKey(), fn(): bool => $this->persistItemUnlocked($item));

@@ -18,6 +18,9 @@ final readonly class ClusterRecoveryManager
         private string $cluster,
     ) {}
 
+    /**
+     * @throws ClusterCacheException
+     */
     public function recoverIfRequired(): bool
     {
         if ($this->cursorStore->requiresRecovery()) {

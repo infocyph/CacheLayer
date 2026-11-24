@@ -66,6 +66,9 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         }, reconcile: true);
     }
 
+    /**
+     * @throws LogicException
+     */
     #[\Override]
     public function configureOptions(CacheOptions $options): void
     {
@@ -78,6 +81,9 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         }
     }
 
+    /**
+     * @throws LogicException
+     */
     #[\Override]
     public function configureStorageIdentity(string $storageIdentity): void
     {
@@ -242,6 +248,9 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         return $this->mutate(fn(): bool => $this->writeBatch($items));
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     private function copyItem(CacheItemInterface $source): CacheItem
     {
         $ttl = $source instanceof CacheItem ? $source->ttlSeconds() : null;
@@ -367,7 +376,10 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         return $pool->save($target);
     }
 
-    /** @param array<string, CacheItemInterface> $items */
+    /**
+     * @param array<string, CacheItemInterface> $items
+     * @throws \Psr\Cache\InvalidArgumentException
+     */
     private function writeBatch(array $items): bool
     {
         $start = $this->writeStart();

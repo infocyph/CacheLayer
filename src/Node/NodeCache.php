@@ -16,6 +16,11 @@ use Infocyph\CacheLayer\Node\Maintenance\NodeCachePruner;
 
 final class NodeCache
 {
+    /**
+     * @throws \Infocyph\CacheLayer\Node\Exception\NodeCacheConfigurationException
+     * @throws \RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     public static function create(NodeCacheConfig $config): Cache
     {
         $connection = NodeSqliteConnection::create($config);
@@ -37,6 +42,10 @@ final class NodeCache
         );
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Node\Exception\NodeCacheConfigurationException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     public static function maintenance(NodeCacheConfig $config): NodeCacheMaintenance
     {
         $connection = NodeSqliteConnection::create($config);
@@ -50,6 +59,7 @@ final class NodeCache
 
     /**
      * @throws \RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
     private static function createApcuAdapter(
         NodeCacheConfig $config,

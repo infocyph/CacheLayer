@@ -65,6 +65,13 @@ final class NodeCacheBench
         return iterator_count($cache->getMultiple($this->keys));
     }
 
+    /**
+     * @throws \RuntimeException
+     * @throws \Infocyph\CacheLayer\Node\Exception\NodeCacheConfigurationException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \LogicException
+     */
     public function setUpFullHit(): void
     {
         [$this->cache, $l1] = $this->createNodeCache();
@@ -74,6 +81,9 @@ final class NodeCacheBench
 
     /**
      * @throws \Psr\Cache\InvalidArgumentException
+     * @throws \RuntimeException
+     * @throws \Infocyph\CacheLayer\Node\Exception\NodeCacheConfigurationException
+     * @throws \LogicException
      */
     public function setUpMixedHit(): void
     {

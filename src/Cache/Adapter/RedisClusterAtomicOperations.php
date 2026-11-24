@@ -104,6 +104,9 @@ LUA;
         return AdapterValueNormalizer::intOrZero($result) === 1;
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
         $this->discardDeferredKey($key);

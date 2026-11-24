@@ -70,12 +70,18 @@ final readonly class RedisStreamInvalidationTransport implements InvalidationTra
         return $this->compareIds($cursor, $oldestAvailableId) < 0;
     }
 
+    /**
+     * @throws ClusterTransportException
+     */
     #[\Override]
     public function newestAvailableId(string $cluster): ?string
     {
         return $this->boundary($cluster, true);
     }
 
+    /**
+     * @throws ClusterTransportException
+     */
     #[\Override]
     public function oldestAvailableId(string $cluster): ?string
     {
@@ -140,12 +146,16 @@ final readonly class RedisStreamInvalidationTransport implements InvalidationTra
     /**
      * @param array $fields The normalized stream fields.
      * @phpstan-param array<string, mixed> $fields
+     * @throws ClusterTransportException
      */
     private function clusterFromStreamEvent(array $fields): string
     {
         return $this->field($fields, 'cluster');
     }
 
+    /**
+     * @throws ClusterTransportException
+     */
     private function compareIds(string $left, string $right): int
     {
         [$leftMilliseconds, $leftSequence] = $this->idParts($left);

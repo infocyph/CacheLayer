@@ -27,6 +27,7 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
 
     /**
      * @throws \Infocyph\CacheLayer\Cluster\Exception\ClusterConfigurationException
+     * @throws ClusterCacheException
      */
     public function __construct(
         string $sqliteFile,
@@ -59,6 +60,9 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
         $this->write($eventId);
     }
 
+    /**
+     * @throws ClusterCacheException
+     */
     #[\Override]
     public function current(): ?string
     {
@@ -78,12 +82,18 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
         return !$this->scopeExists();
     }
 
+    /**
+     * @throws ClusterCacheException
+     */
     #[\Override]
     public function reset(?string $eventId): void
     {
         $this->write($eventId);
     }
 
+    /**
+     * @throws ClusterCacheException
+     */
     #[\Override]
     public function updatedAt(): ?int
     {
@@ -147,6 +157,9 @@ final readonly class SqliteCursorStore implements CursorStoreInterface
         }
     }
 
+    /**
+     * @throws ClusterCacheException
+     */
     private function scopeExists(): bool
     {
         return $this->rowExists(

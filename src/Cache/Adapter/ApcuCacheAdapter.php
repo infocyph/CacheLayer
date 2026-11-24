@@ -136,6 +136,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
      * @param array $keys The keys argument.
      * @phpstan-param list<string> $keys
      * @phpstan-return array<string, CacheItem>
+     * @throws CacheInvalidArgumentException
      */
     #[\Override]
     public function multiFetch(array $keys): array
@@ -288,6 +289,9 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
         return false;
     }
 
+    /**
+     * @throws CacheInvalidArgumentException
+     */
     private function hitItemFromBlob(string $key, string $blob): ?CacheItem
     {
         $record = $this->decodeRecordFromBlob($blob, $key);

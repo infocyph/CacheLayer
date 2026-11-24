@@ -95,6 +95,9 @@ final class NodeSqliteConnection
         }
     }
 
+    /**
+     * @throws NodeCacheConfigurationException
+     */
     private static function prepareDirectory(string $file): void
     {
         self::assertTrustedFilePath($file);

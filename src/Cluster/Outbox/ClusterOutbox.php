@@ -79,6 +79,7 @@ final class ClusterOutbox
     /**
      * @param array $tags The tags argument.
      * @phpstan-param list<string> $tags
+     * @throws ClusterCacheException
      */
     public function invalidateTags(array $tags): void
     {

@@ -50,6 +50,7 @@ final readonly class ClusterCoordinator
     /**
      * @param array $tags The tags argument.
      * @phpstan-param list<string> $tags
+     * @throws ClusterCacheException
      */
     public function invalidateTags(array $tags): void
     {
@@ -64,6 +65,9 @@ final readonly class ClusterCoordinator
         }
     }
 
+    /**
+     * @throws ClusterCacheException
+     */
     private function coordinate(InvalidationEvent $event, callable $invalidate): void
     {
         if ($this->invalidateLocallyFirst) {

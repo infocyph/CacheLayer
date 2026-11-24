@@ -108,6 +108,7 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
     /**
      * @param list<string> $tags
      * @return array<int|string, string>
+     * @throws RuntimeException
      */
     #[\Override]
     public function getTagGenerations(array $tags): array
@@ -232,6 +233,7 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
     /**
      * @param list<string> $keys
      * @return array<string, CacheItem>
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
     private function fetchBucket(int $bucket, array $keys): array
     {
@@ -318,6 +320,9 @@ final class RedisClusterCacheAdapter extends AbstractCacheAdapter implements Ato
         return $this->prefix($this->bucket($tag)) . ':m:tag:' . $tag;
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function namespaceGeneration(int $bucket, mixed $value = null): string
     {
         $key = $this->generationKey($bucket);

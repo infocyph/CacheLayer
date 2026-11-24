@@ -45,6 +45,9 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         }
     }
 
+    /**
+     * @throws Throwable
+     */
     #[\Override]
     public function clear(): bool
     {
@@ -59,6 +62,9 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         return $l2 && $l1;
     }
 
+    /**
+     * @throws \LogicException
+     */
     #[\Override]
     public function configureOptions(CacheOptions $options): void
     {
@@ -70,6 +76,9 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         }
     }
 
+    /**
+     * @throws \LogicException
+     */
     #[\Override]
     public function configureStorageIdentity(string $storageIdentity): void
     {
@@ -81,6 +90,9 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         }
     }
 
+    /**
+     * @throws Throwable
+     */
     #[\Override]
     public function deleteItem(string $key): bool
     {
@@ -95,7 +107,10 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         return $l2 && $l1;
     }
 
-    /** @param array<array-key, string> $keys */
+    /**
+     * @param array<array-key, string> $keys
+     * @throws Throwable
+     */
     #[\Override]
     public function deleteItems(array $keys): bool
     {
@@ -110,6 +125,9 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         return $l2 && $l1;
     }
 
+    /**
+     * @throws Throwable
+     */
     #[\Override]
     public function getItem(string $key): CacheItem
     {
@@ -150,6 +168,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
     /**
      * @param list<string> $tags
      * @return array<int|string, string>
+     * @throws Throwable
      */
     #[\Override]
     public function getTagGenerations(array $tags): array
@@ -222,7 +241,10 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         return $this->getTagGenerations($tags);
     }
 
-    /** @param list<string> $tags */
+    /**
+     * @param list<string> $tags
+     * @throws Throwable
+     */
     #[\Override]
     public function rotateTagGenerations(array $tags): bool
     {
@@ -291,7 +313,10 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         return $l1Stored;
     }
 
-    /** @param array<int|string, string> $generations */
+    /**
+     * @param array<int|string, string> $generations
+     * @throws Throwable
+     */
     #[\Override]
     public function storeTagGenerations(array $generations): bool
     {
@@ -385,6 +410,9 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         }
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     private function nodeItem(CacheItemInterface $item): CacheItem
     {
         $ttl = $item instanceof CacheItem ? $item->ttlSeconds() : null;
@@ -398,6 +426,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
     /**
      * @param list<string> $keys
      * @return array{array<string, CacheItem>, list<string>}
+     * @throws Throwable
      */
     private function readL1(array $keys): array
     {
@@ -427,6 +456,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
      * @param list<string> $keys
      * @param array<string, CacheItem> $results
      * @return array<string, CacheItem>
+     * @throws Throwable
      */
     private function readL2(array $keys, array &$results): array
     {
@@ -458,7 +488,10 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         return $pool->multiFetch($keys);
     }
 
-    /** @param array<string, CacheItemInterface> $items */
+    /**
+     * @param array<string, CacheItemInterface> $items
+     * @throws Throwable
+     */
     private function saveInto(
         InternalCachePoolInterface $pool,
         array $items,
@@ -474,6 +507,9 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         }, false, $failureMetric);
     }
 
+    /**
+     * @throws Throwable
+     */
     private function saveOneInto(
         InternalCachePoolInterface $pool,
         CacheItemInterface $item,

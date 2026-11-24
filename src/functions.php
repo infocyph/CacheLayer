@@ -10,6 +10,8 @@ if (!function_exists('memoize')) {
      * @param array<array-key, mixed> $params
      *
      * @throws ReflectionException
+     * @throws LogicException
+     * @throws OverflowException
      */
     function memoize(?callable $callable = null, array $params = []): mixed
     {
@@ -31,6 +33,8 @@ if (!function_exists('remember')) {
      *
      * @throws ReflectionException
      * @throws InvalidArgumentException
+     * @throws LogicException
+     * @throws OverflowException
      */
     function remember(?object $object = null, ?callable $callable = null, array $params = []): mixed
     {
@@ -53,6 +57,10 @@ if (!function_exists('remember')) {
 }
 
 if (!function_exists('once')) {
+    /**
+     * @throws LogicException
+     * @throws OverflowException
+     */
     function once(callable $callback): mixed
     {
         $memoizer = RunwireIntegration::onceMemoizer();

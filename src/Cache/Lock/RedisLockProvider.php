@@ -13,6 +13,9 @@ final readonly class RedisLockProvider implements LockProviderInterface
 
     private int $retrySleepMicros;
 
+    /**
+     * @throws RuntimeException
+     */
     public function __construct(
         private \Redis $redis,
         private string $prefix = 'cachelayer:lock:',
@@ -22,6 +25,9 @@ final readonly class RedisLockProvider implements LockProviderInterface
         $this->retrySleepMicros = self::normalizeRetrySleepMicros($retrySleepMicros);
     }
 
+    /**
+     * @throws \InvalidArgumentException
+     */
     #[\Override]
     public function acquire(string $key, float $waitSeconds, float $leaseSeconds = 30.0): ?LockHandle
     {
@@ -36,6 +42,9 @@ final readonly class RedisLockProvider implements LockProviderInterface
         );
     }
 
+    /**
+     * @throws \InvalidArgumentException
+     */
     #[\Override]
     public function refresh(?LockHandle $handle, float $leaseSeconds): bool
     {

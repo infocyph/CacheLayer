@@ -16,6 +16,7 @@ final class RedisConnection
 
     /**
      * @throws RuntimeException
+     * @throws InvalidArgumentException
      */
     public static function connect(#[\SensitiveParameter] string $dsn): \Redis
     {

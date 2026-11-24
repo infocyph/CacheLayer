@@ -22,11 +22,18 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
 
     private string $metadataDirectory;
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws RuntimeException
+     */
     public function __construct(string $namespace = 'default', ?string $baseDir = null)
     {
         $this->createDirectory($namespace, $baseDir);
     }
 
+    /**
+     * @throws RuntimeException
+     */
     #[\Override]
     public function atomicCompareAndSet(string $key, mixed $expected, CacheItemInterface $replacement): bool
     {
@@ -48,6 +55,10 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         });
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws RuntimeException
+     */
     #[\Override]
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
@@ -66,6 +77,9 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         });
     }
 
+    /**
+     * @throws RuntimeException
+     */
     #[\Override]
     public function atomicSetIfAbsent(CacheItemInterface $item): bool
     {
@@ -96,6 +110,9 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         return $ok;
     }
 
+    /**
+     * @throws RuntimeException
+     */
     #[\Override]
     public function deleteItem(string $key): bool
     {
@@ -268,6 +285,9 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         return $this->metadataDirectory . hash('xxh128', $tag) . '.generation';
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function persistItem(CacheItemInterface $item): bool
     {
         return $this->withKeyLock($item->getKey(), fn(): bool => $this->persistItemUnlocked($item));

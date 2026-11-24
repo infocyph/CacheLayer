@@ -20,6 +20,9 @@ final class CallableFingerprint
     /** @var WeakMap<object, string>|null */
     private static ?WeakMap $objects = null;
 
+    /**
+     * @throws \LogicException
+     */
     public static function callable(callable $callable): string
     {
         if ($callable instanceof Closure) {

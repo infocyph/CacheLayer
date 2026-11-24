@@ -16,6 +16,9 @@ use Infocyph\CacheLayer\Node\NodeCacheConfig;
 
 final class ClusterCache
 {
+    /**
+     * @throws \Infocyph\CacheLayer\Cluster\Exception\ClusterConfigurationException
+     */
     public static function create(
         NodeCacheConfig $node,
         ClusterCacheConfig $cluster,

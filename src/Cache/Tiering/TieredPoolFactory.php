@@ -218,6 +218,7 @@ final class TieredPoolFactory
      * @param int|string $index The index argument.
      * @phpstan-param array<string, mixed> $descriptor
      * @throws CacheInvalidArgumentException
+     * @throws \RuntimeException
      */
     private static function mongoPool(array $descriptor, string $namespace, mixed $client, int|string $index): InternalCachePoolInterface
     {

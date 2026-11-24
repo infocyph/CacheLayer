@@ -55,6 +55,9 @@ LUA;
         return $this->change($key, -$by, $ttlSeconds);
     }
 
+    /**
+     * @throws AtomicCounterException
+     */
     #[\Override]
     public function delete(string $key): bool
     {

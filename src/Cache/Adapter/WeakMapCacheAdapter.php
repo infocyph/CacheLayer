@@ -189,6 +189,7 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
     /**
      * @param list<string> $keys
      * @return array<string, CacheItem>
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
     #[\Override]
     public function multiFetch(array $keys): array

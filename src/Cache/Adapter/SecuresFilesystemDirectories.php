@@ -41,6 +41,9 @@ trait SecuresFilesystemDirectories
         }
     }
 
+    /**
+     * @throws RuntimeException
+     */
     protected function atomicReplace(string $path, string $contents): bool
     {
         $this->assertPathNotSymlink($path . '.lock', 'Cache metadata lock file');

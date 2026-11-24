@@ -158,7 +158,11 @@ final class RunwireIntegration
         return self::current()->runtime ?? self::$runtime;
     }
 
-    /** Borrow an explicit host runtime for this callback without global lifecycle ownership. */
+    /**
+     * Borrow an explicit host runtime for this callback without global lifecycle ownership.
+     * @throws \LogicException
+     * @throws \Infocyph\Runwire\Exception\CancelledException
+     */
     public static function share(
         ?RequestContext $request,
         ?CoroutineScope $scope,

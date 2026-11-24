@@ -48,6 +48,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
 
     /**
      * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
     public static function fromClient(
         object $client,
@@ -101,6 +102,9 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return $this->matchedCount($result) === 1;
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     #[\Override]
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
@@ -115,6 +119,9 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
             : $this->genericMiss($key);
     }
 
+    /**
+     * @throws Throwable
+     */
     #[\Override]
     public function atomicSetIfAbsent(CacheItemInterface $item): bool
     {
@@ -201,6 +208,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
      * @param list<string> $tags
      * @return array<int|string, string>
      * @throws RuntimeException
+     * @throws Throwable
      */
     #[\Override]
     public function getTagGenerations(array $tags): array
@@ -500,6 +508,9 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return $record;
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function recordTagsAreCurrent(CacheRecord $record): bool
     {
         if ($record->tags === []) {

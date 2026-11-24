@@ -8,6 +8,7 @@ final class ValkeyCacheAdapter extends RedisCacheAdapter
 {
     /**
      * @throws \RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
     public function __construct(
         string $namespace = 'default',

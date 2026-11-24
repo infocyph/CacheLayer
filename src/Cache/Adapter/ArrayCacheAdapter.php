@@ -53,6 +53,9 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
         return true;
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     #[\Override]
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {

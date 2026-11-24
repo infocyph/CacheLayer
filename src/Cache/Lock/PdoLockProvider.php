@@ -38,6 +38,9 @@ final class PdoLockProvider implements LockProviderInterface
         }
     }
 
+    /**
+     * @throws UnsupportedPdoLockDriver
+     */
     public static function strict(
         \PDO $pdo,
         string $prefix = 'cachelayer:lock:',

@@ -92,6 +92,9 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         });
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     #[\Override]
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
@@ -345,6 +348,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
 
     /**
      * @throws RuntimeException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
      */
     private function consumeRecord(string $key, string $mapped): CacheItemInterface
     {
@@ -399,6 +403,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
     /**
      * @param list<string> $keys
      * @return array<string, CacheItem>
+     * @throws RuntimeException
      */
     private function fetchStoredItems(array $keys): array
     {
@@ -544,6 +549,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
     /**
      * @param array<string, string> $records
      * @param list<string> $expired
+     * @throws RuntimeException
      */
     private function updateStore(array $records, array $expired): bool
     {
@@ -563,6 +569,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
      * @param callable $operation The operation to run while locked.
      * @phpstan-param callable(): T $operation
      * @phpstan-return T
+     * @throws RuntimeException
      */
     private function withExclusiveLock(callable $operation): mixed
     {
@@ -598,6 +605,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
      * @param callable $operation The operation to run while locked.
      * @phpstan-param callable(): T $operation
      * @phpstan-return T
+     * @throws RuntimeException
      */
     private function withSharedLock(callable $operation): mixed
     {

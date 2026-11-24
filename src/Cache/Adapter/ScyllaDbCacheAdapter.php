@@ -360,6 +360,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
      * @param string $cql The cql argument.
      * @param array $arguments The arguments argument.
      * @phpstan-param array<int, mixed> $arguments
+     * @throws RuntimeException
      */
     private function executeCql(string $cql, array $arguments = []): mixed
     {
@@ -514,6 +515,9 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
         $this->executeCql('BEGIN UNLOGGED BATCH ' . implode(' ', $inserts) . ' APPLY BATCH', $arguments);
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private function statementFor(string $cql): mixed
     {
         if ($this->supportsSessionMethod('prepare')) {
