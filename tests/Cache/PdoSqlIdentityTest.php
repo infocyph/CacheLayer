@@ -55,10 +55,10 @@ test('MySQL-family cache and invalidation identities use byte-sensitive collatio
             );
             $statement->execute([$cacheTable]);
             $collations = $statement->fetchAll(PDO::FETCH_COLUMN, 1);
-            if (!array_all($collations, is_string(...))) {
-                throw new RuntimeException('Database returned an invalid collation name.');
+            expect($collations)->toHaveCount(3);
+            foreach ($collations as $collation) {
+                expect($collation)->toBe('ascii_bin');
             }
-            expect(array_values(array_unique($collations)))->toBe(['ascii_bin']);
 
             $upper = Cache::pdo('Tenant', pdo: $pdo, table: $cacheTable);
             $lower = Cache::pdo('tenant', pdo: $pdo, table: $cacheTable);
@@ -86,10 +86,10 @@ test('MySQL-family cache and invalidation identities use byte-sensitive collatio
             );
             $statement->execute();
             $collations = $statement->fetchAll(PDO::FETCH_COLUMN, 1);
-            if (!array_all($collations, is_string(...))) {
-                throw new RuntimeException('Database returned an invalid collation name.');
+            expect($collations)->toHaveCount(5);
+            foreach ($collations as $collation) {
+                expect($collation)->toBe('ascii_bin');
             }
-            expect(array_values(array_unique($collations)))->toBe(['ascii_bin']);
 
             $transport = new PdoInvalidationTransport($pdo, initializeSchema: false);
             $transport->publish(InvalidationEvent::key('Tenant', 'App', 'Key', 'Node'));
