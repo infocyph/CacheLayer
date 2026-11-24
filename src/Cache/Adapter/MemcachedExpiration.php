@@ -11,6 +11,7 @@ final class MemcachedExpiration
 {
     private const int MAX_RELATIVE_SECONDS = 2_592_000;
 
+    /** @throws CacheInvalidArgumentException */
     public static function fromRelative(?int $seconds, ?int $now = null): int
     {
         if ($seconds === null || $seconds <= 0) {

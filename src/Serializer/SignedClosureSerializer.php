@@ -11,6 +11,7 @@ final readonly class SignedClosureSerializer
 {
     private const string PREFIX = 'cls1-sig:';
 
+    /** @throws InvalidArgumentException */
     public function __construct(#[\SensitiveParameter] private string $key)
     {
         if ($key === '') {
@@ -26,6 +27,7 @@ final readonly class SignedClosureSerializer
         return self::PREFIX . $signature . ':' . $payload;
     }
 
+    /** @throws InvalidArgumentException */
     public function unserialize(string $payload): Closure
     {
         if (!str_starts_with($payload, self::PREFIX)) {

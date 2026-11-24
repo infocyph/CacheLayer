@@ -12,6 +12,7 @@ use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 /** @internal */
 final class CacheInput
 {
+    /** @throws CacheInvalidArgumentException */
     public static function key(string $key): void
     {
         if (strlen($key) < 1 || strlen($key) > 64 || preg_match('/^[A-Za-z0-9_.-]+$/D', $key) !== 1) {
@@ -24,6 +25,7 @@ final class CacheInput
     /**
      * @param array<array-key, mixed> $keys
      * @return list<string>
+     * @throws CacheInvalidArgumentException
      */
     public static function keys(array $keys): array
     {
@@ -42,6 +44,7 @@ final class CacheInput
     /**
      * @param iterable<mixed> $keys
      * @return list<string>
+     * @throws CacheInvalidArgumentException
      */
     public static function materializeKeys(iterable $keys): array
     {
@@ -56,6 +59,7 @@ final class CacheInput
         return self::keys($materialized);
     }
 
+    /** @throws CacheInvalidArgumentException */
     public static function namespace(string $namespace): string
     {
         if (strlen($namespace) < 1
@@ -72,6 +76,7 @@ final class CacheInput
     /**
      * @param array<array-key, mixed> $tags
      * @return list<string>
+     * @throws CacheInvalidArgumentException
      */
     public static function tags(array $tags): array
     {
@@ -95,6 +100,7 @@ final class CacheInput
         return $validated;
     }
 
+    /** @throws CacheInvalidArgumentException */
     public static function ttl(mixed $ttl): ?int
     {
         if ($ttl === null || is_int($ttl)) {

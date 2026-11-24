@@ -31,11 +31,13 @@ final class ClosureSerializer
         return self::PREFIX . base64_encode(opis_serialize($closure));
     }
 
+    /** @throws InvalidArgumentException */
     public static function signed(#[\SensitiveParameter] string $key): SignedClosureSerializer
     {
         return new SignedClosureSerializer($key);
     }
 
+    /** @throws InvalidArgumentException */
     public static function unserialize(string $payload): Closure
     {
         if (!self::isSerialized($payload)) {

@@ -13,6 +13,7 @@ use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
 /** @internal */
 final class ClusterInput
 {
+    /** @throws ClusterConfigurationException */
     public static function cluster(string $cluster): string
     {
         self::boundedName($cluster, 128, 'cluster name');
@@ -20,6 +21,7 @@ final class ClusterInput
         return $cluster;
     }
 
+    /** @throws ClusterCacheException */
     public static function eventId(string $eventId): string
     {
         if (strlen($eventId) < 1 || strlen($eventId) > 128 || preg_match('/^[0-9-]+$/D', $eventId) !== 1) {
@@ -29,6 +31,7 @@ final class ClusterInput
         return $eventId;
     }
 
+    /** @throws ClusterCacheException */
     public static function identifier(InvalidationEventType $type, ?string $identifier): ?string
     {
         if ($type === InvalidationEventType::Namespace) {
@@ -55,6 +58,7 @@ final class ClusterInput
         return $identifier;
     }
 
+    /** @throws ClusterConfigurationException */
     public static function namespace(string $namespace): string
     {
         try {
@@ -64,6 +68,7 @@ final class ClusterInput
         }
     }
 
+    /** @throws ClusterConfigurationException */
     public static function nodeId(string $nodeId): string
     {
         self::boundedName($nodeId, 255, 'node ID');
@@ -71,6 +76,7 @@ final class ClusterInput
         return $nodeId;
     }
 
+    /** @throws ClusterConfigurationException */
     public static function transportIdentity(string $transportIdentity): string
     {
         self::boundedName($transportIdentity, 128, 'transport identity');
@@ -78,6 +84,7 @@ final class ClusterInput
         return $transportIdentity;
     }
 
+    /** @throws ClusterConfigurationException */
     private static function boundedName(string $value, int $maximum, string $label): void
     {
         if (strlen($value) < 1

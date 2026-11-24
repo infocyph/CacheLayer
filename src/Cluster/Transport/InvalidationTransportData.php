@@ -14,6 +14,7 @@ final class InvalidationTransportData
      * @param string $key The required field name.
      * @param string $source The transport description.
      * @phpstan-param array<string, mixed> $data
+     * @throws ClusterTransportException
      */
     public static function requiredString(array $data, string $key, string $source): string
     {
@@ -42,6 +43,7 @@ final class InvalidationTransportData
         return $normalized;
     }
 
+    /** @throws ClusterTransportException */
     public static function unsignedInteger(mixed $value, string $field, string $source): int
     {
         if (is_int($value)) {

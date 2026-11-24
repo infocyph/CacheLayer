@@ -215,3 +215,14 @@ test('skipped writes and failed promotions keep every upper tier fenced', functi
         rmdir($directory);
     }
 })->with(['skip', 'promote'])->with([false, true])->with([false, true]);
+
+test('tier descriptors reject invalid namespace and timeout values before opening a backend', function (): void {
+    foreach ([42, false, null, []] as $namespace) {
+        expect(fn() => Cache::tiered([['driver' => 'memory', 'namespace' => $namespace]]))
+            ->toThrow(\Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException::class);
+    }
+    foreach ([NAN, INF, -1.0] as $timeout) {
+        expect(fn() => Cache::tiered([['driver' => 'redis_cluster', 'timeout' => $timeout]]))
+            ->toThrow(\Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException::class);
+    }
+});

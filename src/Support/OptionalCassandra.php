@@ -31,6 +31,7 @@ final class OptionalCassandra
         return class_exists($class) ? new $class($value) : $value;
     }
 
+    /** @throws RuntimeException */
     public static function connect(string $keyspace): object
     {
         $class = self::rootClass();

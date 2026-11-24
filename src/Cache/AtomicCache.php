@@ -119,6 +119,7 @@ final class AtomicCache implements AtomicCacheInterface
      * @param callable(): T $operation
      * @param T $fallback
      * @return T
+     * @throws CacheBackendException
      */
     private function backend(callable $operation, mixed $fallback): mixed
     {

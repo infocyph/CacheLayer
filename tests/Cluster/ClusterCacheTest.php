@@ -621,3 +621,20 @@ test('a failed initial clear leaves a new history scope uninitialized for retry'
         ->and($cursor->current())->toBeNull()
         ->and($retry->recoverIfRequired())->toBeFalse();
 });
+
+test('direct invalidation event construction enforces transport ID validation', function (): void {
+    foreach (['', 'invalid-id', str_repeat('1', 129)] as $id) {
+        expect(fn() => new InvalidationEvent(
+            $id,
+            'cluster',
+            'namespace',
+            InvalidationEventType::Key,
+            'key',
+            'node',
+            time(),
+        ))->toThrow(ClusterCacheException::class);
+    }
+
+    $event = new InvalidationEvent('123-0', 'cluster', 'namespace', InvalidationEventType::Key, 'key', 'node', time());
+    expect($event->id)->toBe('123-0');
+});

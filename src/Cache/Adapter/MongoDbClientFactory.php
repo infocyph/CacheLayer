@@ -11,6 +11,7 @@ use Throwable;
 /** @internal */
 final class MongoDbClientFactory
 {
+    /** @throws CacheInvalidArgumentException */
     public static function create(#[\SensitiveParameter] string $uri): object
     {
         try {
