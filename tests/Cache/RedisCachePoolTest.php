@@ -260,10 +260,7 @@ test('Redis atomic claims have one winner under process contention', function ()
 
     $wins = 0;
     foreach ($children as $pid) {
-        if (pcntl_waitpid($pid, $status) !== $pid || !pcntl_wifexited($status)) {
-            throw new RuntimeException('Redis contention process did not exit normally.');
-        }
-        $wins += pcntl_wexitstatus($status) === 0 ? 1 : 0;
+        $wins += \Infocyph\CacheLayer\Tests\Support\CacheFixture::waitForChild($pid) === 0 ? 1 : 0;
     }
 
     expect($wins)->toBe(1);
@@ -304,10 +301,7 @@ test('Redis atomic compare and set has one winner under process contention', fun
 
     $wins = 0;
     foreach ($children as $pid) {
-        if (pcntl_waitpid($pid, $status) !== $pid || !pcntl_wifexited($status)) {
-            throw new RuntimeException('Redis contention process did not exit normally.');
-        }
-        $wins += pcntl_wexitstatus($status) === 0 ? 1 : 0;
+        $wins += \Infocyph\CacheLayer\Tests\Support\CacheFixture::waitForChild($pid) === 0 ? 1 : 0;
     }
 
     expect($wins)->toBe(1)
@@ -350,10 +344,7 @@ test('Redis atomic consumption has one winner under process contention', functio
 
     $wins = 0;
     foreach ($children as $pid) {
-        if (pcntl_waitpid($pid, $status) !== $pid || !pcntl_wifexited($status)) {
-            throw new RuntimeException('Redis contention process did not exit normally.');
-        }
-        $wins += pcntl_wexitstatus($status) === 0 ? 1 : 0;
+        $wins += \Infocyph\CacheLayer\Tests\Support\CacheFixture::waitForChild($pid) === 0 ? 1 : 0;
     }
 
     expect($wins)->toBe(1);
@@ -603,7 +594,7 @@ test('Redis authentication failures do not expose supplied passwords in exceptio
 });
 
 test('Redis clear and delete propagate a refused native delete operation', function (): void {
-    $client = $this->createMock(Redis::class);
+    $client = \Infocyph\CacheLayer\Tests\Support\CacheFixture::redisMock();
     $client->method('scan')->willReturnCallback(static function (mixed &$cursor): array {
         $cursor = 0;
 
@@ -618,7 +609,7 @@ test('Redis clear and delete propagate a refused native delete operation', funct
 });
 
 test('Redis incomplete bulk responses are backend failures rather than ordinary misses', function (): void {
-    $client = $this->createMock(Redis::class);
+    $client = \Infocyph\CacheLayer\Tests\Support\CacheFixture::redisMock();
     $client->method('mget')->willReturn([false]);
     $adapter = new \Infocyph\CacheLayer\Cache\Adapter\RedisCacheAdapter('incomplete', client: $client);
     $closed = new Cache($adapter, options: new CacheOptions(failOpen: false));
@@ -632,7 +623,7 @@ test('Redis incomplete bulk responses are backend failures rather than ordinary 
 });
 
 test('Redis bulk persistence does not report success when expired entry deletion fails', function (): void {
-    $client = $this->createMock(Redis::class);
+    $client = \Infocyph\CacheLayer\Tests\Support\CacheFixture::redisMock();
     $client->method('del')->willReturn(false);
     $adapter = new \Infocyph\CacheLayer\Cache\Adapter\RedisCacheAdapter('expired-batch', client: $client);
     $item = $adapter->createItem('expired')->set('old')->expiresAfter(-1);
@@ -646,7 +637,7 @@ test('Redis counter deletion preserves missing-key success and reports backend r
         ->and($counters->get('counter'))->toBeNull()
         ->and($counters->delete('counter'))->toBeTrue();
 
-    $client = $this->createMock(Redis::class);
+    $client = \Infocyph\CacheLayer\Tests\Support\CacheFixture::redisMock();
     $client->method('del')->willReturn(false);
     expect(AtomicCounters::redis('delete-contract', client: $client)->delete('counter'))->toBeFalse();
 });

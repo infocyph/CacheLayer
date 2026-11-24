@@ -2,9 +2,13 @@
 
 declare(strict_types=1);
 
+namespace Infocyph\CacheLayer\Tests\Cache;
+
 use Infocyph\CacheLayer\Cache\Adapter\SharedMemoryCacheAdapter;
 use Infocyph\CacheLayer\Cache\AtomicCacheInterface;
 use Infocyph\CacheLayer\Cache\Cache;
+use ReflectionClass;
+use RuntimeException;
 
 if (! function_exists('shm_attach')) {
     throw new RuntimeException('System V shared memory is required for the configured cache test matrix.');
@@ -164,11 +168,7 @@ test('shared memory atomic claim has one winner under process contention', funct
     }
 
     foreach ($children as $pid) {
-        $status = 0;
-        if (pcntl_waitpid($pid, $status) !== $pid || !pcntl_wifexited($status)) {
-            throw new RuntimeException('Shared-memory contender did not exit normally.');
-        }
-        expect(pcntl_wexitstatus($status))->toBe(0);
+        expect(\Infocyph\CacheLayer\Tests\Support\CacheFixture::waitForChild($pid))->toBe(0);
     }
 
     $wins = 0;

@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+namespace Infocyph\CacheLayer\Tests\Cache;
+
 use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Cache\CacheOptions;
 use Infocyph\CacheLayer\Cache\Adapter\FileCacheAdapter;
@@ -9,6 +11,11 @@ use Infocyph\CacheLayer\Cache\Lock\LockHandle;
 use Infocyph\CacheLayer\Cache\Lock\LockProviderInterface;
 use Infocyph\CacheLayer\Cache\Metrics\InMemoryCacheMetricsCollector;
 use Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException;
+use FilesystemIterator;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
+use RuntimeException;
+use SplFileInfo;
 
 $featuresFixtureCacheDir = '';
 $featuresFixtureCache = Cache::nullStore();
@@ -172,11 +179,7 @@ test('file tag rotations remain valid during concurrent updates', function () us
         $children[] = $pid;
     }
     foreach ($children as $pid) {
-        $status = 0;
-        if (pcntl_waitpid($pid, $status) !== $pid || !pcntl_wifexited($status)) {
-            throw new RuntimeException('Tag rotation worker did not exit normally.');
-        }
-        expect(pcntl_wexitstatus($status))->toBe(0);
+        expect(\Infocyph\CacheLayer\Tests\Support\CacheFixture::waitForChild($pid))->toBe(0);
     }
 
     $generation = $adapter->getTagGenerations(['concurrent'])['concurrent'];

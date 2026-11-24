@@ -44,6 +44,38 @@ final class CacheFixture
         return [$backend[0], $backend[1], $backend[2]];
     }
 
+    /** @throws UnexpectedValueException */
+    public static function waitForChild(int $pid): int
+    {
+        if (pcntl_waitpid($pid, $status) !== $pid) {
+            throw new UnexpectedValueException('Unable to wait for the expected child process.');
+        }
+
+        return self::exitStatus($status);
+    }
+
+    /** @throws UnexpectedValueException */
+    private static function exitStatus(mixed $status): int
+    {
+        if (!is_int($status) || !pcntl_wifexited($status)) {
+            throw new UnexpectedValueException('Child process did not exit normally.');
+        }
+
+        return pcntl_wexitstatus($status);
+    }
+
+    public static function redisMock(): \Redis&\PHPUnit\Framework\MockObject\MockObject
+    {
+        $factory = new class('native redis fixture') extends \PHPUnit\Framework\TestCase {
+            public function createRedis(): \Redis&\PHPUnit\Framework\MockObject\MockObject
+            {
+                return $this->createMock(\Redis::class);
+            }
+        };
+
+        return $factory->createRedis();
+    }
+
     public static function environment(string $name): ?string
     {
         $value = getenv($name);

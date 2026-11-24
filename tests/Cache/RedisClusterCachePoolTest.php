@@ -200,3 +200,14 @@ test('redis cluster atomic consume discards deferred overlays without resurrecti
         ->and($redisClusterFixture->cache->commit())->toBeTrue()
         ->and($redisClusterFixture->cache->get('deferred-consume'))->toBeNull();
 });
+
+test('Redis cluster double exposes failed native transaction results', function (): void {
+    $double = new RedisClusterDouble();
+    $double->multi(1);
+    $double->setex('first', 10, 'one');
+    $double->failTransactionCommand = true;
+    $double->setex('second', 10, 'two');
+
+    expect($double->exec())->toBe([true, false])
+        ->and($double->transactionCalls)->toBe(1);
+});

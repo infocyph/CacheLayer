@@ -47,42 +47,49 @@ final class RedisClusterDouble
         $generationKey = $arguments[0];
         $dataKey = $arguments[1];
 
-        if (str_contains($script, 'cachelayer:atomic-get-and-delete')) {
-            $generation = $this->get($generationKey);
-            $value = $this->get($dataKey);
-            if ($value !== false) {
-                unset($this->values[$dataKey]);
-            }
+        return match (true) {
+            str_contains($script, 'cachelayer:atomic-get-and-delete') => $this->consume($generationKey, $dataKey),
+            str_contains($script, 'cachelayer:atomic-compare-and-set') => $this->compareAndSet($generationKey, $dataKey, $arguments),
+            str_contains($script, 'cachelayer:atomic-set-if-absent') => $this->setIfAbsent($generationKey, $dataKey, $arguments),
+            default => false,
+        };
+    }
 
-            return [$generation, $value];
+    /** @return array{string|false, string|false} */
+    private function consume(string $generationKey, string $dataKey): array
+    {
+        $generation = $this->get($generationKey);
+        $value = $this->get($dataKey);
+        if ($value !== false) {
+            unset($this->values[$dataKey]);
         }
 
-        if (str_contains($script, 'cachelayer:atomic-compare-and-set')) {
-            $expectedGeneration = $arguments[2] ?? null;
-            $expectedExisting = $arguments[3] ?? null;
-            $blob = $arguments[4] ?? null;
-            $ttl = (int) ($arguments[5] ?? 0);
-            if ($expectedGeneration === null || $expectedExisting === null || $blob === null) {
-                return false;
-            }
-            if ($this->get($generationKey) !== $expectedGeneration) {
-                return -1;
-            }
-            if ($this->get($dataKey) !== $expectedExisting) {
-                return 0;
-            }
+        return [$generation, $value];
+    }
 
-            $this->values[$dataKey] = [
-                'value' => $blob,
-                'expires' => $ttl > 0 ? time() + $ttl : null,
-            ];
-
-            return 1;
-        }
-
-        if (!str_contains($script, 'cachelayer:atomic-set-if-absent')) {
+    /** @param list<string> $arguments */
+    private function compareAndSet(string $generationKey, string $dataKey, array $arguments): int|false
+    {
+        $expectedGeneration = $arguments[2] ?? null;
+        $expectedExisting = $arguments[3] ?? null;
+        $blob = $arguments[4] ?? null;
+        $ttl = (int) ($arguments[5] ?? 0);
+        if ($expectedGeneration === null || $expectedExisting === null || $blob === null) {
             return false;
         }
+        if ($this->get($generationKey) !== $expectedGeneration) {
+            return -1;
+        }
+        if ($this->get($dataKey) !== $expectedExisting) {
+            return 0;
+        }
+
+        return $this->writeAtomic($dataKey, $blob, $ttl);
+    }
+
+    /** @param list<string> $arguments */
+    private function setIfAbsent(string $generationKey, string $dataKey, array $arguments): int|false
+    {
         $expectedGeneration = $arguments[2] ?? null;
         $blob = $arguments[3] ?? null;
         $ttl = (int) ($arguments[4] ?? 0);
@@ -99,7 +106,12 @@ final class RedisClusterDouble
             return 0;
         }
 
-        $this->values[$dataKey] = [
+        return $this->writeAtomic($dataKey, $blob, $ttl);
+    }
+
+    private function writeAtomic(string $key, string $blob, int $ttl): int
+    {
+        $this->values[$key] = [
             'value' => $blob,
             'expires' => $ttl > 0 ? time() + $ttl : null,
         ];

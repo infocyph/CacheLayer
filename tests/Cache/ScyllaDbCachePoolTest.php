@@ -160,3 +160,14 @@ test('scylladb tag initialization preserves the first generation', function () u
         ->and($first->get('one'))->toBe('A')
         ->and($second->get('two'))->toBe('B');
 });
+
+test('Scylla bulk reads isolate both namespace and bucket', function (): void {
+    $session = new ScyllaSessionDouble();
+    $insert = 'INSERT INTO cachelayer_entries';
+    $session->execute($insert, ['arguments' => ['a', 0, 'same', 'expected', null]]);
+    $session->execute($insert, ['arguments' => ['b', 0, 'same', 'wrong-namespace', null]]);
+    $session->execute($insert, ['arguments' => ['a', 1, 'same', 'wrong-bucket', null]]);
+
+    expect($session->execute('SELECT ckey, payload, expires FROM cachelayer_entries', ['arguments' => ['a', 0, 'same']]))
+        ->toBe([['ckey' => 'same', 'payload' => 'expected', 'expires' => null]]);
+});

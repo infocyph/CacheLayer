@@ -33,127 +33,140 @@ final class ScyllaSessionDouble
         $cql = trim($statement);
         $args = $this->extractArguments($options);
 
-        if (str_starts_with($cql, 'CREATE TABLE')) {
-            return [];
+        return match (true) {
+            str_starts_with($cql, 'CREATE TABLE') => [],
+            str_contains($cql, 'cachelayer_entries_metadata') => $this->executeMetadata($cql, $args),
+            str_starts_with($cql, 'DELETE FROM') => $this->deleteRows($cql, $args),
+            str_starts_with($cql, 'SELECT') => $this->selectRows($cql, $args),
+            str_starts_with($cql, 'BEGIN UNLOGGED BATCH'), str_starts_with($cql, 'INSERT INTO') => $this->writeRows($cql, $args),
+            default => [],
+        };
+    }
+
+    /**
+     * @param list<int|string|null> $args
+     * @return list<array{tag:string,generation:string}>
+     */
+    private function executeMetadata(string $cql, array $args): array
+    {
+        $prefix = $this->partitionPrefix($args);
+        if (str_starts_with($cql, 'SELECT tag, generation')) {
+            $tags = array_map(static fn(int|string|null $value): string => (string) $value, array_slice($args, 2));
+
+            return array_values(array_filter(
+                $this->metadata,
+                static fn(array $row, string $key): bool => str_starts_with($key, $prefix)
+                    && in_array($row['tag'], $tags, true),
+                ARRAY_FILTER_USE_BOTH,
+            ));
         }
 
-        if (str_contains($cql, 'cachelayer_entries_metadata')) {
-            if (str_starts_with($cql, 'SELECT tag, generation')) {
-                $ns = (string) ($args[0] ?? '');
-                $bucket = (int) ($args[1] ?? 0);
-                $tags = array_map(static fn(int|string|null $value): string => (string) $value, array_slice($args, 2));
-
-                return array_values(array_filter(
-                    $this->metadata,
-                    static fn(array $row, string $key): bool => str_starts_with(
-                        $key,
-                        $ns . ':' . $bucket . ':',
-                    ) && in_array($row['tag'], $tags, true),
-                    ARRAY_FILTER_USE_BOTH,
-                ));
+        if (str_starts_with($cql, 'INSERT INTO')) {
+            $key = $this->rowKey($args);
+            if (!str_contains($cql, 'IF NOT EXISTS') || !isset($this->metadata[$key])) {
+                $this->metadata[$key] = [
+                    'tag' => (string) ($args[2] ?? ''),
+                    'generation' => (string) ($args[3] ?? ''),
+                ];
             }
-
-            if (str_starts_with($cql, 'INSERT INTO')) {
-                $key = $this->rowKey($args);
-                if (!str_contains($cql, 'IF NOT EXISTS') || !isset($this->metadata[$key])) {
-                    $this->metadata[$key] = [
-                        'tag' => (string) ($args[2] ?? ''),
-                        'generation' => (string) ($args[3] ?? ''),
-                    ];
+        } elseif (str_starts_with($cql, 'DELETE FROM')) {
+            foreach (array_keys($this->metadata) as $key) {
+                if (str_starts_with($key, $prefix)) {
+                    unset($this->metadata[$key]);
                 }
-
-                return [];
-            }
-
-            if (str_starts_with($cql, 'DELETE FROM')) {
-                $prefix = (string) ($args[0] ?? '') . ':' . (int) ($args[1] ?? 0) . ':';
-                foreach (array_keys($this->metadata) as $key) {
-                    if (str_starts_with($key, $prefix)) {
-                        unset($this->metadata[$key]);
-                    }
-                }
-
-                return [];
             }
         }
 
-        if (str_starts_with($cql, 'DELETE FROM') && str_contains($cql, 'AND ckey = ?')) {
+        return [];
+    }
+
+    /**
+     * @param list<int|string|null> $args
+     * @return list<never>
+     */
+    private function deleteRows(string $cql, array $args): array
+    {
+        if (str_contains($cql, 'AND ckey = ?')) {
             unset($this->rows[$this->rowKey($args)]);
 
             return [];
         }
 
-        if (str_starts_with($cql, 'DELETE FROM') && str_contains($cql, 'ckey IN')) {
-            $ns = (string) ($args[0] ?? '');
-            $bucket = (int) ($args[1] ?? 0);
+        $prefix = $this->partitionPrefix($args);
+        if (str_contains($cql, 'ckey IN')) {
             foreach (array_slice($args, 2) as $key) {
-                unset($this->rows[$ns . ':' . $bucket . ':' . $key]);
+                unset($this->rows[$prefix . $key]);
             }
 
             return [];
         }
 
-        if (str_starts_with($cql, 'DELETE FROM')) {
-            $prefix = (string) ($args[0] ?? '') . ':' . (int) ($args[1] ?? 0) . ':';
-            foreach (array_keys($this->rows) as $key) {
-                if (str_starts_with($key, $prefix)) {
-                    unset($this->rows[$key]);
-                }
+        foreach (array_keys($this->rows) as $key) {
+            if (str_starts_with($key, $prefix)) {
+                unset($this->rows[$key]);
             }
-
-            return [];
         }
 
-        if (str_starts_with($cql, 'SELECT expires')) {
-            $ns = (string) ($args[0] ?? '');
-            $bucket = (int) ($args[1] ?? 0);
-            $matching = [];
-            foreach ($this->rows as $key => $row) {
-                if (str_starts_with($key, $ns . ':' . $bucket . ':')) {
-                    $matching[] = $row;
-                }
-            }
+        return [];
+    }
 
-            return array_map(
-                static fn (array $row): array => ['expires' => $row['expires']],
-                $matching,
-            );
-        }
-
+    /**
+     * @param list<int|string|null> $args
+     * @return list<array<string, int|string|null>>
+     */
+    private function selectRows(string $cql, array $args): array
+    {
         if (str_starts_with($cql, 'SELECT payload, expires')) {
             $row = $this->rows[$this->rowKey($args)] ?? null;
 
-            return is_array($row) ? [$row] : [];
+            return $row === null ? [] : [$row];
+        }
+
+        $prefix = $this->partitionPrefix($args);
+        $rows = array_values(array_filter(
+            $this->rows,
+            static fn(string $key): bool => str_starts_with($key, $prefix),
+            ARRAY_FILTER_USE_KEY,
+        ));
+        if (str_starts_with($cql, 'SELECT expires')) {
+            return array_map(static fn(array $row): array => ['expires' => $row['expires']], $rows);
         }
 
         if (str_starts_with($cql, 'SELECT ckey, payload, expires')) {
             $this->bucketReads++;
-            $ns = (string) ($args[0] ?? '');
-            $bucket = (int) ($args[1] ?? 0);
             $keys = array_map(static fn(int|string|null $value): string => (string) $value, array_slice($args, 2));
 
             return array_values(array_filter(
-                $this->rows,
+                $rows,
                 static fn(array $row): bool => in_array($row['ckey'], $keys, true),
             ));
         }
 
+        return [];
+    }
+
+    /**
+     * @param list<int|string|null> $args
+     * @return list<never>
+     */
+    private function writeRows(string $cql, array $args): array
+    {
         if (str_starts_with($cql, 'BEGIN UNLOGGED BATCH')) {
             $this->writeBatches++;
             foreach (array_chunk($args, 5) as $row) {
                 $this->store($row);
             }
-
-            return [];
-        }
-
-        if (str_starts_with($cql, 'INSERT INTO')) {
+        } else {
             $this->store($args);
-
-            return [];
         }
 
         return [];
+    }
+
+    /** @param list<int|string|null> $args */
+    private function partitionPrefix(array $args): string
+    {
+        return (string) ($args[0] ?? '') . ':' . (int) ($args[1] ?? 0) . ':';
     }
 
     /**
@@ -180,7 +193,7 @@ final class ScyllaSessionDouble
     /** @param list<int|string|null> $row */
     private function rowKey(array $row): string
     {
-        return (string) ($row[0] ?? '') . ':' . (int) ($row[1] ?? 0) . ':' . (string) ($row[2] ?? '');
+        return $this->partitionPrefix($row) . (string) ($row[2] ?? '');
     }
 
     /** @param list<int|string|null> $row */

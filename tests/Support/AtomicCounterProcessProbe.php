@@ -11,6 +11,7 @@ final class AtomicCounterProcessProbe
 {
     /**
      * @throws RuntimeException
+     * @throws \UnexpectedValueException
      */
     public static function initializedWinners(
         string $backend,
@@ -29,17 +30,7 @@ final class AtomicCounterProcessProbe
         for ($worker = 0; $worker < $workers; ++$worker) {
             $pid = pcntl_fork();
             if ($pid === 0) {
-                $client = new \Redis();
-                if (!$client->connect($host, $port) || ($password !== '' && !$client->auth($password))) {
-                    throw new RuntimeException('Unable to connect atomic counter contender.');
-                }
-                $counter = $backend === 'valkey'
-                    ? AtomicCounters::valkey($namespace, client: $client)
-                    : AtomicCounters::redis($namespace, client: $client);
-                $initialized = $counter->increment($key)->initialized;
-                pcntl_exec('/bin/sh', ['-c', $initialized ? 'true' : 'false']);
-
-                throw new RuntimeException('Unable to terminate atomic counter child process.');
+                self::runChild($backend, $host, $port, $password, $namespace, $key);
             }
             if ($pid < 0) {
                 foreach ($children as $child) {
@@ -52,13 +43,30 @@ final class AtomicCounterProcessProbe
 
         $wins = 0;
         foreach ($children as $pid) {
-            $status = 0;
-            if (pcntl_waitpid($pid, $status) !== $pid || !pcntl_wifexited($status)) {
-                throw new RuntimeException('Atomic counter contender did not exit normally.');
-            }
-            $wins += pcntl_wexitstatus($status) === 0 ? 1 : 0;
+            $wins += CacheFixture::waitForChild($pid) === 0 ? 1 : 0;
         }
 
         return $wins;
+    }
+    /** @throws RuntimeException */
+    private static function runChild(
+        string $backend,
+        string $host,
+        int $port,
+        #[\SensitiveParameter] string $password,
+        string $namespace,
+        string $key,
+    ): never {
+        $client = new \Redis();
+        if (!$client->connect($host, $port) || ($password !== '' && !$client->auth($password))) {
+            throw new RuntimeException('Unable to connect atomic counter contender.');
+        }
+        $counter = $backend === 'valkey'
+            ? AtomicCounters::valkey($namespace, client: $client)
+            : AtomicCounters::redis($namespace, client: $client);
+        $initialized = $counter->increment($key)->initialized;
+        pcntl_exec('/bin/sh', ['-c', $initialized ? 'true' : 'false']);
+
+        throw new RuntimeException('Unable to terminate atomic counter child process.');
     }
 }
