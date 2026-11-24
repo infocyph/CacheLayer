@@ -28,6 +28,7 @@ final class NodeCacheBench
 
     /**
      * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \LogicException
      */
     public function tearDown(): void
     {

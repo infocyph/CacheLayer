@@ -50,6 +50,7 @@ Preserve PSR-6/16, public APIs, storage and event wire values, backend semantics
 - [ ] B06: Node, Cluster, invalidation transport/cursor/outbox/recovery and Runwire integration (including 3.1); concurrency, failure containment, lifecycle and real backend coverage.
 - [x] B07a implementation: make isolated consumer autoloading explicit at the hosted CLI boundary, remove the example's environment-selected include path, enforce Runwire 3.1 minimum in consumer smoke, and clarify certification arithmetic. Hosted verification pending.
 - [x] B07a follow-up implementation: use Composer's normalized installed version for the Runwire 3.1 constraint; the published tag's pretty version is 3.1. Hosted verification pending.
+- [x] B07b implementation: align benchmark and certification exception contracts, normalize CPU usage results, strengthen soak cancellation/deadline and task-completion checks, and use explicit publisher CLI argument validation. Hosted verification pending.
 - [ ] B07: docs, examples, Composer, CI, packaging, release scripts, public contracts and structural consolidation; avoid speculative architecture or API churn.
 - [ ] B08: acceptance across PHP 8.4–8.6, lowest/stable, independent PSR contracts, real services, clean consumer, docs, security, Runwire soak, scoped performance evidence and bot findings.
 
@@ -152,3 +153,5 @@ Authority: https://github.com/infocyph/PHPForge/blob/main/resources/engineering-
 - B03l-e: checked native PDO command arguments before launching the process, verified both PSR interfaces by reflection, replaced redundant assertion-dependent checks with explicit fixture failures, and ensured rejected Runwire requests fail if application work is invoked. Hosted verification pending.
 
 - B03l-f (CORE/TYPE/FLOW/OPS): fixed test-double partition containment (bulk Scylla reads previously matched logical keys across namespaces/buckets), added direct native-double assertions, split over-complex simulated dispatch, and consolidated waitpid validation and PHPUnit mock construction at explicit fixture boundaries. Hosted verification pending.
+
+- B07b (FLOW/TYPE/OPS): correct propagated contracts in benchmarks without changing their workloads. Normalize the platform getrusage return at the native boundary. Runwire soak explicitly requires cancellation/deadline cases to fail as expected and every concurrent task to finish with a successful result; existing throughput, latency, memory and request-count budgets unchanged. PDO child CLI args are obtained from server CLI metadata and validated at the string boundary. Hosted verification pending.

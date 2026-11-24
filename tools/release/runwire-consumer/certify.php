@@ -31,6 +31,12 @@ function percentile(array $samples, float $percentile): float
     return $samples[$index] ?? 0.0;
 }
 
+/** @return array<array-key, mixed> */
+function normalizeUsage(mixed $usage): array
+{
+    return is_array($usage) ? $usage : [];
+}
+
 /** @param array<array-key, mixed> $usage */
 function usageValue(array $usage, string $key): int
 {
@@ -140,6 +146,8 @@ function executeCacheRequest(
  * @return array<string, int|float>
  * @throws Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
  * @throws RuntimeException
+ * @throws LogicException
+ * @throws InvalidArgumentException
  */
 function workload(RuntimeContext $runtime, bool $integrated): array
 {
@@ -160,10 +168,7 @@ function workload(RuntimeContext $runtime, bool $integrated): array
     $latencies = [];
     $errors = 0;
     $startMemory = memory_get_usage(true);
-    $startCpu = getrusage();
-    if ($startCpu === false) {
-        $startCpu = [];
-    }
+    $startCpu = normalizeUsage(getrusage());
     $start = hrtime(true);
 
     for ($iteration = 0; $iteration < ITERATIONS; ++$iteration) {
@@ -175,10 +180,7 @@ function workload(RuntimeContext $runtime, bool $integrated): array
     }
 
     $elapsed = (hrtime(true) - $start) / 1_000_000_000;
-    $endCpu = getrusage();
-    if ($endCpu === false) {
-        $endCpu = [];
-    }
+    $endCpu = normalizeUsage(getrusage());
     $metrics = $cache->exportMetrics();
     $cpuMicros = cpuMicros($startCpu, $endCpu);
 

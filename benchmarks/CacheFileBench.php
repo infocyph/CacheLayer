@@ -19,6 +19,8 @@ final class CacheFileBench
     /**
      * @throws \Psr\SimpleCache\InvalidArgumentException
      * @throws \Infocyph\CacheLayer\Exceptions\CacheBackendException
+     * @throws \LogicException
+     * @throws \RuntimeException
      */
     public function setUp(): void
     {
