@@ -152,7 +152,7 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
 
     /**
      * @param array $keys The keys argument.
-     * @phpstan-param list<string> $keys
+     * @phpstan-param array<array-key, string> $keys
      */
     #[\Override]
     public function deleteItems(array $keys): bool
@@ -211,7 +211,10 @@ final class SharedMemoryCacheAdapter extends AbstractCacheAdapter implements Ato
         return $this->withSharedLock(fn(): array => $this->fetchStoredItems($keys));
     }
 
-    /** @param list<string> $tags */
+    /**
+     * @param list<string> $tags
+     * @return array<string, string>
+     */
     #[\Override]
     public function readTagGenerations(array $tags): array
     {

@@ -90,12 +90,8 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
     #[\Override]
     public function clear(): bool
     {
-        $ok = true;
-        foreach ([$this->dataDirectory, $this->metadataDirectory] as $directory) {
-            foreach (glob($directory . '*') ?: [] as $file) {
-                $ok = (!is_file($file) || unlink($file)) && $ok;
-            }
-        }
+        $ok = $this->clearDirectoryFiles($this->dataDirectory, '.cache');
+        $ok = $this->clearDirectoryFiles($this->metadataDirectory, '.generation') && $ok;
         $this->deferred = [];
 
         return $ok;
@@ -109,7 +105,7 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
         return $this->withKeyLock($key, fn(): bool => $this->deleteItemUnlocked($key));
     }
 
-    /** @param list<string> $keys */
+    /** @param array<array-key, string> $keys */
     #[\Override]
     public function deleteItems(array $keys): bool
     {
@@ -252,7 +248,7 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
     {
         $this->assertPathNotSymlink($baseDir, 'Cache base directory');
         if (file_exists($baseDir) && !is_dir($baseDir)) {
-            throw new RuntimeException('Cache base path ' . realpath($baseDir) . ' exists and is *not* a directory');
+            throw new RuntimeException('Cache base path ' . $baseDir . ' exists and is *not* a directory');
         }
         if (!is_dir($baseDir) && !mkdir($baseDir, 0700, true) && !is_dir($baseDir)) {
             $this->throwCreationError('Failed to create base directory ' . $baseDir);
@@ -264,7 +260,7 @@ class FileCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolIn
     {
         $this->assertPathNotSymlink($cacheDir, 'Cache directory');
         if (file_exists($cacheDir) && !is_dir($cacheDir)) {
-            throw new RuntimeException(realpath($cacheDir) . ' exists and is not a directory');
+            throw new RuntimeException($cacheDir . ' exists and is not a directory');
         }
         if (!is_dir($cacheDir) && !mkdir($cacheDir, 0700, true) && !is_dir($cacheDir)) {
             $this->throwCreationError('Failed to create cache directory ' . $cacheDir);

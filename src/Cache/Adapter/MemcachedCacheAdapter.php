@@ -171,11 +171,12 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         return $this->deleteResultSucceeded();
     }
 
-    /** @param list<string> $keys */
+    /** @param array<array-key, string> $keys */
     #[\Override]
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
+        $keys = array_values($keys);
         if ($keys === []) {
             return true;
         }

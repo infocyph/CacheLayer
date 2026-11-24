@@ -145,3 +145,15 @@ test('file adapter bulk getItems()', function () {
         ->and($items['b']->get())->toBe(2)
         ->and($items['c']->isHit())->toBeFalse();
 });
+
+test('clear uses the literal cache directory and preserves neighboring stores', function () {
+    $literal = Cache::file('clear', $this->cacheDir . '/[store]');
+    $neighbor = Cache::file('clear', $this->cacheDir . '/s');
+    expect($literal->set('key', 'literal'))->toBeTrue()
+        ->and($literal->setTagged('tagged', 'literal', ['tag']))->toBeTrue()
+        ->and($neighbor->set('key', 'neighbor'))->toBeTrue()
+        ->and($literal->clear())->toBeTrue()
+        ->and($literal->has('key'))->toBeFalse()
+        ->and($literal->has('tagged'))->toBeFalse()
+        ->and($neighbor->get('key'))->toBe('neighbor');
+});

@@ -102,7 +102,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         });
     }
 
-    /** @param list<string> $keys */
+    /** @param array<array-key, string> $keys */
     #[\Override]
     public function deleteItems(array $keys): bool
     {

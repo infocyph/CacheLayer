@@ -28,14 +28,12 @@ final class NullCacheAdapter extends AbstractCacheAdapter
 
     /**
      * @param array $keys The keys argument.
-     * @phpstan-param list<string> $keys
+     * @phpstan-param array<array-key, string> $keys
      */
     #[\Override]
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
-        unset($keys);
-
         return true;
     }
 
@@ -45,7 +43,10 @@ final class NullCacheAdapter extends AbstractCacheAdapter
         return $this->genericMiss($key);
     }
 
-    /** @param list<string> $tags */
+    /**
+     * @param list<string> $tags
+     * @return array<string, string>
+     */
     #[\Override]
     public function getTagGenerations(array $tags): array
     {

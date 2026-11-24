@@ -64,12 +64,13 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
 
     /**
      * @param array $keys The keys argument.
-     * @phpstan-param list<string> $keys
+     * @phpstan-param array<array-key, string> $keys
      */
     #[\Override]
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
+        $keys = array_values($keys);
         if ($keys === []) {
             return true;
         }
@@ -95,7 +96,10 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
         return $this->genericMiss($key);
     }
 
-    /** @param list<string> $tags */
+    /**
+     * @param list<string> $tags
+     * @return array<string, string>
+     */
     #[\Override]
     public function getTagGenerations(array $tags): array
     {
@@ -156,7 +160,10 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
         return $items;
     }
 
-    /** @param list<string> $tags */
+    /**
+     * @param list<string> $tags
+     * @return array<string, string>
+     */
     #[\Override]
     public function readTagGenerations(array $tags): array
     {

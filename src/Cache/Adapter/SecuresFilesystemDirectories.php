@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Infocyph\CacheLayer\Cache\Adapter;
 
+use Closure;
+use FilesystemIterator;
 use Infocyph\CacheLayer\Support\FilesystemTrust;
 use RuntimeException;
+use UnexpectedValueException;
 
 trait SecuresFilesystemDirectories
 {
@@ -55,6 +58,29 @@ trait SecuresFilesystemDirectories
         fclose($lock);
 
         return $stored;
+    }
+
+    /** @param (Closure(string): void)|null $beforeDelete */
+    private function clearDirectoryFiles(string $directory, string $suffix, ?Closure $beforeDelete = null): bool
+    {
+        try {
+            $files = new FilesystemIterator($directory, FilesystemIterator::SKIP_DOTS);
+        } catch (UnexpectedValueException) {
+            return false;
+        }
+
+        $ok = true;
+        foreach ($files as $file) {
+            if (!$file->isFile() || !str_ends_with($file->getFilename(), $suffix)) {
+                continue;
+            }
+
+            $path = $file->getPathname();
+            $beforeDelete?->__invoke($path);
+            $ok = $this->deleteFile($path) && $ok;
+        }
+
+        return $ok;
     }
 
     protected function deleteFile(string $path): bool

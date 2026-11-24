@@ -89,14 +89,8 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
     #[\Override]
     public function clear(): bool
     {
-        $ok = true;
-        foreach (glob($this->dataDirectory . '*.php') ?: [] as $file) {
-            $this->invalidateOpcache($file);
-            $ok = (!is_file($file) || unlink($file)) && $ok;
-        }
-        foreach (glob($this->metadataDirectory . '*') ?: [] as $file) {
-            $ok = (!is_file($file) || unlink($file)) && $ok;
-        }
+        $ok = $this->clearDirectoryFiles($this->dataDirectory, '.php', $this->invalidateOpcache(...));
+        $ok = $this->clearDirectoryFiles($this->metadataDirectory, '.generation') && $ok;
         $this->deferred = [];
 
         return $ok;
@@ -110,7 +104,7 @@ final class PhpFilesCacheAdapter extends AbstractCacheAdapter implements AtomicC
         return $this->withKeyLock($key, fn(): bool => $this->deleteItemUnlocked($key));
     }
 
-    /** @param list<string> $keys */
+    /** @param array<array-key, string> $keys */
     #[\Override]
     public function deleteItems(array $keys): bool
     {

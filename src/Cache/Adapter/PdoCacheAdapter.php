@@ -112,7 +112,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         return $statement->execute([$this->namespace, self::KIND_DATA, $key]);
     }
 
-    /** @param list<string> $keys */
+    /** @param array<array-key, string> $keys */
     #[\Override]
     public function deleteItems(array $keys): bool
     {

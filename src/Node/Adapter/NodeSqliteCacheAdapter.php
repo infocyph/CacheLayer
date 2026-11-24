@@ -101,7 +101,7 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
 
     /**
      * @param array $keys The keys argument.
-     * @phpstan-param list<string> $keys
+     * @phpstan-param array<array-key, string> $keys
      */
     #[\Override]
     public function deleteItems(array $keys): bool
@@ -114,7 +114,7 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
         $this->assertWritableTransaction();
 
         try {
-            $mapped = array_map($this->mapData(...), $keys);
+            $mapped = array_map($this->mapData(...), array_values($keys));
             $marks = implode(',', array_fill(0, count($mapped), '?'));
             $statement = $this->connection->prepare(
                 'DELETE FROM ' . self::TABLE . " WHERE namespace = ? AND cache_key IN ({$marks})",

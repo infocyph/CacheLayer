@@ -113,7 +113,7 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
     }
 
     /**
-     * @param list<string> $keys
+     * @param array<array-key, string> $keys
      * @return array<string, CacheItem>
      */
     #[\Override]
@@ -134,7 +134,10 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         return $items;
     }
 
-    /** @param list<string> $tags */
+    /**
+     * @param list<string> $tags
+     * @return array<string, string>
+     */
     #[\Override]
     public function getTagGenerations(array $tags): array
     {
@@ -240,7 +243,7 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         unset($this->deferred[$this->deferredKey($key)]);
     }
 
-    /** @param list<string> $keys */
+    /** @param array<array-key, string> $keys */
     protected function discardDeferredKeys(array $keys): void
     {
         $keys = CacheInput::keys($keys);

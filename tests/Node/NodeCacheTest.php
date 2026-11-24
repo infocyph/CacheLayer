@@ -532,3 +532,13 @@ test('node authority reflects whether an L1 cache can serve stale state', functi
 
     apcu_clear_cache();
 });
+
+test('node SQLite adapter accepts associative PSR-6 delete key arrays', function () {
+    $adapter = new NodeSqliteCacheAdapter(NodeSqliteConnection::create($this->nodeConfig), $this->nodeConfig->namespace);
+    $cache = new Cache($adapter);
+    expect($cache->setMultiple(['a' => 1, 'b' => 2, 'c' => 3]))->toBeTrue()
+        ->and($adapter->deleteItems(['first' => 'a', 'second' => 'b']))->toBeTrue()
+        ->and($cache->has('a'))->toBeFalse()
+        ->and($cache->has('b'))->toBeFalse()
+        ->and($cache->get('c'))->toBe(3);
+});

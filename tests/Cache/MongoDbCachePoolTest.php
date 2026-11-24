@@ -261,3 +261,13 @@ test('mongodb atomic consume discards deferred overlays without resurrection', f
         ->and($this->cache->commit())->toBeTrue()
         ->and($this->cache->get('deferred-consume'))->toBeNull();
 });
+
+test('mongo adapter accepts associative PSR-6 delete key arrays', function () {
+    $adapter = new MongoDbCacheAdapter($this->collection, 'mongo-associative');
+    $cache = new Cache($adapter);
+    expect($cache->setMultiple(['a' => 1, 'b' => 2, 'c' => 3]))->toBeTrue()
+        ->and($adapter->deleteItems(['first' => 'a', 'second' => 'b']))->toBeTrue()
+        ->and($cache->has('a'))->toBeFalse()
+        ->and($cache->has('b'))->toBeFalse()
+        ->and($cache->get('c'))->toBe(3);
+});

@@ -155,12 +155,13 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
 
     /**
      * @param array $keys The keys argument.
-     * @phpstan-param list<string> $keys
+     * @phpstan-param array<array-key, string> $keys
      */
     #[\Override]
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
+        $keys = array_values($keys);
         if ($keys !== []) {
             $this->collection->deleteMany([
                 '_id' => ['$in' => array_map($this->mapData(...), $keys)],
@@ -237,7 +238,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         $byId = [];
         foreach ($documents as $document) {
             $row = AdapterValueNormalizer::fromJsonOrArrayLike($document);
-            if (!is_string($row['_id'] ?? null)) {
+            if ($row === null || !is_string($row['_id'] ?? null)) {
                 continue;
             }
             $byId[$row['_id']] = $row;
@@ -257,7 +258,10 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return $items;
     }
 
-    /** @param list<string> $tags */
+    /**
+     * @param list<string> $tags
+     * @return array<string, string>
+     */
     #[\Override]
     public function readTagGenerations(array $tags): array
     {

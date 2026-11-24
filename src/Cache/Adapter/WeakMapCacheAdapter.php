@@ -115,14 +115,14 @@ final class WeakMapCacheAdapter extends AbstractCacheAdapter implements AtomicCa
 
     /**
      * @param array $keys The keys argument.
-     * @phpstan-param list<string> $keys
+     * @phpstan-param array<array-key, string> $keys
      */
     #[\Override]
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
         foreach ($keys as $key) {
-            $this->deleteItem((string) $key);
+            $this->deleteItem($key);
         }
 
         return true;
