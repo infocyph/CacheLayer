@@ -14,8 +14,6 @@ use Infocyph\Runwire\Runtime\RequestExecutionPolicy;
 use Infocyph\Runwire\RuntimeCapabilities;
 use Infocyph\Runwire\RuntimeContext;
 
-require __DIR__ . '/vendor/autoload.php';
-
 const SEQUENTIAL_REQUESTS = 2_048;
 const CONCURRENT_REQUESTS = 256;
 const MAX_MEMORY_GROWTH_BYTES = 8_388_608;

@@ -194,3 +194,14 @@ Runwire 3.1 adaptive HTTP scheduling is a host-level concern. CacheLayer does
 not select FIXED, LATENCY, THROUGHPUT, or AUTO and does not attribute HTTP
 throughput changes to cache storage. Keep Runwire's certified host defaults
 unless the application measures and chooses another policy.
+
+Release consumer verification
+-----------------------------
+
+The isolated Runwire consumer lives in ``tools/release/runwire-consumer``.
+After Composer installs its own dependencies, the hosted release workflow runs
+``smoke.php``, ``certify.php`` and ``soak.php`` from that directory with
+``php -d auto_prepend_file=vendor/autoload.php -d error_reporting=E_ALL``.
+The no-dev consumer uses the same explicit local autoload boundary. The example
+uses the already-loaded consumer classes, or the project-root Composer loader
+when launched directly; it does not accept a caller-controlled include path.

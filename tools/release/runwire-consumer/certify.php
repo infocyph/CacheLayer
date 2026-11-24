@@ -15,8 +15,6 @@ use Infocyph\Runwire\Runtime\Enum\RuntimeDriver;
 use Infocyph\Runwire\RuntimeCapabilities;
 use Infocyph\Runwire\RuntimeContext;
 
-require __DIR__ . '/vendor/autoload.php';
-
 const ITERATIONS = 4_000;
 const WARMUP = 250;
 const MIN_RPM_RATIO = 0.50;
@@ -28,9 +26,9 @@ const MAX_MEMORY_DELTA_BYTES = 8_388_608;
 function percentile(array $samples, float $percentile): float
 {
     sort($samples, SORT_NUMERIC);
-    $index = (int) floor((count($samples) - 1) * $percentile);
+    $index = (int) floor((float) (count($samples) - 1) * $percentile);
 
-    return (float) ($samples[$index] ?? 0.0);
+    return $samples[$index] ?? 0.0;
 }
 
 /** @param array<array-key, mixed> $usage */
@@ -190,7 +188,7 @@ function workload(RuntimeContext $runtime, bool $integrated): array
     gc_collect_cycles();
 
     return [
-        'rpm' => ITERATIONS / max($elapsed, 0.000001) * 60,
+        'rpm' => (float) ITERATIONS / max((float) $elapsed, 0.000001) * 60.0,
         'p50_ms' => percentile($latencies, 0.50),
         'p95_ms' => percentile($latencies, 0.95),
         'p99_ms' => percentile($latencies, 0.99),
@@ -292,7 +290,7 @@ $baseline = workload($runtime, false);
 $integrated = workload($runtime, true);
 $operational = invalidationAndMaintenance();
 
-$ratio = $integrated['rpm'] / max((float) $baseline['rpm'], 0.000001);
+$ratio = (float) $integrated['rpm'] / max((float) $baseline['rpm'], 0.000001);
 $p99Budget = ((float) $baseline['p99_ms'] * MAX_P99_MULTIPLIER) + MAX_EXTRA_P99_MS;
 
 $report = [

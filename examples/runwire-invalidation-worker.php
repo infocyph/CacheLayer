@@ -16,11 +16,9 @@ use Infocyph\Runwire\RuntimeContext;
 use Infocyph\Runwire\Supervisor\Enum\WorkerRole;
 use Infocyph\Runwire\Supervisor\WorkerContext;
 
-$autoload = getenv('CACHELAYER_EXAMPLE_AUTOLOAD');
-if (!is_string($autoload) || $autoload === '') {
-    $autoload = dirname(__DIR__) . '/vendor/autoload.php';
+if (!class_exists(ClusterCache::class)) {
+    require dirname(__DIR__) . '/vendor/autoload.php';
 }
-require $autoload;
 
 $base = sys_get_temp_dir() . '/cachelayer-runwire-example-' . bin2hex(random_bytes(6));
 $readyParent = null;

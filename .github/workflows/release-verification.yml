@@ -57,7 +57,7 @@ jobs:
         run: rm -rf vendor && composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction --no-progress
       - name: Smoke production consumer
         working-directory: tools/release/consumer
-        run: php -d error_reporting=E_ALL smoke.php
+        run: php -d auto_prepend_file=vendor/autoload.php -d error_reporting=E_ALL smoke.php
 
   runwire-consumer:
     name: Runwire 3.1 consumer - PHP ${{ matrix.php }} - ${{ matrix.dependencies }}
@@ -88,13 +88,13 @@ jobs:
           composer check-platform-reqs
       - name: Run Runwire integration smoke
         working-directory: tools/release/runwire-consumer
-        run: php -d error_reporting=E_ALL smoke.php
+        run: php -d auto_prepend_file=vendor/autoload.php -d error_reporting=E_ALL smoke.php
       - name: Run matched Runwire certification workload
         working-directory: tools/release/runwire-consumer
-        run: php -d error_reporting=E_ALL certify.php
+        run: php -d auto_prepend_file=vendor/autoload.php -d error_reporting=E_ALL certify.php
       - name: Run persistent-worker Runwire soak
         working-directory: tools/release/runwire-consumer
-        run: php -d error_reporting=E_ALL soak.php
+        run: php -d auto_prepend_file=vendor/autoload.php -d error_reporting=E_ALL soak.php
 
   psr-contracts:
     name: Independent PSR-6 / PSR-16 contracts - PHP ${{ matrix.php }}
