@@ -1,5 +1,22 @@
-Upgrading from 3.x to 4.0
-=========================
+Upgrading to CacheLayer 4.0
+===========================
+
+Upgrading from 4.0.2 to 4.0.3
+=============================
+
+4.0.3 renames ``InvalidationEventType::Namespace`` to
+``InvalidationEventType::NamespaceClear`` to address the PHP 8.6 deprecation
+of the reserved case name. The rename applies on every PHP version. Update
+direct references and code that compares the enum's ``name``. Clear or migrate
+application-owned PHP-serialized payloads containing the old case before
+deployment.
+
+The backed value remains ``namespace``, so persisted PDO and Redis transport
+events remain readable. Calls to ``InvalidationEvent::namespace()`` continue
+to work.
+
+Upgrading from 3.x
+==================
 
 CacheLayer 4.0 is an intentional breaking release with a minimum runtime of
 PHP 8.4. It does not preserve 3.x API shape, named parameters, defaults,
@@ -17,18 +34,6 @@ Runtime floor
 CacheLayer 4.0 requires PHP 8.4 or newer. Upgrade the application runtime before
 installing the package. The release gates cover PHP 8.4, 8.5 and 8.6. Native Scylla CQL remains on PHP 8.4/8.5 until a
 compatible PHP 8.6 extension is published.
-
-PHP 8.6 invalidation enum migration
-===================================
-
-The PHP case formerly named ``InvalidationEventType::Namespace`` is now
-``InvalidationEventType::NamespaceClear`` because PHP 8.6 deprecates the
-reserved case name. Update direct enum references before deployment. PHP-native
-serialized enum objects containing the old case name are not compatible; clear
-or explicitly migrate those application-owned payloads before upgrading.
-The backed value remains ``namespace``, so persisted PDO/Redis transport events
-and the ``InvalidationEvent::namespace()`` factory remain compatible. No alias
-is retained because it would reintroduce the reserved-name deprecation.
 
 Serialization and authenticated records
 ========================================

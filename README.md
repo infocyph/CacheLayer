@@ -36,6 +36,8 @@ Choose extensions and client packages only for the backends you use: APCu, Redis
 
 For 3.x upgrades, read `docs/upgrade-4.0.rst` before deployment. 4.0 raises the minimum runtime to PHP 8.4 and intentionally changes serialization, storage identity, cursor, counter, and cache-contract behavior.
 
+For 4.0.3, check the [invalidation enum migration](docs/upgrade-4.0.rst) if you use Cluster Cache events directly.
+
 ## Cache
 
 ```php
