@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Infocyph\CacheLayer\Tests\Cache;
 
+use Composer\InstalledVersions;
 use Infocyph\CacheLayer\Cache\Adapter\MongoDbCacheAdapter;
 use Infocyph\CacheLayer\Cache\Cache;
 use MongoDB\Client;
@@ -18,6 +19,13 @@ if (!is_string($mongoDsn) || $mongoDsn === '') {
 if (!class_exists(Client::class)) {
     throw new RuntimeException('mongodb/mongodb is required for the configured MongoDB integration matrix.');
 }
+
+$mongoDeprecation = PHP_VERSION_ID >= 80600 && in_array(
+    InstalledVersions::getVersion('mongodb/mongodb'),
+    ['2.4.2.0', '2.5.1.0'],
+    true,
+);
+$mongoDeprecationReason = 'Upstream mongodb/mongodb uses is_integer(), deprecated in PHP 8.6.';
 
 $mongoRealFixture = new class(Cache::nullStore()) {
     public ?\MongoDB\Collection $mongoCollection = null;
@@ -54,7 +62,7 @@ test('real MongoDB stores, expires, tags, and clears cache records', function ()
     expect($mongoRealFixture->mongoCache->set('expires', 'soon', 1))->toBeTrue();
     usleep(2_000_000);
     expect($mongoRealFixture->mongoCache->get('expires'))->toBeNull();
-});
+})->skip($mongoDeprecation, $mongoDeprecationReason);
 
 test('real MongoDB atomic claim has exactly one process winner', function () use ($mongoDsn, $mongoDatabase, $mongoRealFixture): void {
     if (!function_exists('pcntl_fork')) {
@@ -92,4 +100,4 @@ test('real MongoDB atomic claim has exactly one process winner', function () use
 
     expect($wins)->toBe(1)
         ->and($freshCache->get('claim'))->toBeString();
-});
+})->skip($mongoDeprecation, $mongoDeprecationReason);
