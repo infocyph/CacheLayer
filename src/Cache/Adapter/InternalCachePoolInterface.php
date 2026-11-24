@@ -20,6 +20,7 @@ interface InternalCachePoolInterface extends CacheItemPoolInterface
      * @param list<string> $keys
      * @return iterable<string, CacheItemInterface>
      */
+    #[\Override]
     public function getItems(array $keys = []): iterable;
 
     /**

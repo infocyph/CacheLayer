@@ -9,6 +9,7 @@ use Psr\Cache\CacheItemInterface;
 
 final class NullCacheAdapter extends AbstractCacheAdapter
 {
+    #[\Override]
     public function clear(): bool
     {
         $this->deferred = [];
@@ -16,6 +17,7 @@ final class NullCacheAdapter extends AbstractCacheAdapter
         return true;
     }
 
+    #[\Override]
     public function deleteItem(string $key): bool
     {
         $this->discardDeferredKey($key);
@@ -28,6 +30,7 @@ final class NullCacheAdapter extends AbstractCacheAdapter
      * @param array $keys The keys argument.
      * @phpstan-param list<string> $keys
      */
+    #[\Override]
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
@@ -36,6 +39,7 @@ final class NullCacheAdapter extends AbstractCacheAdapter
         return true;
     }
 
+    #[\Override]
     public function getItem(string $key): CacheItem
     {
         return $this->genericMiss($key);
@@ -53,6 +57,7 @@ final class NullCacheAdapter extends AbstractCacheAdapter
         return $generations;
     }
 
+    #[\Override]
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
@@ -63,6 +68,7 @@ final class NullCacheAdapter extends AbstractCacheAdapter
      * @phpstan-param list<string> $keys
      * @phpstan-return array<string, CacheItem>
      */
+    #[\Override]
     public function multiFetch(array $keys): array
     {
         $items = [];
@@ -82,12 +88,14 @@ final class NullCacheAdapter extends AbstractCacheAdapter
         return true;
     }
 
+    #[\Override]
     public function save(CacheItemInterface $item): bool
     {
         return $this->supportsItem($item);
     }
 
     /** @param array<string, CacheItemInterface> $items */
+    #[\Override]
     public function saveItems(array $items): bool
     {
         return $this->supportsItems($items);

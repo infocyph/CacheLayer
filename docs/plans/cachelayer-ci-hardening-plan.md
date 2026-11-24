@@ -1,0 +1,42 @@
+# CacheLayer CI recovery and codebase hardening
+
+## Baseline and scope
+
+Latest scheduled run: https://github.com/infocyph/CacheLayer/actions/runs/44988885781 (November 22, 2026). Same revision passed November 1, then failed November 8, 15 and 22. Five failed jobs, ten passed, one skipped. PHPStan 480 (PHP 8.4) / 481 (8.6); Psalm 1,356 on both inspected runtimes; PHP 8.6 QA: 468 passed, three deprecations (1,898 assertions) on both dependency lanes. These are diagnostic counts, not unique defects.
+
+Preserve PSR-6/16, public APIs, storage and event wire values, backend semantics, atomicity, fail-open/fail-closed behavior and performance. No weakened gates, new suppressions, baselines or exclusions; no SHA pins in dependency/workflow declarations. Keep composer.lock untracked. GitHub-hosted verification only, no merge. One batch = one commit; group related files, target 50–100 when justified. Update this tracker with each batch; distinguish implemented and verified.
+
+## Batches
+- [x] B01 implementation: 71 analyzer-reported Override attributes in eight source files; verified declaration positions before edits. Expand three existing release smoke/consumer PHP matrices to 8.6. Hosted verification pending.
+- [ ] B02: remaining source override attributes (245 original source findings, 174 outstanding), throws, optional extension types, mixed values, internal visibility, return/parameter types, taint and other source findings.
+- [ ] B03: test/benchmark/tool analysis, Pest dynamic context and benchmark discovery without weakening coverage or assertions.
+- [ ] B04: PHP 8.6 compatibility. MongoDB library 2.5.1 reports is_integer() deprecation in Operation/Find.php:182 via findOne; check upstream released correction or semantics-preserving solution with real backend evidence. InvalidationEventType::Namespace triggers deprecated enum declaration; inspect public usage and serialized enum compatibility. A rename may break public consumers and PHP serialized enum payloads: explicit decision required if no compatible solution. Keep wire value namespace unchanged. No vendor patching or suppression. Review remaining runtime/version references and Scylla driver binary availability.
+- [ ] B05: source review: adapters, facade, atomic operations, locks, counters, codecs, serializer, memoization and support utilities.
+- [ ] B06: Node, Cluster, invalidation transport/cursor/outbox/recovery and Runwire integration (including 3.1); concurrency, failure containment, lifecycle and real backend coverage.
+- [ ] B07: docs, examples, Composer, CI, packaging, release scripts, public contracts and structural consolidation; avoid speculative architecture or API churn.
+- [ ] B08: acceptance across PHP 8.4–8.6, lowest/stable, independent PSR contracts, real services, clean consumer, docs, security, Runwire soak, scoped performance evidence and bot findings.
+
+## PHPForge coverage register
+
+Authority: https://github.com/infocyph/PHPForge/blob/main/resources/engineering-principles.md. Initial register, not a completed audit. Record individual rule IDs and evidence for actionable findings.
+
+| Rule / ruling | Boundary | Evidence required | Status |
+| --- | --- | --- | --- |
+| CORE-01/02: contracts and simplicity | All source | API diff and PSR suites | Pending |
+| FLOW-01/02: root-cause fixes and full gates | CI and analyzers | Hosted results and unchanged scan scope | B01 implemented, CI pending |
+| PERF-01: sustained successful throughput | Hot paths | Matched measurements when touched | Pending |
+| COMPAT: runtime and contracts | PHP, PSR, drivers, event wire | Runtime matrices, compatibility tests | B01 expanded matrices, B04 pending |
+| TYPE: validation and explicit types | Backend payloads, options, IDs | Negative tests and analyzers | Pending |
+| STRUCT: cohesion and abstraction | Adapters, node/cluster, locks | Call graph and justified consolidation | Pending |
+| REQUEST: loading and serialization | Facade, codecs, closures | Cold/warm paths and bounded decoding | Pending |
+| MEM: bounded resources | Bulk/deferred/local caches | Boundary tests and memory evidence | Pending |
+| SEC: trust and crypto | Payloads, SQL, files, credentials | Tamper tests, secret containment | Pending |
+| DATA: external/cache correctness | TTL, CAS, locks, invalidation | Real services and contention tests | Pending |
+| OBS: low-cost diagnostics | Metrics, health | Failure and disabled instrumentation tests | Pending |
+| CONFIG-01/02/03: dependency and loading | Composer, export, CI | Clean consumer, lowest/stable, independent PSR | Pending |
+| OPS: lifecycle and release | Workers, recovery, release | Soak/restart/hosted release evidence | Pending |
+
+## Verification
+- Baseline workflow logs reviewed; five failed jobs confirmed.
+- B01: all 71 declaration positions matched. Hosted verification pending. Existing reusable workflow already follows @main and covers 8.6; single-runtime jobs require separate applicability review.
+- Full codebase inventory obtained; review incomplete.

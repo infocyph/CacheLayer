@@ -58,6 +58,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return new self($selected, $namespace);
     }
 
+    #[\Override]
     public function atomicCompareAndSet(
         string $key,
         mixed $expected,
@@ -93,6 +94,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return $this->matchedCount($result) === 1;
     }
 
+    #[\Override]
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
         $this->discardDeferredKey($key);
@@ -106,6 +108,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
             : $this->genericMiss($key);
     }
 
+    #[\Override]
     public function atomicSetIfAbsent(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
@@ -132,6 +135,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return false;
     }
 
+    #[\Override]
     public function clear(): bool
     {
         $this->collection->deleteMany(['ns' => $this->ns]);
@@ -140,6 +144,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return true;
     }
 
+    #[\Override]
     public function deleteItem(string $key): bool
     {
         $this->discardDeferredKey($key);
@@ -152,6 +157,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
      * @param array $keys The keys argument.
      * @phpstan-param list<string> $keys
      */
+    #[\Override]
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
@@ -164,6 +170,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return true;
     }
 
+    #[\Override]
     public function getItem(string $key): CacheItem
     {
         $doc = $this->collection->findOne(['_id' => $this->mapData($key)]);
@@ -208,6 +215,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return $actual;
     }
 
+    #[\Override]
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
@@ -218,6 +226,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
      * @phpstan-param list<string> $keys
      * @phpstan-return array<string, CacheItem>
      */
+    #[\Override]
     public function multiFetch(array $keys): array
     {
         $ids = array_map($this->mapData(...), $keys);
@@ -286,6 +295,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return $this->storeTagGenerations($generations);
     }
 
+    #[\Override]
     public function save(CacheItemInterface $item): bool
     {
         return $this->saveEncoded($item, function (CacheItemInterface $saveItem, array $expires): bool {
@@ -307,6 +317,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
     }
 
     /** @param array<string, CacheItemInterface> $items */
+    #[\Override]
     public function saveItems(array $items): bool
     {
         $operations = [];

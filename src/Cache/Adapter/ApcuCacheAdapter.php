@@ -39,6 +39,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
         $this->ns = CacheInput::namespace($namespace);
     }
 
+    #[\Override]
     public function clear(): bool
     {
         foreach ($this->listKeys() as $apcuKey) {
@@ -49,6 +50,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
         return true;
     }
 
+    #[\Override]
     public function deleteItem(string $key): bool
     {
         $this->discardDeferredKey($key);
@@ -64,6 +66,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
      * @param array $keys The keys argument.
      * @phpstan-param list<string> $keys
      */
+    #[\Override]
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
@@ -74,6 +77,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
         return apcu_delete(array_map($this->map(...), $keys)) === [];
     }
 
+    #[\Override]
     public function getItem(string $key): CacheItem
     {
         $apcuKey = $this->map($key);
@@ -116,6 +120,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
         return $generations;
     }
 
+    #[\Override]
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
@@ -126,6 +131,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
      * @phpstan-param list<string> $keys
      * @phpstan-return array<string, CacheItem>
      */
+    #[\Override]
     public function multiFetch(array $keys): array
     {
         if ($keys === []) {
@@ -180,6 +186,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
         return $generations === [] || apcu_store($generations) === [];
     }
 
+    #[\Override]
     public function save(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
@@ -199,6 +206,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
     }
 
     /** @param array<string, CacheItemInterface> $items */
+    #[\Override]
     public function saveItems(array $items): bool
     {
         if (!$this->supportsItems($items)) {

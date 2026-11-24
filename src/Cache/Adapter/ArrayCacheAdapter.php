@@ -24,6 +24,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
         $this->ns = CacheInput::namespace($namespace);
     }
 
+    #[\Override]
     public function atomicCompareAndSet(
         string $key,
         mixed $expected,
@@ -49,6 +50,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
         return true;
     }
 
+    #[\Override]
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
         $this->discardDeferredKey($key);
@@ -64,6 +66,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
         return $this->genericItemFromRecord($key, $record);
     }
 
+    #[\Override]
     public function atomicSetIfAbsent(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
@@ -85,6 +88,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
         return true;
     }
 
+    #[\Override]
     public function clear(): bool
     {
         $this->store = [];
@@ -94,6 +98,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
         return true;
     }
 
+    #[\Override]
     public function deleteItem(string $key): bool
     {
         $this->discardDeferredKey($key);
@@ -106,6 +111,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
      * @param array $keys The keys argument.
      * @phpstan-param list<string> $keys
      */
+    #[\Override]
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
@@ -116,6 +122,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
         return true;
     }
 
+    #[\Override]
     public function getItem(string $key): CacheItem
     {
         $mapped = $this->map($key);
@@ -144,6 +151,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
         return $generations;
     }
 
+    #[\Override]
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
@@ -154,6 +162,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
      * @phpstan-param list<string> $keys
      * @phpstan-return array<string, CacheItem>
      */
+    #[\Override]
     public function multiFetch(array $keys): array
     {
         $items = [];
@@ -192,6 +201,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
         return true;
     }
 
+    #[\Override]
     public function save(CacheItemInterface $item): bool
     {
         return $this->saveEncoded($item, function (CacheItemInterface $saveItem, array $expires): bool {
@@ -202,6 +212,7 @@ final class ArrayCacheAdapter extends AbstractCacheAdapter implements AtomicCach
     }
 
     /** @param array<string, CacheItemInterface> $items */
+    #[\Override]
     public function saveItems(array $items): bool
     {
         if (!$this->supportsItems($items)) {

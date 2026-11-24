@@ -44,9 +44,11 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
      * @param list<string> $keys
      * @return array<string, CacheItem>
      */
+    #[\Override]
     abstract public function multiFetch(array $keys): array;
 
     /** @param array<string, CacheItemInterface> $items */
+    #[\Override]
     abstract public function saveItems(array $items): bool;
 
     /** @internal */
@@ -65,6 +67,7 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         }
     }
 
+    #[\Override]
     public function commit(): bool
     {
         if ($this->deferred === []) {
@@ -101,6 +104,7 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         $this->storageIdentity ??= $storageIdentity;
     }
 
+    #[\Override]
     public function createItem(string $key): CacheItemInterface
     {
         CacheInput::key($key);
@@ -112,6 +116,7 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
      * @param list<string> $keys
      * @return array<string, CacheItem>
      */
+    #[\Override]
     public function getItems(array $keys = []): array
     {
         $keys = CacheInput::keys($keys);
@@ -130,6 +135,7 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
     }
 
     /** @param list<string> $tags */
+    #[\Override]
     public function getTagGenerations(array $tags): array
     {
         $generations = [];
@@ -140,17 +146,20 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         return $generations;
     }
 
+    #[\Override]
     public function internalPersist(CacheItemInterface $item): bool
     {
         return $this->save($item);
     }
 
+    #[\Override]
     public function internalQueue(CacheItemInterface $item): bool
     {
         return $this->saveDeferred($item);
     }
 
     /** @param list<string> $tags */
+    #[\Override]
     public function rotateTagGenerations(array $tags): bool
     {
         foreach ($tags as $tag) {
@@ -160,6 +169,7 @@ abstract class AbstractCacheAdapter implements CacheItemPoolInterface, InternalC
         return true;
     }
 
+    #[\Override]
     public function saveDeferred(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {

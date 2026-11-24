@@ -37,6 +37,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         }
     }
 
+    #[\Override]
     public function atomicCompareAndSet(
         string $key,
         mixed $expected,
@@ -85,6 +86,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         );
     }
 
+    #[\Override]
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
         $this->discardDeferredKey($key);
@@ -109,6 +111,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         return $this->genericItemFromRecord($key, $record);
     }
 
+    #[\Override]
     public function atomicSetIfAbsent(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
@@ -150,6 +153,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         return $this->client->cas($extended['cas'], $mapped, $blob, MemcachedExpiration::fromRelative($ttl));
     }
 
+    #[\Override]
     public function clear(): bool
     {
         $cleared = $this->client->set($this->generationKey(), self::newGeneration());
@@ -158,6 +162,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         return $cleared;
     }
 
+    #[\Override]
     public function deleteItem(string $key): bool
     {
         $this->discardDeferredKey($key);
@@ -167,6 +172,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
     }
 
     /** @param list<string> $keys */
+    #[\Override]
     public function deleteItems(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
@@ -184,6 +190,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         return $this->client;
     }
 
+    #[\Override]
     public function getItem(string $key): CacheItem
     {
         $mapped = $this->mapData($key);
@@ -232,6 +239,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         return $generations;
     }
 
+    #[\Override]
     public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
@@ -241,6 +249,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
      * @param list<string> $keys
      * @return array<string, CacheItem>
      */
+    #[\Override]
     public function multiFetch(array $keys): array
     {
         if ($keys === []) {
@@ -298,6 +307,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         return $generations === [] || $this->client->setMulti($generations);
     }
 
+    #[\Override]
     public function save(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
@@ -316,6 +326,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
     }
 
     /** @param array<string, CacheItemInterface> $items */
+    #[\Override]
     public function saveItems(array $items): bool
     {
         $generation = $this->namespaceGeneration();
