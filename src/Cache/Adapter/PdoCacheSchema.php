@@ -86,9 +86,11 @@ final class PdoCacheSchema
         }
 
         try {
-            // IF NOT EXISTS does not serialize concurrent PostgreSQL catalog creation.
-            $lock = $pdo->prepare("SELECT pg_advisory_xact_lock(hashtext('cachelayer:schema'), hashtext(?))");
-            $lock->execute([$table]);
+            // Match PostgreSQL's case folding and length limit for unquoted names.
+            $lock = $pdo->prepare(
+                "SELECT pg_advisory_xact_lock(hashtext('cachelayer:schema'), hashtext(CAST(CAST(? AS name) AS text)))",
+            );
+            $lock->execute([strtolower($table)]);
             $lock->closeCursor();
             self::installTable($pdo, $table, $identifier, $payload);
             self::installExpiryIndex($pdo, $table, 'pgsql');

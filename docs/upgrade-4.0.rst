@@ -1,5 +1,21 @@
-Upgrading to CacheLayer 4.0
-===========================
+Upgrading CacheLayer 4.x
+========================
+
+Upgrading to 4.1
+================
+
+CacheLayer 4.1 verifies the optional integration with Runwire 4.0.1 and later
+4.x releases. Applications using the Runwire 3.x integration should upgrade
+their host runtime before adopting the 4.1 integration. Core cache use still
+works without Runwire.
+
+PostgreSQL schema initialization now locks by the unquoted table name as
+PostgreSQL resolves it, so different spellings of the same name share the lock.
+The Memcached lock handoff and PostgreSQL binary payload fixes do not require a
+cache data migration.
+
+If a Redis or Valkey DSN specifies a database number, PHP needs the Filter
+extension to validate it. Other cache configurations can run without it.
 
 Upgrading from 4.0.2 to 4.0.3
 =============================

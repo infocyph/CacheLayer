@@ -5,7 +5,7 @@
         "php": ">=8.4",
         "ext-pdo": "*",
         "ext-pdo_sqlite": "*",
-        "infocyph/cachelayer": "4.0.x-dev",
+        "infocyph/cachelayer": "4.1.x-dev",
         "infocyph/runwire": "^4.0.1"
     },
     "repositories": [
@@ -15,7 +15,7 @@
             "options": {
                 "symlink": false,
                 "versions": {
-                    "infocyph/cachelayer": "4.0.x-dev"
+                    "infocyph/cachelayer": "4.1.x-dev"
                 }
             }
         }

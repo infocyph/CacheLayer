@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Infocyph\CacheLayer\Tests\Cache;
 
 use Infocyph\CacheLayer\Cache\Cache;
+use Infocyph\CacheLayer\Cache\Adapter\PdoCacheSchema;
 use Infocyph\CacheLayer\Cache\Lock\PdoLockProvider;
 use PDO;
 use RuntimeException;
@@ -107,7 +108,25 @@ test('PostgreSQL atomic writes preserve binary payloads', function () use (&$pdo
 });
 
 
-test('PostgreSQL independent workers initialize a fresh schema and elect one atomic winner', function () use ($dsn, $user, $pass): void {
+test('PostgreSQL schema aliases share the same transaction lock', function () use ($dsn, $user, $pass): void {
+    $holder = new PDO($dsn, $user, $pass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+    $peer = new PDO($dsn, $user, $pass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+
+    $holder->beginTransaction();
+    try {
+        PdoCacheSchema::install($holder, 'CacheLayer_Entries');
+        expect($holder->inTransaction())->toBeTrue();
+        $result = $peer->query("SELECT pg_try_advisory_xact_lock(hashtext('cachelayer:schema'), hashtext('cachelayer_entries'))");
+        if (!$result instanceof \PDOStatement) {
+            throw new RuntimeException('PostgreSQL advisory-lock probe failed.');
+        }
+        expect($result->fetchColumn())->toBeFalse();
+    } finally {
+        $holder->rollBack();
+    }
+});
+
+test('PostgreSQL independent workers initialize a fresh schema with mixed spelling and elect one atomic winner', function () use ($dsn, $user, $pass): void {
     $pdo = new PDO($dsn, $user, $pass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
     $pdo->exec('DROP TABLE IF EXISTS cachelayer_schema_race');
     try {

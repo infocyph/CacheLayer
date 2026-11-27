@@ -102,6 +102,8 @@ Typical Usage
    $cache->invalidateTag('orders');
 
 PostgreSQL schema installation serializes concurrent initializers using a
-transaction-scoped advisory lock. The installer does not commit a caller-owned
-transaction. PostgreSQL cache payload writes bind binary values explicitly so
-embedded NUL bytes and non-UTF-8 bytes are preserved by BYTEA storage.
+transaction-scoped advisory lock. The lock follows PostgreSQL's case folding
+and length limit for unquoted table names. When the caller owns the
+transaction, the lock stays held until that transaction ends. PostgreSQL cache
+payload writes bind binary values explicitly so embedded NUL bytes and
+non-UTF-8 bytes are preserved by BYTEA storage.
