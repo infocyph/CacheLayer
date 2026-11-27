@@ -443,7 +443,6 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         return $statement->execute();
     }
 
-
     /**
      * @param list<array{0:string, 1:string, 2:string, 3:int|null}> $rows
      * @throws PDOException

@@ -75,3 +75,5 @@ Source: infocyph/infbyte-app-experiment `feedbacks/cachelayer.md` blob `4284ac40
 ### Batch C3 — remaining analysis findings
 
 - Run [45948508571](https://github.com/infocyph/CacheLayer/actions/runs/45948508571) on `1cb63b2`: all three analysis jobs failed on the same redundant Memcached array check; Psalm's gating execution passed, as did all three benchmarks, clean install and [release verification](https://github.com/infocyph/CacheLayer/actions/runs/45948508131). Replace repeated conditional narrowing with explicit guards before accessing the CAS entry; preserve the immediate release-marker handoff and native token representation. Normalize the three process pipes to a list to satisfy the stricter reported Psalm return contract. No new suppressions or analyzer configuration changes. New hosted evidence pending.
+
+- Completed QA logs from the same run show five jobs failed solely on `class_attributes_separation` in `PdoCacheAdapter.php` (Pest, PHPCS, Deptrac, Rector and remaining gates passed); sixth job was cancelled by the newer push. Removed the remaining duplicate blank line between upsert methods. Re-run the full matrix on the corrected head.
