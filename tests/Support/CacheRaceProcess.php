@@ -25,6 +25,15 @@ if (!is_array($configuration)
     throw new RuntimeException('Invalid cache race configuration.');
 }
 
+/** @var array{backend:string,namespace:string,operation:string,worker:int,dsn?:mixed,user?:mixed,password?:mixed,host?:mixed,port?:mixed} $configuration */
+$requireInteger = static function (mixed $value): int {
+    if (!is_int($value)) {
+        throw new RuntimeException('Unexpected cache race value type.');
+    }
+
+    return $value;
+};
+
 try {
     $options = new CacheOptions(failOpen: false);
     if ($configuration['backend'] === 'pdo') {
@@ -60,25 +69,22 @@ try {
 
     $worker = $configuration['worker'];
     if ($configuration['operation'] === 'remember') {
-        $result = $cache->remember('race', static function () use ($worker): int {
+        $result = $requireInteger($cache->remember('race', static function () use ($worker): int {
             usleep(150_000);
 
             return $worker;
-        }, 600);
+        }, 600));
     } else {
         $atomic = $cache->atomic() ?? throw new RuntimeException('Missing atomic capability.');
         $result = match ($configuration['operation']) {
             'insert' => $atomic->setIfAbsent('race', $worker, 600) ? $worker : 0,
             'mixed' => $worker % 2 === 0
                 ? ($atomic->compareAndSet('race', 1, 2, 600) ? 10 : 0)
-                : $atomic->getAndDelete('race', 0),
+                : $requireInteger($atomic->getAndDelete('race', 0)),
             default => throw new RuntimeException('Unsupported cache race operation.'),
         };
     }
 
-    if (!is_int($result)) {
-        throw new RuntimeException('Unexpected cache race value type.');
-    }
     fwrite(STDOUT, (string) $result);
 } catch (Throwable $failure) {
     // Do not include connection credentials in test diagnostics.

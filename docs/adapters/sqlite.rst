@@ -23,6 +23,11 @@ must use the same writable lock directory and filesystem. SQLite cannot use
 ``PdoLockProvider::strict()`` because strict PDO locks require a native
 MySQL/MariaDB or PostgreSQL driver.
 
+The PDO adapter configures a 5-second SQLite busy timeout before enabling WAL
+journal mode, so concurrent initialization can wait for a competing writer.
+The timeout does not replace the application lock used by ``remember()`` or
+make SQLite a distributed cache across unrelated filesystems.
+
 Example
 -------
 

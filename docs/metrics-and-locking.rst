@@ -109,7 +109,9 @@ Provider semantics:
 * Redis/Valkey acquire with ``SET NX PX`` and renew/release with token-checked
   Lua scripts.
 * Memcached uses ``add`` for acquisition and CAS for ownership-safe renewal and
-  release.
+  release. A released lock is represented by a short-lived marker that a new
+  owner can claim immediately using CAS. Stale owners cannot renew or release
+  the replacement lock; native CAS tokens retain their original representation.
 * MySQL/MariaDB and PostgreSQL use connection-scoped advisory locks. Renewal
   verifies ownership and connection health; the lock remains held until
   release or connection loss. These are not timed server-side leases, so the
