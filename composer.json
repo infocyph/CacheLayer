@@ -35,7 +35,6 @@
     ],
     "require": {
         "php": ">=8.4",
-        "ext-filter": "*",
         "opis/closure": "^4.5",
         "psr/cache": "^3.0",
         "psr/simple-cache": "^3.0"
@@ -48,6 +47,7 @@
     "suggest": {
         "ext-apcu": "For APCu-based caching (in-memory, per-process)",
         "ext-cassandra": "For ScyllaDB/Cassandra usage via ScyllaDbCacheAdapter",
+        "ext-filter": "Required only for Redis or Valkey DSNs that specify a database number",
         "ext-mbstring": "Recommended for development tools output formatting (Pest/Termwind)",
         "ext-memcached": "For Memcached-based caching (distributed, RAM)",
         "ext-mongodb": "For MongoDB usage via MongoDbCacheAdapter",

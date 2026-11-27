@@ -38,6 +38,8 @@ For 3.x upgrades, read `docs/upgrade-4.0.rst` before deployment. 4.0 raises the 
 
 For 4.0.3, check the [invalidation enum migration](docs/upgrade-4.0.rst) if you use Cluster Cache events directly.
 
+For 4.1, see the [upgrade guide](docs/upgrade-4.0.rst) for the Runwire compatibility change and backend fixes.
+
 ## Cache
 
 ```php

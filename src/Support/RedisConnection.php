@@ -75,9 +75,31 @@ final class RedisConnection
     }
 
     /**
+     * @throws InvalidArgumentException
+     * @throws RuntimeException
+     */
+    private static function parseDatabaseId(string $path): ?int
+    {
+        if ($path === '' || $path === '/') {
+            return null;
+        }
+        if (!extension_loaded('filter')) {
+            throw new RuntimeException('The filter extension is required to select a Redis-compatible database by DSN.');
+        }
+
+        $databaseId = filter_var(ltrim($path, '/'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]);
+        if ($databaseId === false) {
+            throw new InvalidArgumentException('Invalid Redis-compatible DSN.');
+        }
+
+        return $databaseId;
+    }
+
+    /**
      * @param string $dsn The Redis-compatible DSN.
      * @phpstan-return array{string, int, int|null, string|array{string, string}|null}
      * @throws InvalidArgumentException
+     * @throws RuntimeException
      */
     private static function parseDsn(#[\SensitiveParameter] string $dsn): array
     {
@@ -97,15 +119,7 @@ final class RedisConnection
         if (!is_string($path)) {
             throw new InvalidArgumentException('Invalid Redis-compatible DSN.');
         }
-        $database = $path === '' || $path === '/'
-            ? null
-            : ltrim($path, '/');
-        $databaseId = $database === null
-            ? null
-            : filter_var($database, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]);
-        if ($databaseId === false) {
-            throw new InvalidArgumentException('Invalid Redis-compatible DSN.');
-        }
+        $databaseId = self::parseDatabaseId($path);
 
         $port = $parts['port'] ?? 6379;
         if (!is_int($port) || $port < 1 || $port > 65_535) {

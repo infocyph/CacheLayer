@@ -53,7 +53,9 @@ try {
             $dsn,
             $user,
             $password,
-            table: 'cachelayer_schema_race',
+            table: $namespace === 'schema-race' && $configuration['worker'] % 2 === 0
+                ? 'CacheLayer_Schema_Race'
+                : 'cachelayer_schema_race',
             options: $options,
         );
     } elseif ($configuration['backend'] === 'memcached') {
