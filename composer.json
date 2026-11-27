@@ -35,13 +35,14 @@
     ],
     "require": {
         "php": ">=8.4",
+        "ext-filter": "*",
         "opis/closure": "^4.5",
         "psr/cache": "^3.0",
         "psr/simple-cache": "^3.0"
     },
     "require-dev": {
         "infocyph/phpforge": "dev-main@dev",
-        "infocyph/runwire": "^3.1",
+        "infocyph/runwire": "^4.0.1",
         "mongodb/mongodb": "*"
     },
     "suggest": {
@@ -50,13 +51,14 @@
         "ext-mbstring": "Recommended for development tools output formatting (Pest/Termwind)",
         "ext-memcached": "For Memcached-based caching (distributed, RAM)",
         "ext-mongodb": "For MongoDB usage via MongoDbCacheAdapter",
+        "ext-pcntl": "For Unix-only development concurrency tests; not required by cache consumers",
         "ext-pdo": "For PDO-based SQL caching (MySQL/MariaDB/PostgreSQL/etc.)",
         "ext-pdo_mysql": "For MySQL/MariaDB usage via Cache::pdo(...)",
         "ext-pdo_pgsql": "For PostgreSQL usage via Cache::pdo(...)",
         "ext-pdo_sqlite": "For default SQLite usage via Cache::pdo(...) or Cache::sqlite(...)",
         "ext-redis": "For Redis-based caching (persistent, networked)",
         "ext-sysvshm": "For shared-memory caching via SharedMemoryCacheAdapter",
-        "infocyph/runwire": "For optional Runwire 3.1 request/task isolation and worker-owned invalidation/maintenance integration",
+        "infocyph/runwire": "For optional Runwire 4.0.1 request/task isolation and worker-owned invalidation/maintenance integration",
         "mongodb/mongodb": "For MongoDB caching via MongoDbCacheAdapter"
     },
     "minimum-stability": "stable",
@@ -95,14 +97,6 @@
                             "tests/Cache/MongoDbRealCachePoolTest.php"
                         ],
                         "reason": "Temporary PHP 8.6-only skip for the two real MongoDB tests when mongodb/mongodb 2.4.2 or 2.5.1 triggers the vendor is_integer() deprecation in Operation/Find.php. Keep all other runtime and backend tests; remove when upstream is fixed."
-                    },
-                    {
-                        "directive": "@psalm-suppress",
-                        "issue": "PossiblyInvalidArgument",
-                        "paths": [
-                            "src/Support/RedisConnection.php"
-                        ],
-                        "reason": "Psalm 7.12.0 and 7.17.0 incorrectly narrow Redis::auth credentials to string; phpredis supports username/password ACL arrays. Remove when https://github.com/vimeo/psalm/issues/14796 is fixed and hosted analysis passes without the suppression."
                     }
                 ]
             }

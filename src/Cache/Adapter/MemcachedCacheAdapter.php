@@ -411,19 +411,23 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         );
     }
 
-    /** @return array{value:string, cas:float}|null */
+    /** @return array{value:string, cas:string|int|float}|null */
     private function extendedGet(string $key): ?array
     {
         $value = $this->client->get($key, null, \Memcached::GET_EXTENDED);
-        if (!is_array($value) || !is_string($value['value'] ?? null)) {
+        if (!is_array($value)) {
             return null;
         }
-        $cas = $value['cas'] ?? null;
-        if (!is_int($cas) && !is_float($cas)) {
+        $blob = $value['value'] ?? null;
+        if (!is_string($blob)) {
+            return null;
+        }
+        $cas = MemcachedValueGuard::casToken($value['cas'] ?? null);
+        if ($cas === null) {
             return null;
         }
 
-        return ['value' => $value['value'], 'cas' => (float) $cas];
+        return ['value' => $blob, 'cas' => $cas];
     }
 
     private function generationKey(): string

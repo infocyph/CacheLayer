@@ -87,3 +87,39 @@ test('PDO bounded pruning removes only expired data for the selected namespace',
         ->and($adapter->pruneExpired(1))->toBe(0)
         ->and(\Infocyph\CacheLayer\Tests\Support\CacheFixture::countRows($pdo, 'SELECT COUNT(*) FROM cachelayer_entries'))->toBe(3);
 });
+
+
+test('SQLite bulk preserves binary, null, false, zero and misses', function () use (&$pdoFixtureCache): void {
+    $values = ['nil' => null, 'zero' => 0, 'false' => false, 'binary' => "a\0\xffb"];
+    expect($pdoFixtureCache->setMultiple($values, 600))->toBeTrue()
+        ->and(iterator_to_array($pdoFixtureCache->getMultiple([...array_keys($values), 'missing'], 'absent')))
+        ->toBe([...$values, 'missing' => 'absent']);
+    foreach ($values as $key => $value) {
+        expect($pdoFixtureCache->has($key))->toBeTrue()
+            ->and($pdoFixtureCache->get($key, 'absent'))->toBe($value);
+    }
+    expect($pdoFixtureCache->has('missing'))->toBeFalse();
+});
+
+
+test('SQLite independent workers initialize a fresh database and share one cold computation', function (): void {
+    $file = sys_get_temp_dir() . '/cachelayer-race-' . bin2hex(random_bytes(8)) . '.sqlite';
+    $dsn = 'sqlite:' . $file;
+    try {
+        $results = \Infocyph\CacheLayer\Tests\Support\CacheFixture::cacheRace([
+            'backend' => 'pdo', 'operation' => 'remember', 'namespace' => 'sqlite-race',
+            'dsn' => $dsn, 'user' => '', 'password' => '',
+        ]);
+        $peer = Cache::pdo('sqlite-race', $dsn, table: 'cachelayer_schema_race');
+        expect($results)->toHaveCount(12)
+            ->and(array_unique($results))->toHaveCount(1)
+            ->and($peer->get('race'))->toBe($results[0] ?? null);
+        unset($peer);
+    } finally {
+        foreach ([$file, $file . '-wal', $file . '-shm'] as $path) {
+            if (is_file($path)) {
+                unlink($path);
+            }
+        }
+    }
+});

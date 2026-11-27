@@ -241,3 +241,68 @@ test('Memcached delete reports backend errors but treats missing keys as success
         ->and($adapter->deleteItem('key'))->toBeFalse()
         ->and($adapter->deleteItems(['key']))->toBeFalse();
 });
+
+
+test('Memcached CAS token handling preserves exact native integer and unsigned string representations', function (): void {
+    expect(MemcachedValueGuard::casToken(9_007_199_254_740_993))->toBe(9_007_199_254_740_993)
+        ->and(MemcachedValueGuard::casToken('18446744073709551615'))->toBe('18446744073709551615')
+        ->and(MemcachedValueGuard::casToken(42.0))->toBe(42.0)
+        ->and(MemcachedValueGuard::casToken('invalid'))->toBeNull();
+});
+
+test('Memcached release permits immediate CAS handoff and rejects a stale owner', function () use ($memcachedHost, $memcachedPort, &$memcachedFixtureClient): void {
+    $peer = new Memcached();
+    $peer->addServer($memcachedHost, $memcachedPort);
+    $first = new MemcachedLockProvider($memcachedFixtureClient);
+    $second = new MemcachedLockProvider($peer);
+    $owner = $first->acquire('immediate-handoff', 0.0, 30.0);
+    if ($owner === null) {
+        throw new RuntimeException('Initial lock unavailable.');
+    }
+    expect($second->acquire('immediate-handoff', 0.0, 30.0))->toBeNull();
+    $first->release($owner);
+    $replacement = $second->acquire('immediate-handoff', 0.0, 30.0);
+    if ($replacement === null) {
+        throw new RuntimeException('Released lock was not immediately reclaimable.');
+    }
+    try {
+        $first->release($owner);
+        expect($first->refresh($owner, 30.0))->toBeFalse()
+            ->and($second->refresh($replacement, 30.0))->toBeTrue()
+            ->and($first->acquire('immediate-handoff', 0.0, 30.0))->toBeNull();
+    } finally {
+        $second->release($replacement);
+    }
+});
+
+
+test('Memcached independent processes elect one winner and linearize mixed CAS and consume', function () use ($memcachedHost, $memcachedPort): void {
+    $namespace = 'process-race-' . bin2hex(random_bytes(8));
+    $servers = [[$memcachedHost, $memcachedPort, 0]];
+    $configuration = [
+        'backend' => 'memcached', 'namespace' => $namespace,
+        'host' => $memcachedHost, 'port' => $memcachedPort,
+    ];
+    $peer = Cache::memcached($namespace, $servers);
+    $foreign = Cache::memcached('foreign-' . $namespace, $servers);
+    try {
+        expect($foreign->set('race', 99, 600))->toBeTrue();
+        $insert = \Infocyph\CacheLayer\Tests\Support\CacheFixture::cacheRace($configuration + ['operation' => 'insert']);
+        $winners = array_values(array_filter($insert, static fn(int $value): bool => $value !== 0));
+        expect($insert)->toHaveCount(12)
+            ->and($winners)->toHaveCount(1)
+            ->and($peer->get('race'))->toBe($winners[0] ?? null)
+            ->and($peer->set('race', 1, 600))->toBeTrue();
+        $mixed = array_count_values(\Infocyph\CacheLayer\Tests\Support\CacheFixture::cacheRace($configuration + ['operation' => 'mixed']));
+        expect(($mixed[1] ?? 0) + ($mixed[2] ?? 0))->toBe(1)
+            ->and($mixed[10] ?? 0)->toBe($mixed[2] ?? 0)
+            ->and($peer->has('race'))->toBeFalse()
+            ->and($foreign->get('race'))->toBe(99);
+        $atomic = $peer->atomic() ?? throw new RuntimeException('Missing Memcached atomic capability.');
+        expect($atomic->setIfAbsent('race', 3, 600))->toBeTrue()
+            ->and($atomic->getAndDelete('race'))->toBe(3);
+    } finally {
+        $peer->delete('race');
+        $foreign->delete('race');
+    }
+});

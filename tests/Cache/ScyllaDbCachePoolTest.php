@@ -78,11 +78,18 @@ test('scylladb groups bulk reads and writes by configured bucket', function () u
 function scylladbAlternatorIntegrationContext(): ?array
 {
     $endpoint = \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('IC_SCYLLADB_ENDPOINT') ?? \Infocyph\CacheLayer\Tests\Support\CacheFixture::environment('CACHELAYER_SCYLLADB_ENDPOINT') ?? 'http://127.0.0.1:8000';
-    $base = rtrim($endpoint, '/');
+    $base = match (rtrim($endpoint, '/')) {
+        'http://127.0.0.1:8000' => 'http://127.0.0.1:8000',
+        'http://127.0.0.1:8001' => 'http://127.0.0.1:8001',
+        'http://127.0.0.1:8002' => 'http://127.0.0.1:8002',
+        'http://localhost:8000' => 'http://localhost:8000',
+        default => throw new RuntimeException('Alternator tests require an approved local fixture endpoint.'),
+    };
     $context = stream_context_create([
         'http' => [
             'timeout' => 1.5,
             'ignore_errors' => true,
+            'follow_location' => 0,
         ],
     ]);
 
@@ -122,6 +129,7 @@ test('scylladb alternator health endpoint is reachable', function (): void {
         'http' => [
             'timeout' => 1.5,
             'ignore_errors' => true,
+            'follow_location' => 0,
         ],
     ]);
 
@@ -141,6 +149,7 @@ test('scylladb alternator localnodes endpoint returns json list', function (): v
         'http' => [
             'timeout' => 1.5,
             'ignore_errors' => true,
+            'follow_location' => 0,
         ],
     ]);
 

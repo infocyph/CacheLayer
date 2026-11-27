@@ -157,11 +157,11 @@ Cursor state is scoped by cluster, node, namespace, and transport identity.
 Retention gaps trigger a local namespace clear before progress is advanced.
 Permanent poison events are not skipped silently.
 
-Runwire 3.1 integration
-=======================
+Runwire 4.0.1 integration
+=========================
 
 Runwire is still optional at installation time. Applications that use the
-integration should install ``infocyph/runwire:^3.1`` and bind the concrete
+integration should install ``infocyph/runwire:^4.0.1`` and bind the concrete
 Runwire ``RuntimeContext`` after each worker/generation is created. Share the
 current request/task scope only while that work is active and release the
 runtime binding on shutdown or replacement.

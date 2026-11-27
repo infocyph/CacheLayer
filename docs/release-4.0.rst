@@ -6,6 +6,10 @@ CacheLayer 4.0.0 is a security, correctness, and contract-focused major
 release. It intentionally drops 3.x backward-compatibility requirements where
 they conflict with a safer or more coherent design.
 
+This page records the original 4.0.0 release. The current maintenance branch
+updates optional runtime integration to Runwire 4.0.1; see :doc:`runwire` for
+the current installation constraint and :doc:`upgrade-4.0` for migration guidance.
+
 Platform
 ========
 

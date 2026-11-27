@@ -1,14 +1,14 @@
-=======================
-Runwire 3.1 integration
-=======================
+=========================
+Runwire 4.0.1 integration
+=========================
 
-CacheLayer supports an optional integration with Runwire 3.1. Runwire is not a
+CacheLayer supports an optional integration with Runwire 4.0.1. Runwire is not a
 core dependency: ordinary PHP-FPM, CLI, and other consumers continue to use the
 normal CacheLayer paths without installing it.
 
 Install Runwire only in applications that already use it::
 
-   composer require infocyph/runwire:^3.1
+   composer require infocyph/runwire:^4.0.1
 
 Ownership contract
 ==================
@@ -190,7 +190,7 @@ storage format depends on Runwire.
 HTTP scheduling
 ===============
 
-Runwire 3.1 adaptive HTTP scheduling is a host-level concern. CacheLayer does
+Runwire adaptive HTTP scheduling is a host-level concern. CacheLayer does
 not select FIXED, LATENCY, THROUGHPUT, or AUTO and does not attribute HTTP
 throughput changes to cache storage. Keep Runwire's certified host defaults
 unless the application measures and chooses another policy.

@@ -100,3 +100,8 @@ Typical Usage
 
    // Invalidate all related records after an order mutation.
    $cache->invalidateTag('orders');
+
+PostgreSQL schema installation serializes concurrent initializers using a
+transaction-scoped advisory lock. The installer does not commit a caller-owned
+transaction. PostgreSQL cache payload writes bind binary values explicitly so
+embedded NUL bytes and non-UTF-8 bytes are preserved by BYTEA storage.

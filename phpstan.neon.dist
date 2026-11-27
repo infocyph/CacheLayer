@@ -1,0 +1,37 @@
+includes:
+    - vendor/infocyph/phpforge/resources/phpstan.neon.dist
+
+parameters:
+    # Replace the built-in Memcached stub, retaining every other upstream 2.3 stub.
+    stubFiles!:
+        - qa/stubs/memcached.stub
+        - phar://%rootDir%/phpstan.phar/stubs/Redis.stub
+        - phar://%rootDir%/phpstan.phar/stubs/ReflectionAttribute.stub
+        - phar://%rootDir%/phpstan.phar/stubs/ReflectionClassConstant.stub
+        - phar://%rootDir%/phpstan.phar/stubs/ReflectionFunctionAbstract.stub
+        - phar://%rootDir%/phpstan.phar/stubs/ReflectionMethod.stub
+        - phar://%rootDir%/phpstan.phar/stubs/ReflectionParameter.stub
+        - phar://%rootDir%/phpstan.phar/stubs/ReflectionProperty.stub
+        - phar://%rootDir%/phpstan.phar/stubs/ReflectionType.stub
+        - phar://%rootDir%/phpstan.phar/stubs/iterable.stub
+        - phar://%rootDir%/phpstan.phar/stubs/ArrayObject.stub
+        - phar://%rootDir%/phpstan.phar/stubs/WeakReference.stub
+        - phar://%rootDir%/phpstan.phar/stubs/SensitiveParameterValue.stub
+        - phar://%rootDir%/phpstan.phar/stubs/ImagickPixel.stub
+        - phar://%rootDir%/phpstan.phar/stubs/PDOStatement.stub
+        - phar://%rootDir%/phpstan.phar/stubs/date.stub
+        - phar://%rootDir%/phpstan.phar/stubs/ibm_db2.stub
+        - phar://%rootDir%/phpstan.phar/stubs/mysqli.stub
+        - phar://%rootDir%/phpstan.phar/stubs/zip.stub
+        - phar://%rootDir%/phpstan.phar/stubs/dom.stub
+        - phar://%rootDir%/phpstan.phar/stubs/spl.stub
+        - phar://%rootDir%/phpstan.phar/stubs/SplObjectStorage.stub
+        - phar://%rootDir%/phpstan.phar/stubs/Exception.stub
+        - phar://%rootDir%/phpstan.phar/stubs/arrayFunctions.stub
+        - phar://%rootDir%/phpstan.phar/stubs/core.stub
+        - phar://%rootDir%/phpstan.phar/stubs/typeCheckingFunctions.stub
+        - phar://%rootDir%/phpstan.phar/stubs/Countable.stub
+        - phar://%rootDir%/phpstan.phar/stubs/file.stub
+        - phar://%rootDir%/phpstan.phar/stubs/stream_socket_client.stub
+        - phar://%rootDir%/phpstan.phar/stubs/stream_socket_server.stub
+        - phar://%rootDir%/phpstan.phar/stubs/ctype.stub

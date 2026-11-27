@@ -78,3 +78,50 @@ test('PostgreSQL advisory locks accept native PDO booleans and release ownership
         ->and($replacement)->not->toBeNull();
     $contender->release($replacement);
 });
+
+
+test('PostgreSQL bulk preserves binary, null, false, zero and misses', function () use (&$pdopgsqlFixtureCache): void {
+    $values = ['nil' => null, 'zero' => 0, 'false' => false, 'binary' => "a\0\xffb"];
+    expect($pdopgsqlFixtureCache->setMultiple($values, 600))->toBeTrue()
+        ->and(iterator_to_array($pdopgsqlFixtureCache->getMultiple([...array_keys($values), 'missing'], 'absent')))
+        ->toBe([...$values, 'missing' => 'absent']);
+    foreach ($values as $key => $value) {
+        expect($pdopgsqlFixtureCache->has($key))->toBeTrue()
+            ->and($pdopgsqlFixtureCache->get($key, 'absent'))->toBe($value);
+    }
+    expect($pdopgsqlFixtureCache->has('missing'))->toBeFalse();
+});
+
+test('PostgreSQL atomic writes preserve binary payloads', function () use (&$pdopgsqlFixtureCache): void {
+    $atomic = $pdopgsqlFixtureCache->atomic();
+    if ($atomic === null) {
+        throw new RuntimeException('PostgreSQL atomic capability is required.');
+    }
+    $first = "a\0\xffb";
+    $second = "c\0\xfed";
+    expect($atomic->setIfAbsent('binary-atomic', $first, 600))->toBeTrue()
+        ->and($pdopgsqlFixtureCache->get('binary-atomic'))->toBe($first)
+        ->and($atomic->compareAndSet('binary-atomic', $first, $second, 600))->toBeTrue()
+        ->and($atomic->getAndDelete('binary-atomic'))->toBe($second)
+        ->and($pdopgsqlFixtureCache->has('binary-atomic'))->toBeFalse();
+});
+
+
+test('PostgreSQL independent workers initialize a fresh schema and elect one atomic winner', function () use ($dsn, $user, $pass): void {
+    $pdo = new PDO($dsn, $user, $pass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+    $pdo->exec('DROP TABLE IF EXISTS cachelayer_schema_race');
+    try {
+        $results = \Infocyph\CacheLayer\Tests\Support\CacheFixture::cacheRace([
+            'backend' => 'pdo', 'operation' => 'insert', 'namespace' => 'schema-race',
+            'dsn' => $dsn, 'user' => $user, 'password' => $pass,
+        ]);
+        $winners = array_values(array_filter($results, static fn(int $value): bool => $value !== 0));
+        $peer = Cache::pdo('schema-race', $dsn, $user, $pass, table: 'cachelayer_schema_race');
+        expect($results)->toHaveCount(12)
+            ->and($winners)->toHaveCount(1)
+            ->and($peer->get('race'))->toBe($winners[0] ?? null)
+            ->and(\Infocyph\CacheLayer\Tests\Support\CacheFixture::countRows($pdo, 'SELECT COUNT(*) FROM cachelayer_schema_race'))->toBe(1);
+    } finally {
+        $pdo->exec('DROP TABLE IF EXISTS cachelayer_schema_race');
+    }
+});

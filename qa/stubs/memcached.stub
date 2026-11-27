@@ -1,0 +1,14 @@
+<?php
+
+/** @phpstan-all-methods-impure */
+class Memcached
+{
+    /** @param string|int|float $cas_token */
+    public function cas($cas_token, string $key, mixed $value, int $expiration = 0): bool {}
+}
+
+/** @phpstan-all-methods-impure */
+class Memcache {}
+
+/** @phpstan-all-methods-impure */
+class MemcachePool {}
