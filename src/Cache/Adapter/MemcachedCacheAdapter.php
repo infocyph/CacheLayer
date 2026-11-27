@@ -415,7 +415,11 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
     private function extendedGet(string $key): ?array
     {
         $value = $this->client->get($key, null, \Memcached::GET_EXTENDED);
-        if (!is_array($value) || !is_string($value['value'] ?? null)) {
+        if (!is_array($value)) {
+            return null;
+        }
+        $blob = $value['value'] ?? null;
+        if (!is_string($blob)) {
             return null;
         }
         $cas = MemcachedValueGuard::casToken($value['cas'] ?? null);
@@ -423,7 +427,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
             return null;
         }
 
-        return ['value' => $value['value'], 'cas' => $cas];
+        return ['value' => $blob, 'cas' => $cas];
     }
 
     private function generationKey(): string

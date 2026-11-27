@@ -77,6 +77,7 @@ final class PdoCacheSchema
         $pdo->exec("CREATE INDEX IF NOT EXISTS {$index} ON {$table}(namespace, kind, expires)");
     }
 
+    /** @throws PDOException */
     private static function installPostgres(PDO $pdo, string $table, string $identifier, string $payload): void
     {
         $ownsTransaction = !$pdo->inTransaction();

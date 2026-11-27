@@ -119,7 +119,10 @@ final class CacheFixture
         }
     }
 
-    /** @return array{process:resource,pipes:array<int,resource>} */
+    /**
+     * @return array{process:resource,pipes:array<int,resource>}
+     * @throws \RuntimeException
+     */
     private static function startRaceChild(): array
     {
         $process = proc_open(
@@ -138,6 +141,7 @@ final class CacheFixture
      * @param array<int,resource> $pipes
      * @param array<string,int|string> $configuration
      * @throws \JsonException
+     * @throws \RuntimeException
      */
     private static function sendRaceConfiguration(array &$pipes, array $configuration): void
     {
@@ -152,6 +156,7 @@ final class CacheFixture
     /**
      * @param resource $process
      * @param array<int,resource> $pipes
+     * @throws \RuntimeException
      */
     private static function collectRaceChild($process, array $pipes, int $deadline): int
     {
