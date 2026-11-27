@@ -9,6 +9,7 @@ use Infocyph\CacheLayer\Cache\Item\CacheItem;
 use Infocyph\CacheLayer\Support\FilesystemTrust;
 use PDO;
 use PDOException;
+use PDOStatement;
 use Psr\Cache\CacheItemInterface;
 use RuntimeException;
 
@@ -68,7 +69,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         $driver = $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
         $this->driver = is_string($driver) ? $driver : '';
         if ($this->driver === 'sqlite') {
-            $this->pdo->exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=5000;');
+            $this->pdo->exec('PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;');
         }
         if ($initializeSchema) {
             PdoCacheSchema::install($this->pdo, $this->table);
@@ -416,10 +417,30 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
             array_push($parameters, $this->namespace, $kind, $key, $payload, $expires);
         }
 
-        return $this->pdo->prepare(
+        $statement = $this->pdo->prepare(
             "INSERT INTO {$this->table} (namespace, kind, cache_key, payload, expires) "
             . "VALUES {$values} {$suffix}",
-        )->execute($parameters);
+        );
+
+        if ($this->driver !== 'pgsql') {
+            return $statement->execute($parameters);
+        }
+
+        foreach ($rows as $index => [$kind, $key, $payload, $expires]) {
+            $offset = $index * 5;
+            $statement->bindValue($offset + 1, $this->namespace, PDO::PARAM_STR);
+            $statement->bindValue($offset + 2, $kind, PDO::PARAM_STR);
+            $statement->bindValue($offset + 3, $key, PDO::PARAM_STR);
+            $statement->bindValue($offset + 4, $payload, PDO::PARAM_LOB);
+            $this->bindExpiration($statement, $offset + 5, $expires);
+        }
+
+        return $statement->execute();
+    }
+
+    private function bindExpiration(PDOStatement $statement, int $position, ?int $expires): void
+    {
+        $statement->bindValue($position, $expires, $expires === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
     }
 
     /**

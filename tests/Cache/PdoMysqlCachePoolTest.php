@@ -59,3 +59,16 @@ test('pdo adapter bulk delete on mysql', function () use (&$pdomysqlFixtureCache
     expect($pdomysqlFixtureCache->get('a'))->toBeNull()
         ->and($pdomysqlFixtureCache->get('b'))->toBe('B');
 });
+
+
+test('MySQL bulk preserves binary, null, false, zero and misses', function () use (&$pdomysqlFixtureCache): void {
+    $values = ['nil' => null, 'zero' => 0, 'false' => false, 'binary' => "a\0\xffb"];
+    expect($pdomysqlFixtureCache->setMultiple($values, 600))->toBeTrue()
+        ->and(iterator_to_array($pdomysqlFixtureCache->getMultiple([...array_keys($values), 'missing'], 'absent')))
+        ->toBe([...$values, 'missing' => 'absent']);
+    foreach ($values as $key => $value) {
+        expect($pdomysqlFixtureCache->has($key))->toBeTrue()
+            ->and($pdomysqlFixtureCache->get($key, 'absent'))->toBe($value);
+    }
+    expect($pdomysqlFixtureCache->has('missing'))->toBeFalse();
+});

@@ -29,6 +29,52 @@ final class PdoCacheSchema
             'pgsql' => 'BYTEA',
             default => 'BLOB',
         };
+        if ($driver === 'pgsql') {
+            self::installPostgres($pdo, $table, $identifier, $payload);
+
+            return;
+        }
+
+        self::installTable($pdo, $table, $identifier, $payload);
+        if (in_array($driver, ['mysql', 'mariadb'], true)
+            && !self::mysqlIdentityColumnsAreBinary($pdo, $table)) {
+            self::hardenMysqlIdentityColumns($pdo, $table);
+        }
+
+        self::installExpiryIndex($pdo, $table, $driver);
+    }
+
+    /**
+     * @throws \Throwable
+     */
+    private static function installPostgres(PDO $pdo, string $table, string $identifier, string $payload): void
+    {
+        $ownsTransaction = !$pdo->inTransaction();
+        if ($ownsTransaction) {
+            $pdo->beginTransaction();
+        }
+
+        try {
+            // IF NOT EXISTS does not serialize concurrent PostgreSQL catalog creation.
+            $lock = $pdo->prepare("SELECT pg_advisory_xact_lock(hashtext('cachelayer:schema'), hashtext(?))");
+            $lock->execute([$table]);
+            $lock->closeCursor();
+            self::installTable($pdo, $table, $identifier, $payload);
+            self::installExpiryIndex($pdo, $table, 'pgsql');
+            if ($ownsTransaction) {
+                $pdo->commit();
+            }
+        } catch (\Throwable $failure) {
+            if ($ownsTransaction && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+
+            throw $failure;
+        }
+    }
+
+    private static function installTable(PDO $pdo, string $table, string $identifier, string $payload): void
+    {
         $pdo->exec(
             "CREATE TABLE IF NOT EXISTS {$table} (
                 namespace {$identifier} NOT NULL,
@@ -39,12 +85,6 @@ final class PdoCacheSchema
                 PRIMARY KEY (namespace, kind, cache_key)
             )",
         );
-        if (in_array($driver, ['mysql', 'mariadb'], true)
-            && !self::mysqlIdentityColumnsAreBinary($pdo, $table)) {
-            self::hardenMysqlIdentityColumns($pdo, $table);
-        }
-
-        self::installExpiryIndex($pdo, $table, $driver);
     }
 
     private static function hardenMysqlIdentityColumns(PDO $pdo, string $table): void

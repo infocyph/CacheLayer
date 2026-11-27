@@ -150,7 +150,16 @@ trait PdoAtomicOperations
                 . '(namespace, kind, cache_key, payload, expires) VALUES (?, ?, ?, ?, ?)';
         }
         $statement = $this->pdo->prepare($sql);
-        $statement->execute([$this->namespace, self::KIND_DATA, $key, $payload, $expires]);
+        if ($this->driver === 'pgsql') {
+            $statement->bindValue(1, $this->namespace, PDO::PARAM_STR);
+            $statement->bindValue(2, self::KIND_DATA, PDO::PARAM_STR);
+            $statement->bindValue(3, $key, PDO::PARAM_STR);
+            $statement->bindValue(4, $payload, PDO::PARAM_LOB);
+            $this->bindExpiration($statement, 5, $expires);
+            $statement->execute();
+        } else {
+            $statement->execute([$this->namespace, self::KIND_DATA, $key, $payload, $expires]);
+        }
 
         return $statement->rowCount() === 1;
     }
@@ -231,6 +240,16 @@ trait PdoAtomicOperations
             . 'WHERE namespace = ? AND kind = ? AND cache_key = ?',
         );
 
-        return $statement->execute([$payload, $expires, $this->namespace, self::KIND_DATA, $key]);
+        if ($this->driver !== 'pgsql') {
+            return $statement->execute([$payload, $expires, $this->namespace, self::KIND_DATA, $key]);
+        }
+
+        $statement->bindValue(1, $payload, PDO::PARAM_LOB);
+        $this->bindExpiration($statement, 2, $expires);
+        $statement->bindValue(3, $this->namespace, PDO::PARAM_STR);
+        $statement->bindValue(4, self::KIND_DATA, PDO::PARAM_STR);
+        $statement->bindValue(5, $key, PDO::PARAM_STR);
+
+        return $statement->execute();
     }
 }
