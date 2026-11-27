@@ -134,7 +134,7 @@ final class CacheFixture
             throw new \RuntimeException('Unable to launch independent cache race worker.');
         }
 
-        return ['process' => $process, 'pipes' => $pipes];
+        return ['process' => $process, 'pipes' => array_values($pipes)];
     }
 
     /**

@@ -108,13 +108,20 @@ final readonly class MemcachedLockProvider implements LockProviderInterface
         }
 
         $entries = $this->memcached->getMulti([$key], \Memcached::GET_EXTENDED);
-        $entry = is_array($entries) ? ($entries[$key] ?? null) : null;
-        $value = is_array($entry) ? ($entry['value'] ?? null) : null;
+        if (!is_array($entries)) {
+            return false;
+        }
+
+        $entry = $entries[$key] ?? null;
+        if (!is_array($entry)) {
+            return false;
+        }
+        $value = $entry['value'] ?? null;
         if (!is_string($value) || !str_starts_with($value, self::RELEASED_PREFIX)) {
             return false;
         }
 
-        $cas = is_array($entry) ? MemcachedValueGuard::casToken($entry['cas'] ?? null) : null;
+        $cas = MemcachedValueGuard::casToken($entry['cas'] ?? null);
 
         return $cas !== null && $this->memcached->cas($cas, $key, $token, $ttl);
     }
