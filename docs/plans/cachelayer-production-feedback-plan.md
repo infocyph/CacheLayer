@@ -51,3 +51,8 @@ Source: infocyph/infbyte-app-experiment `feedbacks/cachelayer.md` blob `4284ac40
 - PostgreSQL bulk failure confirmed as pgsql by production job 139376700995; no claim of closure until the strict binary regression passes. Production job 139376694114 had a MySQL connection loss, distinct from the catalog creation race; investigate process ownership rather than blindly retry writes.
 
 - Docs dependency upgraded to Sphinx 9.x (9.2.0 published stable as of this check); retain other compatible ranges and validate theme/extensions in the hosted docs gate.
+
+### Batch B2 — Memcached CAS and lock handoff
+
+- Source-confirmed defects: all three CAS call paths discarded string tokens and cast integers to float; release installed a one-second marker that acquisition could not reclaim before expiry. Preserve native CAS token representation; atomically replace release marker on acquisition, without unconditional delete. Add exact-token and independent-client immediate handoff regressions, including stale-owner renewal/release rejection.
+- CACHE-001b/005 remain open: original concurrent insertion/mixed atomic results and OTP ownership require independent-process replay. No claim that token precision or lock handoff alone explains all original failures. SEC/DATA/OPS: retain ownership checks, no retry of an uncertain write, native atomic CAS preserved.

@@ -7,6 +7,16 @@ namespace Infocyph\CacheLayer\Support;
 /** @internal */
 final class MemcachedValueGuard
 {
+    /** Preserve the native CAS token representation, including unsigned decimal strings. */
+    public static function casToken(mixed $token): string|int|float|null
+    {
+        if (is_int($token) || is_float($token)) {
+            return $token;
+        }
+
+        return is_string($token) && preg_match('/^[0-9]{1,20}$/D', $token) === 1 ? $token : null;
+    }
+
     public static function replaceIfUnchanged(
         \Memcached $client,
         string $key,
@@ -24,9 +34,8 @@ final class MemcachedValueGuard
             return $current;
         }
 
-        $cas = $entry['cas'] ?? null;
-        if ((!is_int($cas) && !is_float($cas))
-            || !$client->cas((float) $cas, $key, $replacement, $expiration)) {
+        $cas = self::casToken($entry['cas'] ?? null);
+        if ($cas === null || !$client->cas($cas, $key, $replacement, $expiration)) {
             $latest = $client->get($key);
 
             return is_string($latest) ? $latest : false;

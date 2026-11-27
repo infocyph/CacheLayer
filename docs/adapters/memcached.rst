@@ -41,3 +41,8 @@ Example
        fn () => loadSessionState(42),
        ttl: 120,
    );
+
+Memcached lock release uses a short-lived marker rather than an unconditional
+DELETE. A subsequent owner can reclaim that marker immediately with CAS; the
+previous owner's token cannot release or renew the new lock. Native CAS tokens
+are passed through without a lossy floating-point conversion.

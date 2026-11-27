@@ -241,3 +241,36 @@ test('Memcached delete reports backend errors but treats missing keys as success
         ->and($adapter->deleteItem('key'))->toBeFalse()
         ->and($adapter->deleteItems(['key']))->toBeFalse();
 });
+
+
+test('Memcached CAS token handling preserves exact native integer and unsigned string representations', function (): void {
+    expect(MemcachedValueGuard::casToken(9_007_199_254_740_993))->toBe(9_007_199_254_740_993)
+        ->and(MemcachedValueGuard::casToken('18446744073709551615'))->toBe('18446744073709551615')
+        ->and(MemcachedValueGuard::casToken(42.0))->toBe(42.0)
+        ->and(MemcachedValueGuard::casToken('invalid'))->toBeNull();
+});
+
+test('Memcached release permits immediate CAS handoff and rejects a stale owner', function () use ($memcachedHost, $memcachedPort, &$memcachedFixtureClient): void {
+    $peer = new Memcached();
+    $peer->addServer($memcachedHost, $memcachedPort);
+    $first = new MemcachedLockProvider($memcachedFixtureClient);
+    $second = new MemcachedLockProvider($peer);
+    $owner = $first->acquire('immediate-handoff', 0.0, 30.0);
+    if ($owner === null) {
+        throw new RuntimeException('Initial lock unavailable.');
+    }
+    expect($second->acquire('immediate-handoff', 0.0, 30.0))->toBeNull();
+    $first->release($owner);
+    $replacement = $second->acquire('immediate-handoff', 0.0, 30.0);
+    if ($replacement === null) {
+        throw new RuntimeException('Released lock was not immediately reclaimable.');
+    }
+    try {
+        $first->release($owner);
+        expect($first->refresh($owner, 30.0))->toBeFalse()
+            ->and($second->refresh($replacement, 30.0))->toBeTrue()
+            ->and($first->acquire('immediate-handoff', 0.0, 30.0))->toBeNull();
+    } finally {
+        $second->release($replacement);
+    }
+});

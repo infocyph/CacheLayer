@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace Infocyph\CacheLayer\Cache\Lock;
 
 use Infocyph\CacheLayer\Cache\Adapter\MemcachedExpiration;
+use Infocyph\CacheLayer\Support\MemcachedValueGuard;
 use RuntimeException;
 
 final readonly class MemcachedLockProvider implements LockProviderInterface
 {
     use GeneratesLockTokens;
     use PollingLockProviderHelpers;
+
+    private const string RELEASED_PREFIX = 'released:';
 
     private int $retrySleepMicros;
 
@@ -42,7 +45,7 @@ final readonly class MemcachedLockProvider implements LockProviderInterface
             $key,
             $waitSeconds,
             $leaseSeconds,
-            fn(string $lockKey, string $token): bool => $this->memcached->add($lockKey, $token, $ttlSeconds),
+            fn(string $lockKey, string $token): bool => $this->tryAcquire($lockKey, $token, $ttlSeconds),
         );
     }
 
@@ -68,12 +71,12 @@ final readonly class MemcachedLockProvider implements LockProviderInterface
             return false;
         }
 
-        $casToken = $entry['cas'] ?? null;
-        if (!is_float($casToken) && !is_int($casToken)) {
+        $casToken = MemcachedValueGuard::casToken($entry['cas'] ?? null);
+        if ($casToken === null) {
             return false;
         }
 
-        return $this->memcached->cas((float) $casToken, $handle->key, $handle->token, $ttlSeconds);
+        return $this->memcached->cas($casToken, $handle->key, $handle->token, $ttlSeconds);
     }
 
     #[\Override]
@@ -82,19 +85,36 @@ final readonly class MemcachedLockProvider implements LockProviderInterface
         $this->releaseWithGuard($handle, function (LockHandle $lock): void {
             $values = $this->memcached->getMulti([$lock->key], \Memcached::GET_EXTENDED);
             $entry = is_array($values) ? ($values[$lock->key] ?? null) : null;
-            $casToken = is_array($entry) ? ($entry['cas'] ?? null) : null;
+            $casToken = is_array($entry) ? MemcachedValueGuard::casToken($entry['cas'] ?? null) : null;
             if (!is_array($entry)
                 || ($entry['value'] ?? null) !== $lock->token
-                || (!is_float($casToken) && !is_int($casToken))) {
+                || $casToken === null) {
                 return;
             }
 
             $this->memcached->cas(
-                (float) $casToken,
+                $casToken,
                 $lock->key,
-                'released:' . bin2hex(random_bytes(16)),
+                self::RELEASED_PREFIX . bin2hex(random_bytes(16)),
                 1,
             );
         });
+    }
+
+    private function tryAcquire(string $key, string $token, int $ttl): bool
+    {
+        if ($this->memcached->add($key, $token, $ttl)) {
+            return true;
+        }
+
+        $entry = $this->memcached->get($key, null, \Memcached::GET_EXTENDED);
+        $value = is_array($entry) ? ($entry['value'] ?? null) : null;
+        if (!is_string($value) || !str_starts_with($value, self::RELEASED_PREFIX)) {
+            return false;
+        }
+
+        $cas = MemcachedValueGuard::casToken($entry['cas'] ?? null);
+
+        return $cas !== null && $this->memcached->cas($cas, $key, $token, $ttl);
     }
 }
