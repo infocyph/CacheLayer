@@ -44,3 +44,10 @@ Source: infocyph/infbyte-app-experiment `feedbacks/cachelayer.md` blob `4284ac40
 - Source-confirmed PostgreSQL initialization race: production stampede job 139376759642 and Foundation risk job 139376681906 report duplicate `pg_type_typname_nsp_index` and `pg_class_relname_nsp_index` entries during concurrent DDL. Serialize PostgreSQL schema creation by transaction-scoped advisory lock; preserve caller transaction ownership. SQLite busy timeout now precedes WAL negotiation. SQLite failure details remain incomplete.
 - CACHE-001a workload includes binary `a\\0\\xffb`, null, zero and false. PostgreSQL BYTEA write paths previously used untyped execute arrays. Bind payloads as LOB on bulk, single and atomic insert/update. Add strict value/absence tests on SQLite, MySQL and PostgreSQL and binary atomic round trips. Exact production failing value still requires hosted replay.
 - CORE-01/DATA/SEC/PERF/OPS: no schema format change, no retry of ambiguous writes, no weakened assertions. Hosted validation and independent concurrency reproduction pending. Keep findings open until confirmed.
+
+### Batch E2 — release verification feedback
+
+- Runwire 4.0.1 release consumer: all six lowest/stable jobs passed (PHP 8.4/8.5/8.6) on commit `7d69d2982b418541c2bc5d0794140ab42af35e6e`, [run 45944749434](https://github.com/infocyph/CacheLayer/actions/runs/45944749434). Core, PSR, Redis Cluster and Scylla real-service jobs also passed. Documentation failed solely on heading widths after version text update; corrected headings without relaxing Sphinx `-W`. Final verification on new head is still required.
+- PostgreSQL bulk failure confirmed as pgsql by production job 139376700995; no claim of closure until the strict binary regression passes. Production job 139376694114 had a MySQL connection loss, distinct from the catalog creation race; investigate process ownership rather than blindly retry writes.
+
+- Docs dependency upgraded to Sphinx 9.x (9.2.0 published stable as of this check); retain other compatible ranges and validate theme/extensions in the hosted docs gate.

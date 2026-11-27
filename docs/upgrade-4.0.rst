@@ -158,7 +158,7 @@ Retention gaps trigger a local namespace clear before progress is advanced.
 Permanent poison events are not skipped silently.
 
 Runwire 4.0.1 integration
-=======================
+=========================
 
 Runwire is still optional at installation time. Applications that use the
 integration should install ``infocyph/runwire:^4.0.1`` and bind the concrete
