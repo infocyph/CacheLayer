@@ -1,0 +1,6 @@
+includes:
+    - vendor/infocyph/phpforge/resources/phpstan.neon.dist
+
+parameters:
+    stubFiles:
+        - qa/stubs/memcached.stub

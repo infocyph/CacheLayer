@@ -60,3 +60,9 @@ Source: infocyph/infbyte-app-experiment `feedbacks/cachelayer.md` blob `4284ac40
 ### Batch B3 — independent-process contention regression
 
 - Add 12-process startup, insert, stampede and mixed CAS/consume tests using fresh PHP interpreters and pipe-delivered configuration; no inherited PHP connection objects, no credentials in command arguments. Record exact process class/code/source on failure and bound wait time; assert native persisted winner and namespace isolation. PostgreSQL starts from an absent table and SQLite from an absent database; Memcached exercises insert/consume ordering and reclaim. These tests run on the existing hosted QA matrix; no new skips. DATA/OPS/PERF evidence remains pending until CI completes.
+
+### Batch C1 — hosted feedback and analyzer correction
+
+- On `accbe004`, release verification 24/24 and all three benchmarks passed; Pest passed on the first completed QA job. QA flagged method ordering and forbidden CLI output/exit calls; analysis flagged test complexity, resource lifetime and a conservative PDO namespace taint path. Correct these at source.
+- PHPStan 2.3.7 has a stale float-only Memcached::cas signature. The official PHP manual and PECL source accept string/int/float and marshal exact uint64 CAS tokens. Preserve the correct native contract rather than cast to float. A narrowly scoped external signature stub corrects that contract without excluding paths, ignoring findings, lowering levels or modifying vendor files; remove it when PHPStan corrects its declaration.
+- MongoDB TLS jobs 139376695876, 139376700867 and 139376701801 never reach the adapter: the mongo:8 container is not running. Outage jobs 139376759925/139376761906 exited 255; first records mongosh connection refused, second does not expose the workload exception in its job log. No library defect inferred from startup. Keep restart and actual TLS/outage qualification open; do not bypass verification.

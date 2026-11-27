@@ -44,49 +44,6 @@ final class PdoCacheSchema
         self::installExpiryIndex($pdo, $table, $driver);
     }
 
-    /**
-     * @throws \Throwable
-     */
-    private static function installPostgres(PDO $pdo, string $table, string $identifier, string $payload): void
-    {
-        $ownsTransaction = !$pdo->inTransaction();
-        if ($ownsTransaction) {
-            $pdo->beginTransaction();
-        }
-
-        try {
-            // IF NOT EXISTS does not serialize concurrent PostgreSQL catalog creation.
-            $lock = $pdo->prepare("SELECT pg_advisory_xact_lock(hashtext('cachelayer:schema'), hashtext(?))");
-            $lock->execute([$table]);
-            $lock->closeCursor();
-            self::installTable($pdo, $table, $identifier, $payload);
-            self::installExpiryIndex($pdo, $table, 'pgsql');
-            if ($ownsTransaction) {
-                $pdo->commit();
-            }
-        } catch (\Throwable $failure) {
-            if ($ownsTransaction && $pdo->inTransaction()) {
-                $pdo->rollBack();
-            }
-
-            throw $failure;
-        }
-    }
-
-    private static function installTable(PDO $pdo, string $table, string $identifier, string $payload): void
-    {
-        $pdo->exec(
-            "CREATE TABLE IF NOT EXISTS {$table} (
-                namespace {$identifier} NOT NULL,
-                kind {$identifier} NOT NULL,
-                cache_key {$identifier} NOT NULL,
-                payload {$payload} NOT NULL,
-                expires BIGINT NULL,
-                PRIMARY KEY (namespace, kind, cache_key)
-            )",
-        );
-    }
-
     private static function hardenMysqlIdentityColumns(PDO $pdo, string $table): void
     {
         $pdo->exec(
@@ -118,6 +75,44 @@ final class PdoCacheSchema
         }
 
         $pdo->exec("CREATE INDEX IF NOT EXISTS {$index} ON {$table}(namespace, kind, expires)");
+    }
+
+    private static function installPostgres(PDO $pdo, string $table, string $identifier, string $payload): void
+    {
+        $ownsTransaction = !$pdo->inTransaction();
+        if ($ownsTransaction) {
+            $pdo->beginTransaction();
+        }
+
+        try {
+            // IF NOT EXISTS does not serialize concurrent PostgreSQL catalog creation.
+            $lock = $pdo->prepare("SELECT pg_advisory_xact_lock(hashtext('cachelayer:schema'), hashtext(?))");
+            $lock->execute([$table]);
+            $lock->closeCursor();
+            self::installTable($pdo, $table, $identifier, $payload);
+            self::installExpiryIndex($pdo, $table, 'pgsql');
+            if ($ownsTransaction) {
+                $pdo->commit();
+            }
+        } finally {
+            if ($ownsTransaction && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+        }
+    }
+
+    private static function installTable(PDO $pdo, string $table, string $identifier, string $payload): void
+    {
+        $pdo->exec(
+            "CREATE TABLE IF NOT EXISTS {$table} (
+                namespace {$identifier} NOT NULL,
+                kind {$identifier} NOT NULL,
+                cache_key {$identifier} NOT NULL,
+                payload {$payload} NOT NULL,
+                expires BIGINT NULL,
+                PRIMARY KEY (namespace, kind, cache_key)
+            )",
+        );
     }
 
     private static function mysqlIdentityColumnsAreBinary(PDO $pdo, string $table): bool

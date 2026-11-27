@@ -304,6 +304,12 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         }
     }
 
+    private function bindExpiration(PDOStatement $statement, int $position, ?int $expires): void
+    {
+        $statement->bindValue($position, $expires, $expires === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
+    }
+
+
     /** @param list<string> $keys */
     private function deleteByKind(string $kind, array $keys): bool
     {
@@ -438,10 +444,6 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         return $statement->execute();
     }
 
-    private function bindExpiration(PDOStatement $statement, int $position, ?int $expires): void
-    {
-        $statement->bindValue($position, $expires, $expires === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
-    }
 
     /**
      * @param list<array{0:string, 1:string, 2:string, 3:int|null}> $rows

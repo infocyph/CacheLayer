@@ -1,0 +1,7 @@
+<?php
+
+class Memcached
+{
+    /** @param string|int|float $cas_token */
+    public function cas($cas_token, string $key, mixed $value, int $expiration = 0): bool {}
+}

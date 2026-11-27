@@ -34,8 +34,13 @@ try {
         if (!is_string($dsn) || !is_string($user) || !is_string($password)) {
             throw new RuntimeException('Invalid PDO race configuration.');
         }
+        $namespace = match ($configuration['namespace']) {
+            'sqlite-race' => 'sqlite-race',
+            'schema-race' => 'schema-race',
+            default => throw new RuntimeException('Unsupported PDO race namespace.'),
+        };
         $cache = Cache::pdo(
-            $configuration['namespace'],
+            $namespace,
             $dsn,
             $user,
             $password,
@@ -74,9 +79,9 @@ try {
     if (!is_int($result)) {
         throw new RuntimeException('Unexpected cache race value type.');
     }
-    echo $result;
+    fwrite(STDOUT, (string) $result);
 } catch (Throwable $failure) {
     // Do not include connection credentials in test diagnostics.
     fwrite(STDERR, $failure::class . ': ' . $failure->getCode() . ' at ' . basename($failure->getFile()) . ':' . $failure->getLine());
-    exit(1);
+    throw new RuntimeException('Independent cache worker failed.');
 }

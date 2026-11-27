@@ -93,66 +93,90 @@ final class CacheFixture
         $children = [];
         try {
             for ($worker = 1; $worker <= $workers; ++$worker) {
-                $process = proc_open(
-                    [PHP_BINARY, __DIR__ . '/CacheRaceProcess.php'],
-                    [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-                    $pipes,
-                );
-                if (!is_resource($process)) {
-                    throw new \RuntimeException('Unable to launch independent cache race worker.');
-                }
-                $children[] = ['process' => $process, 'pipes' => $pipes];
+                $children[] = self::startRaceChild();
             }
-
-            foreach ($children as $index => $child) {
-                $payload = json_encode($configuration + ['worker' => $index + 1], JSON_THROW_ON_ERROR);
-                if (fwrite($child['pipes'][0], $payload) !== strlen($payload)) {
-                    throw new \RuntimeException('Unable to send cache race configuration.');
-                }
-                fclose($child['pipes'][0]);
+            foreach ($children as $index => &$child) {
+                self::sendRaceConfiguration($child['pipes'], $configuration + ['worker' => $index + 1]);
             }
+            unset($child);
 
             $deadline = hrtime(true) + 20_000_000_000;
             $results = [];
-            foreach ($children as $child) {
-                $process = $child['process'];
-                do {
-                    $status = proc_get_status($process);
-                    if (!$status['running']) {
-                        break;
-                    }
-                    if (hrtime(true) >= $deadline) {
-                        throw new \RuntimeException('Independent cache race timed out.');
-                    }
-                    usleep(10_000);
-                } while (true);
-
-                $stdout = stream_get_contents($child['pipes'][1]);
-                $stderr = stream_get_contents($child['pipes'][2]);
-                fclose($child['pipes'][1]);
-                fclose($child['pipes'][2]);
-                $exit = proc_close($process);
-                if ($exit !== 0 || !is_string($stdout)
-                    || preg_match('/^[0-9]+$/D', trim($stdout)) !== 1) {
-                    throw new \RuntimeException('Independent cache race worker failed: ' . (is_string($stderr) ? $stderr : 'no diagnostic'));
-                }
-                $results[] = (int) trim($stdout);
+            foreach ($children as $index => $child) {
+                $results[] = self::collectRaceChild($child['process'], $child['pipes'], $deadline);
+                unset($children[$index]);
             }
 
             return $results;
         } finally {
             foreach ($children as $child) {
                 foreach ($child['pipes'] as $pipe) {
-                    if (is_resource($pipe)) {
-                        fclose($pipe);
-                    }
+                    fclose($pipe);
                 }
-                if (is_resource($child['process'])) {
-                    proc_terminate($child['process']);
-                    proc_close($child['process']);
-                }
+                proc_terminate($child['process']);
+                proc_close($child['process']);
             }
         }
+    }
+
+    /** @return array{process:resource,pipes:array<int,resource>} */
+    private static function startRaceChild(): array
+    {
+        $process = proc_open(
+            [PHP_BINARY, __DIR__ . '/CacheRaceProcess.php'],
+            [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipes,
+        );
+        if (!is_resource($process)) {
+            throw new \RuntimeException('Unable to launch independent cache race worker.');
+        }
+
+        return ['process' => $process, 'pipes' => $pipes];
+    }
+
+    /**
+     * @param array<int,resource> $pipes
+     * @param array<string,int|string> $configuration
+     * @throws \JsonException
+     */
+    private static function sendRaceConfiguration(array &$pipes, array $configuration): void
+    {
+        $payload = json_encode($configuration, JSON_THROW_ON_ERROR);
+        if (fwrite($pipes[0], $payload) !== strlen($payload)) {
+            throw new \RuntimeException('Unable to send cache race configuration.');
+        }
+        fclose($pipes[0]);
+        unset($pipes[0]);
+    }
+
+    /**
+     * @param resource $process
+     * @param array<int,resource> $pipes
+     */
+    private static function collectRaceChild($process, array $pipes, int $deadline): int
+    {
+        while (true) {
+            $status = proc_get_status($process);
+            if (!$status['running']) {
+                break;
+            }
+            if (hrtime(true) >= $deadline) {
+                throw new \RuntimeException('Independent cache race timed out.');
+            }
+            usleep(10_000);
+        }
+
+        $stdout = stream_get_contents($pipes[1]);
+        $stderr = stream_get_contents($pipes[2]);
+        if ($status['exitcode'] !== 0 || !is_string($stdout)
+            || preg_match('/^[0-9]+$/D', trim($stdout)) !== 1) {
+            throw new \RuntimeException('Independent cache race worker failed: ' . (is_string($stderr) ? $stderr : 'no diagnostic'));
+        }
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        proc_close($process);
+
+        return (int) trim($stdout);
     }
 
     /**
