@@ -11,7 +11,6 @@ use RecursiveIteratorIterator;
 use RuntimeException;
 use Infocyph\CacheLayer\Cluster\ClusterCacheConfig;
 use Infocyph\CacheLayer\Cluster\Transport\InvalidationTransportInterface;
-use Infocyph\CacheLayer\Cluster\Event\InvalidationBatch;
 use Infocyph\CacheLayer\Cluster\Event\InvalidationEvent;
 use Infocyph\CacheLayer\Integration\Runwire\RunwireIntegration;
 use Infocyph\CacheLayer\Integration\Runwire\RunwireWorkerIntegration;
@@ -336,7 +335,7 @@ it('turns an unhandled CacheLayer consumer failure into a Runwire worker stop', 
          * @throws RuntimeException
          */
         #[\Override]
-        public function consumeAfter(string $cluster, ?string $cursor, int $limit): InvalidationBatch
+        public function consumeAfter(string $cluster, ?string $cursor, int $limit): never
         {
             unset($cluster, $cursor, $limit);
 

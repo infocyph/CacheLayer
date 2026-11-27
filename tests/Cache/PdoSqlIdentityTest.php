@@ -175,9 +175,7 @@ $startPublisher = static function (
     int $holdMicros = 0,
 ): mixed {
     [$dsn, $user, $password] = \Infocyph\CacheLayer\Tests\Support\CacheFixture::pdoCredentials($backend);
-    $command = [
-        PHP_BINARY,
-        __DIR__ . '/Support/PdoInvalidationPublisherProcess.php',
+    $payload = json_encode([
         $dsn,
         $user,
         $password,
@@ -186,11 +184,11 @@ $startPublisher = static function (
         $commit ? '1' : '0',
         (string) $holdMicros,
         'worker-child',
-    ];
+    ], JSON_THROW_ON_ERROR);
     $process = proc_open(
-        $command,
+        [PHP_BINARY, __DIR__ . '/Support/PdoInvalidationPublisherProcess.php'],
         [
-            0 => ['file', '/dev/null', 'r'],
+            0 => ['pipe', 'r'],
             1 => ['file', '/dev/null', 'a'],
             2 => ['file', $resultFile . '.stderr', 'a'],
             3 => ['file', $stateFile, 'w+'],
@@ -201,6 +199,20 @@ $startPublisher = static function (
     );
     if (!is_resource($process)) {
         throw new RuntimeException('Unable to start the invalidation publisher process.');
+    }
+
+    $input = $pipes[0] ?? null;
+    if (!is_resource($input)) {
+        proc_terminate($process);
+        proc_close($process);
+        throw new RuntimeException('Unable to open the publisher input pipe.');
+    }
+    $written = fwrite($input, $payload);
+    fclose($input);
+    if ($written !== strlen($payload)) {
+        proc_terminate($process);
+        proc_close($process);
+        throw new RuntimeException('Unable to send the publisher arguments.');
     }
 
     return $process;

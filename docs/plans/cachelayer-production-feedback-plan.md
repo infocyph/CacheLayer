@@ -32,3 +32,9 @@ Follow [PHPForge engineering principles](https://github.com/infocyph/PHPForge/bl
 - [ ] Final hosted CI and PR review feedback
 
 Source: infocyph/infbyte-app-experiment `feedbacks/cachelayer.md` blob `4284ac401208f89c4e3ecba6a8a708102b7cea75`. No findings are closed until revision-specific evidence is available.
+
+### Batch E1 — dependency and current QA findings
+
+- Implementation submitted; hosted verification pending. Runwire constraint and release consumer gate raised to 4.0.1; optional runtime ownership preserved. Existing compatible package ranges remain in place pending inventory verification.
+- Baseline [run 45944261801](https://github.com/infocyph/CacheLayer/actions/runs/45944261801): QA/benchmarks passed; Psalm failed on 8.4/8.5/8.6 (16 findings on 8.4 and 8.6). Removed obsolete Redis suppression; declared filter and optional pcntl; moved publisher input from argv to a pipe; constrained Alternator to local fixtures without redirects; corrected always-throwing test return type.
+- EXEC-01/02, CORE-01, FLOW-02, COMPAT, SEC, CONFIG, OPS: preserve runtime API and contracts, no new skips or analyzer overrides; verify actual supported PHP versions, hosted QA, analysis, release smoke, and consumer soak. Remaining production findings and performance qualification are open.

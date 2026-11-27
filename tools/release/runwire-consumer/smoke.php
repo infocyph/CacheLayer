@@ -13,9 +13,9 @@ if (!class_exists(RuntimeContext::class) || !class_exists(RunwireIntegration::cl
 $version = InstalledVersions::getPrettyVersion('infocyph/runwire');
 $normalizedVersion = InstalledVersions::getVersion('infocyph/runwire');
 if (!is_string($version) || !is_string($normalizedVersion)
-    || version_compare($normalizedVersion, '3.1.0.0', '<')
-    || version_compare($normalizedVersion, '4.0.0.0', '>=')) {
-    throw new RuntimeException('The release integration gate requires Runwire 3.1 or newer within the 3.x series.');
+    || version_compare($normalizedVersion, '4.0.1.0', '<')
+    || version_compare($normalizedVersion, '5.0.0.0', '>=')) {
+    throw new RuntimeException('The release integration gate requires Runwire 4.0.1 or newer within the 4.x series.');
 }
 
 require dirname(__DIR__, 3) . '/examples/runwire-invalidation-worker.php';

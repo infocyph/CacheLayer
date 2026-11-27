@@ -35,7 +35,7 @@ function writePublisherState(mixed $stream, string $value): void
  */
 function publisherArguments(mixed $arguments): array
 {
-    if (!is_array($arguments) || !array_is_list($arguments) || count($arguments) !== 9) {
+    if (!is_array($arguments) || !array_is_list($arguments) || count($arguments) !== 8) {
         throw new RuntimeException('Invalid concurrent invalidation publisher arguments.');
     }
 
@@ -45,16 +45,20 @@ function publisherArguments(mixed $arguments): array
 if (PHP_SAPI !== 'cli') {
     throw new RuntimeException('Invalid concurrent invalidation publisher invocation.');
 }
-$arguments = publisherArguments($_SERVER['argv'] ?? null);
+$input = stream_get_contents(STDIN);
+if (!is_string($input)) {
+    throw new RuntimeException('Unable to read publisher arguments.');
+}
+$arguments = publisherArguments(json_decode($input, true, 512, JSON_THROW_ON_ERROR));
 
-$dsn = publisherArgument($arguments[1] ?? null);
-$user = publisherArgument($arguments[2] ?? null);
-$password = publisherArgument($arguments[3] ?? null);
-$cluster = publisherArgument($arguments[4] ?? null);
-$identifier = publisherArgument($arguments[5] ?? null);
-$commit = publisherArgument($arguments[6] ?? null);
-$hold = publisherArgument($arguments[7] ?? null);
-$origin = publisherArgument($arguments[8] ?? null);
+$dsn = publisherArgument($arguments[0] ?? null);
+$user = publisherArgument($arguments[1] ?? null);
+$password = publisherArgument($arguments[2] ?? null);
+$cluster = publisherArgument($arguments[3] ?? null);
+$identifier = publisherArgument($arguments[4] ?? null);
+$commit = publisherArgument($arguments[5] ?? null);
+$hold = publisherArgument($arguments[6] ?? null);
+$origin = publisherArgument($arguments[7] ?? null);
 if (!in_array($hold, ['0', '150000'], true) || !in_array($commit, ['0', '1'], true)) {
     throw new RuntimeException('Invalid publisher control arguments.');
 }
