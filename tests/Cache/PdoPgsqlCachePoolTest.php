@@ -105,3 +105,23 @@ test('PostgreSQL atomic writes preserve binary payloads', function () use (&$pdo
         ->and($atomic->getAndDelete('binary-atomic'))->toBe($second)
         ->and($pdopgsqlFixtureCache->has('binary-atomic'))->toBeFalse();
 });
+
+
+test('PostgreSQL independent workers initialize a fresh schema and elect one atomic winner', function () use ($dsn, $user, $pass): void {
+    $pdo = new PDO($dsn, $user, $pass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+    $pdo->exec('DROP TABLE IF EXISTS cachelayer_schema_race');
+    try {
+        $results = \Infocyph\CacheLayer\Tests\Support\CacheFixture::cacheRace([
+            'backend' => 'pdo', 'operation' => 'insert', 'namespace' => 'schema-race',
+            'dsn' => $dsn, 'user' => $user, 'password' => $pass,
+        ]);
+        $winners = array_values(array_filter($results, static fn(int $value): bool => $value !== 0));
+        $peer = Cache::pdo('schema-race', $dsn, $user, $pass, table: 'cachelayer_schema_race');
+        expect($results)->toHaveCount(12)
+            ->and($winners)->toHaveCount(1)
+            ->and($peer->get('race'))->toBe($winners[0] ?? null)
+            ->and(\Infocyph\CacheLayer\Tests\Support\CacheFixture::countRows($pdo, 'SELECT COUNT(*) FROM cachelayer_schema_race'))->toBe(1);
+    } finally {
+        $pdo->exec('DROP TABLE IF EXISTS cachelayer_schema_race');
+    }
+});

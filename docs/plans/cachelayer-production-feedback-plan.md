@@ -56,3 +56,7 @@ Source: infocyph/infbyte-app-experiment `feedbacks/cachelayer.md` blob `4284ac40
 
 - Source-confirmed defects: all three CAS call paths discarded string tokens and cast integers to float; release installed a one-second marker that acquisition could not reclaim before expiry. Preserve native CAS token representation; atomically replace release marker on acquisition, without unconditional delete. Add exact-token and independent-client immediate handoff regressions, including stale-owner renewal/release rejection.
 - CACHE-001b/005 remain open: original concurrent insertion/mixed atomic results and OTP ownership require independent-process replay. No claim that token precision or lock handoff alone explains all original failures. SEC/DATA/OPS: retain ownership checks, no retry of an uncertain write, native atomic CAS preserved.
+
+### Batch B3 — independent-process contention regression
+
+- Add 12-process startup, insert, stampede and mixed CAS/consume tests using fresh PHP interpreters and pipe-delivered configuration; no inherited PHP connection objects, no credentials in command arguments. Record exact process class/code/source on failure and bound wait time; assert native persisted winner and namespace isolation. PostgreSQL starts from an absent table and SQLite from an absent database; Memcached exercises insert/consume ordering and reclaim. These tests run on the existing hosted QA matrix; no new skips. DATA/OPS/PERF evidence remains pending until CI completes.

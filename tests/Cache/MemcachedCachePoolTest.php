@@ -274,3 +274,35 @@ test('Memcached release permits immediate CAS handoff and rejects a stale owner'
         $second->release($replacement);
     }
 });
+
+
+test('Memcached independent processes elect one winner and linearize mixed CAS and consume', function () use ($memcachedHost, $memcachedPort): void {
+    $namespace = 'process-race-' . bin2hex(random_bytes(8));
+    $servers = [[$memcachedHost, $memcachedPort, 0]];
+    $configuration = [
+        'backend' => 'memcached', 'namespace' => $namespace,
+        'host' => $memcachedHost, 'port' => $memcachedPort,
+    ];
+    $peer = Cache::memcached($namespace, $servers);
+    $foreign = Cache::memcached('foreign-' . $namespace, $servers);
+    try {
+        expect($foreign->set('race', 99, 600))->toBeTrue();
+        $insert = \Infocyph\CacheLayer\Tests\Support\CacheFixture::cacheRace($configuration + ['operation' => 'insert']);
+        $winners = array_values(array_filter($insert, static fn(int $value): bool => $value !== 0));
+        expect($insert)->toHaveCount(12)
+            ->and($winners)->toHaveCount(1)
+            ->and($peer->get('race'))->toBe($winners[0] ?? null)
+            ->and($peer->set('race', 1, 600))->toBeTrue();
+        $mixed = array_count_values(\Infocyph\CacheLayer\Tests\Support\CacheFixture::cacheRace($configuration + ['operation' => 'mixed']));
+        expect(($mixed[1] ?? 0) + ($mixed[2] ?? 0))->toBe(1)
+            ->and($mixed[10] ?? 0)->toBe($mixed[2] ?? 0)
+            ->and($peer->has('race'))->toBeFalse()
+            ->and($foreign->get('race'))->toBe(99);
+        $atomic = $peer->atomic() ?? throw new RuntimeException('Missing Memcached atomic capability.');
+        expect($atomic->setIfAbsent('race', 3, 600))->toBeTrue()
+            ->and($atomic->getAndDelete('race'))->toBe(3);
+    } finally {
+        $peer->delete('race');
+        $foreign->delete('race');
+    }
+});
