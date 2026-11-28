@@ -1,6 +1,6 @@
-==========================
+============================
 CacheLayer 4.2 release notes
-==========================
+============================
 
 The planned 4.2 minor release expands atomic cache capabilities and hardens
 failure recovery while retaining default backend modes.
