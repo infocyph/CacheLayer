@@ -356,6 +356,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements Conditional
 
         return $stored;
     }
+
     private function atomicAuthority(): ?AtomicCachePoolInterface
     {
         return $this->l1 === null ? $this->l2 : null;

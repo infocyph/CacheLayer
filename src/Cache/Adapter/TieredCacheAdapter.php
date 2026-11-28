@@ -256,6 +256,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter implements Condition
 
         return $this->mutate(fn(): bool => $this->writeBatch($items));
     }
+
     private function atomicAuthority(): ?AtomicCachePoolInterface
     {
         if (count($this->pools) !== 1) {
