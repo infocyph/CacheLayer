@@ -91,7 +91,7 @@ trait PdoAtomicOperations
             return false;
         }
 
-        return $this->atomicInsertTransaction(function () use ($item, $expiration): bool {
+        return $this->atomicTransaction(function () use ($item, $expiration): bool {
             $key = $item->getKey();
             $row = $this->atomicFetchRow($key);
             $record = $row === null ? null : $this->atomicRecordFromRow($key, $row);
@@ -105,7 +105,7 @@ trait PdoAtomicOperations
             }
 
             return $this->atomicInsertIfMissing($key, $payload, $expiration['expiresAt']);
-        });
+        }, retryInsert: true);
     }
 
     public function supportsAtomicCache(): bool
@@ -165,29 +165,20 @@ trait PdoAtomicOperations
         return $statement->rowCount() === 1;
     }
 
-    /**
-     * @param callable(): bool $callback
-     * @throws Throwable
-     */
-    private function atomicInsertTransaction(callable $callback): bool
+    private function isRetryableInsertFailure(Throwable $failure): bool
     {
-        for ($attempt = 0; ; ++$attempt) {
-            try {
-                return $this->atomicTransaction($callback);
-            } catch (PDOException $failure) {
-                if ($attempt >= 7
-                    || !in_array($this->driver, ['mysql', 'mariadb'], true)
-                    || ($failure->errorInfo[0] ?? null) !== '40001'
-                    || !in_array($failure->errorInfo[1] ?? null, [1213, '1213'], true)
-                    || $this->pdo->inTransaction()) {
-                    throw $failure;
-                }
-
-                // InnoDB error 1213 rolls back the whole transaction. A fresh
-                // transaction must re-read state; never retry unknown outcomes.
-                usleep(1_000 * ($attempt + 1));
-            }
+        if (!$failure instanceof PDOException) {
+            return false;
         }
+
+        $state = $failure->errorInfo[0] ?? null;
+
+        return match ($this->driver) {
+            'pgsql' => in_array($state, ['40001', '40P01'], true),
+            'mysql', 'mariadb' => $state === '40001'
+                && in_array($failure->errorInfo[1] ?? null, [1213, '1213'], true),
+            default => false,
+        };
     }
 
     /** @param array{payload:string, expires:int|null} $row */
@@ -226,40 +217,50 @@ trait PdoAtomicOperations
      * @throws RuntimeException
      * @throws Throwable
      */
-    private function atomicTransaction(callable $callback): mixed
+    private function atomicTransaction(callable $callback, bool $retryInsert = false): mixed
     {
         if ($this->pdo->inTransaction()) {
             throw new RuntimeException('Atomic PDO cache operations require ownership of the PDO transaction.');
         }
 
         $sqlite = $this->driver === 'sqlite';
-        if ($sqlite) {
-            $this->pdo->exec('BEGIN IMMEDIATE');
-        } else {
-            $this->pdo->beginTransaction();
-        }
-
-        try {
-            $result = $callback();
+        for ($attempt = 0; ; ++$attempt) {
             if ($sqlite) {
-                $this->pdo->exec('COMMIT');
+                $this->pdo->exec('BEGIN IMMEDIATE');
             } else {
-                $this->pdo->commit();
+                $this->pdo->beginTransaction();
             }
 
-            return $result;
-        } catch (Throwable $failure) {
             try {
+                $result = $callback();
                 if ($sqlite) {
-                    $this->pdo->exec('ROLLBACK');
+                    $this->pdo->exec('COMMIT');
                 } else {
-                    $this->pdo->rollBack();
+                    $this->pdo->commit();
                 }
-            } catch (Throwable) {
-                // Preserve the original backend failure.
-            }
 
-            throw $failure;
+                return $result;
+            } catch (Throwable $failure) {
+                try {
+                    if ($sqlite) {
+                        $this->pdo->exec('ROLLBACK');
+                    } elseif ($this->pdo->inTransaction() && !$this->pdo->rollBack()) {
+                        throw $failure;
+                    }
+                } catch (Throwable) {
+                    // An unconfirmed rollback must not be retried.
+                    throw $failure;
+                }
+
+                if (!$retryInsert || $attempt >= 7 || !$this->isRetryableInsertFailure($failure)
+                    || $this->pdo->inTransaction()) {
+                    throw $failure;
+                }
+
+                // Only definitive transaction-abort errors reach this point.
+                // Re-read authoritative state in a fresh owned transaction.
+                usleep(mt_rand(500, 1_000) * ($attempt + 1));
+            }
         }
     }
 

@@ -47,18 +47,26 @@ try {
             'sqlite-race' => 'sqlite-race',
             'schema-race' => 'schema-race',
             'mysql-insert-race' => 'mysql-insert-race',
+            'pgsql-insert-race' => 'pgsql-insert-race',
             default => throw new RuntimeException('Unsupported PDO race namespace.'),
         };
-        $cache = Cache::pdo(
-            $namespace,
-            $dsn,
-            $user,
-            $password,
-            table: $namespace === 'schema-race' && $configuration['worker'] % 2 === 0
-                ? 'CacheLayer_Schema_Race'
-                : 'cachelayer_schema_race',
-            options: $options,
-        );
+        if ($namespace === 'pgsql-insert-race') {
+            $adapter = new \Infocyph\CacheLayer\Cache\Adapter\PdoCacheAdapter(
+                $namespace, $dsn, $user, $password, table: 'cachelayer_schema_race', initializeSchema: false,
+            );
+            $cache = new Cache($adapter, options: $options, namespace: $namespace);
+        } else {
+            $cache = Cache::pdo(
+                $namespace,
+                $dsn,
+                $user,
+                $password,
+                table: $namespace === 'schema-race' && $configuration['worker'] % 2 === 0
+                    ? 'CacheLayer_Schema_Race'
+                    : 'cachelayer_schema_race',
+                options: $options,
+            );
+        }
     } elseif ($configuration['backend'] === 'memcached') {
         $host = $configuration['host'] ?? null;
         $port = $configuration['port'] ?? null;

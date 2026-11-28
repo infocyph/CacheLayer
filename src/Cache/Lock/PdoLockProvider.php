@@ -201,7 +201,7 @@ final class PdoLockProvider implements LockProviderInterface
 
         do {
             try {
-                $stmt = $this->pdo->prepare('SELECT pg_try_advisory_lock(:k1, :k2)');
+                $stmt = $this->pdo->prepare('SELECT pg_try_advisory_lock(CAST(:k1 AS integer), CAST(:k2 AS integer))');
                 $stmt->execute([':k1' => $advisoryKeys[0], ':k2' => $advisoryKeys[1]]);
                 $result = $stmt->fetchColumn();
                 if (self::isDatabaseTrue($result)) {
@@ -257,7 +257,7 @@ final class PdoLockProvider implements LockProviderInterface
             : self::advisoryKeys($handle->key);
 
         try {
-            $stmt = $this->pdo->prepare('SELECT pg_advisory_unlock(:k1, :k2)');
+            $stmt = $this->pdo->prepare('SELECT pg_advisory_unlock(CAST(:k1 AS integer), CAST(:k2 AS integer))');
             $stmt->execute([':k1' => $advisoryKeys[0], ':k2' => $advisoryKeys[1]]);
             $result = $stmt->fetchColumn();
 

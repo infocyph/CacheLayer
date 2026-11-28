@@ -113,7 +113,11 @@ transaction, the lock stays held until that transaction ends. PostgreSQL cache
 payload writes bind binary values explicitly so embedded NUL bytes and
 non-UTF-8 bytes are preserved by BYTEA storage.
 
-MySQL/MariaDB conditional insert contention can roll back a transaction with
-SQLSTATE 40001 and native error 1213. Conditional inserts retry only that
-confirmed rollback, at most eight attempts, with a fresh authoritative read.
-Other database errors propagate; unknown commit outcomes are not retried.
+Conditional inserts retry only definitive transaction-abort errors: MySQL/MariaDB
+SQLSTATE 40001 with native error 1213, or PostgreSQL SQLSTATE 40001 (serialization
+failure) and 40P01 (deadlock). Each retry follows confirmed rollback and performs
+a fresh authoritative read, with bounded jittered delay and at most eight total
+attempts. Other database errors and unknown commit outcomes are not retried.
+Atomic mutations require ownership of the PDO transaction; caller-owned
+transactions are rejected rather than rolled back or retried. PostgreSQL uses
+explicit signed integer arguments for its two-key session advisory locks.
