@@ -125,6 +125,7 @@ test('sqlite PDO locks use the default file-lock fallback', function (): void {
     $first = new PdoLockProvider($pdo);
     $second = new PdoLockProvider($pdo);
 
+    expect($first->effectiveLockProvider())->toBeInstanceOf(FileLockProvider::class);
     $handle = $first->acquire($key, 0.0, 10.0);
 
     expect($handle)->not->toBeNull()
@@ -178,7 +179,8 @@ test('strict PDO locks allow native drivers without a fallback', function (): vo
         $provider = PdoLockProvider::strict($pdo);
         $fallback = (new ReflectionObject($provider))->getProperty('fallback')->getValue($provider);
 
-        expect($fallback)->toBeNull();
+        expect($fallback)->toBeNull()
+            ->and($provider->effectiveLockProvider())->toBe($provider);
     }
 });
 
@@ -229,7 +231,7 @@ test('PDO lock providers accept an explicit non-file fallback', function (): voi
     };
 
     $provider = new PdoLockProvider($pdo, fallback: $fallback);
-    expect((new ReflectionObject($provider))->getProperty('fallback')->getValue($provider))->toBe($fallback);
+    expect($provider->effectiveLockProvider())->toBe($fallback);
 });
 
 test('MySQL PDO locks use the native lock path', function (): void {

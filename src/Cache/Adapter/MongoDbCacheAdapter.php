@@ -104,7 +104,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
             ['$set' => $this->atomicReplacement($replacement, $expiration['expiresAt'])],
         );
 
-        return $this->matchedCount($result) === 1;
+        return AdapterValueNormalizer::mongoWriteCount($result, 'getMatchedCount') === 1;
     }
 
     /**
@@ -497,15 +497,6 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
         return $this->ns . ':m:tag:' . $tag;
     }
 
-    private function matchedCount(mixed $result): int
-    {
-        if (!is_object($result) || !is_callable([$result, 'getMatchedCount'])) {
-            return 0;
-        }
-
-        return AdapterValueNormalizer::intOrZero($result->getMatchedCount());
-    }
-
     /** @param array<string, mixed> $row */
     private function recordFromRow(string $key, array $row): ?CacheRecord
     {
@@ -549,7 +540,10 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
     private function tryAtomicInsert(string $id, array $replacement): bool
     {
         try {
-            $this->collection->insertOne(['_id' => $id, ...$replacement]);
+            $result = $this->collection->insertOne(['_id' => $id, ...$replacement]);
+            if (AdapterValueNormalizer::mongoWriteCount($result, 'getInsertedCount') !== 1) {
+                throw new RuntimeException('MongoDB atomic insert was not confirmed.');
+            }
 
             return true;
         } catch (Throwable $failure) {
@@ -564,6 +558,7 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
     /**
      * @param array{ns:string, kind:string, payload:mixed, expires:int|null} $replacement
      * @return bool|null True when replaced, false when a live/non-replaceable value exists, null on a race retry.
+     * @throws RuntimeException
      */
     private function tryReplaceInvalidAtomic(string $key, string $id, array $replacement): ?bool
     {
@@ -582,6 +577,6 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
             ['$set' => $replacement],
         );
 
-        return $this->matchedCount($result) > 0 ? true : null;
+        return AdapterValueNormalizer::mongoWriteCount($result, 'getMatchedCount') > 0 ? true : null;
     }
 }

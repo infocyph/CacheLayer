@@ -133,3 +133,14 @@ test('mongo adapter accepts associative PSR-6 delete key arrays', function () us
         ->and($cache->has('b'))->toBeFalse()
         ->and($cache->get('c'))->toBe(3);
 });
+
+
+test('MongoDB atomic writes do not report unacknowledged outcomes as success', function (): void {
+    $collection = new MongoCollectionDouble();
+    $cache = new Cache(new MongoDbCacheAdapter($collection, 'mongo-unacknowledged'), options: new \Infocyph\CacheLayer\Cache\CacheOptions(failOpen: false));
+    $atomic = $cache->atomic() ?? throw new \RuntimeException('Atomic capability required.');
+    expect($atomic->setIfAbsent('existing', 1))->toBeTrue();
+    $collection->acknowledged = false;
+    expect(fn (): bool => $atomic->setIfAbsent('claim', 1))->toThrow(\Infocyph\CacheLayer\Exceptions\CacheBackendException::class)
+        ->and(fn (): bool => $atomic->compareAndSet('existing', 1, 2))->toThrow(\Infocyph\CacheLayer\Exceptions\CacheBackendException::class);
+});

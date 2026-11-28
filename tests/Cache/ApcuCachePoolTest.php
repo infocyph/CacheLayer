@@ -126,3 +126,18 @@ test('APCu adapter multiFetch()', function () use (&$apcuFixtureCache): void {
         ->and($items['y']->get())->toBe('Y')
         ->and($items['z']->isHit())->toBeFalse();
 });
+
+
+test('APCu opt-in atomic mode coordinates arbitrary payloads across instances', function (): void {
+    $first = Cache::apcu('atomic-apcu', atomicMode: true);
+    $second = Cache::apcu('atomic-apcu', atomicMode: true);
+    $atomic = $first->atomic() ?? throw new RuntimeException('APCu atomic mode required.');
+    $peer = $second->atomic() ?? throw new RuntimeException('APCu atomic peer required.');
+    expect(Cache::apcu('non-atomic')->atomic())->toBeNull()
+        ->and($atomic->setIfAbsent('key', ['value' => 1]))->toBeTrue()
+        ->and($peer->setIfAbsent('key', 2))->toBeFalse()
+        ->and($second->set('key', ['value' => 2]))->toBeTrue()
+        ->and($atomic->compareAndSet('key', ['value' => 2], null))->toBeTrue()
+        ->and($peer->getAndDelete('key', 'missing'))->toBeNull()
+        ->and($atomic->getAndDelete('key', 'missing'))->toBe('missing');
+});

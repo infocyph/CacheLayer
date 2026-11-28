@@ -6,6 +6,7 @@ namespace Infocyph\CacheLayer\Cache\Adapter;
 
 use Infocyph\CacheLayer\Cache\CacheRecord;
 use PDO;
+use PDOException;
 use Psr\Cache\CacheItemInterface;
 use RuntimeException;
 use Throwable;
@@ -67,7 +68,9 @@ trait PdoAtomicOperations
             }
 
             $record = $this->atomicRecordFromRow($key, $row);
-            $this->deleteItem($key);
+            if (!$this->deleteItem($key)) {
+                throw new RuntimeException('Atomic PDO cache deletion failed.');
+            }
             if (!$record instanceof CacheRecord || !$this->atomicRecordTagsAreCurrent($record)) {
                 return $this->genericMiss($key);
             }
@@ -140,13 +143,16 @@ trait PdoAtomicOperations
         ];
     }
 
+    /**
+     * @throws PDOException
+     */
     private function atomicInsertIfMissing(string $key, string $payload, ?int $expires): bool
     {
         if (in_array($this->driver, ['pgsql', 'sqlite'], true)) {
             $sql = "INSERT INTO {$this->table} (namespace, kind, cache_key, payload, expires) "
                 . 'VALUES (?, ?, ?, ?, ?) ON CONFLICT (namespace, kind, cache_key) DO NOTHING';
         } else {
-            $sql = "INSERT IGNORE INTO {$this->table} "
+            $sql = "INSERT INTO {$this->table} "
                 . '(namespace, kind, cache_key, payload, expires) VALUES (?, ?, ?, ?, ?)';
         }
         $statement = $this->pdo->prepare($sql);
@@ -158,7 +164,18 @@ trait PdoAtomicOperations
             $this->bindExpiration($statement, 5, $expires);
             $statement->execute();
         } else {
-            $statement->execute([$this->namespace, self::KIND_DATA, $key, $payload, $expires]);
+            try {
+                $statement->execute([$this->namespace, self::KIND_DATA, $key, $payload, $expires]);
+            } catch (PDOException $failure) {
+                if (in_array($this->driver, ['mysql', 'mariadb'], true)
+                    && ($failure->errorInfo[0] ?? null) === '23000'
+                    && in_array($failure->errorInfo[1] ?? null, [1062, '1062'], true)
+                    && $this->atomicFetchRow($key) !== null) {
+                    return false;
+                }
+
+                throw $failure;
+            }
         }
 
         return $statement->rowCount() === 1;
@@ -207,29 +224,28 @@ trait PdoAtomicOperations
         }
 
         $sqlite = $this->driver === 'sqlite';
-        if ($sqlite) {
-            $this->pdo->exec('BEGIN IMMEDIATE');
-        } else {
-            $this->pdo->beginTransaction();
-        }
+        $deadline = hrtime(true) + 5_000_000_000;
+        for ($attempt = 0; ; ++$attempt) {
+            $started = false;
 
-        try {
-            $result = $callback();
-            if ($sqlite) {
-                $this->pdo->exec('COMMIT');
-            } else {
-                $this->pdo->commit();
+            try {
+                $this->beginAtomicTransaction($sqlite);
+                $started = true;
+                $result = $callback();
+                $this->commitAtomicTransaction($sqlite);
+
+                return $result;
+            } catch (Throwable $failure) {
+                if ($started && !$this->rollbackAtomicTransaction($sqlite)) {
+                    throw $failure;
+                }
+                if (!$this->canRetryAtomicFailure($failure, $started || $sqlite, $attempt, $deadline)) {
+                    throw $failure;
+                }
+
+                // Re-read authoritative state only after a definitive abort.
+                usleep(mt_rand(500, 1_000) * ($attempt + 1));
             }
-
-            return $result;
-        } catch (Throwable $failure) {
-            if ($sqlite) {
-                $this->pdo->exec('ROLLBACK');
-            } else {
-                $this->pdo->rollBack();
-            }
-
-            throw $failure;
         }
     }
 
@@ -251,5 +267,59 @@ trait PdoAtomicOperations
         $statement->bindValue(5, $key, PDO::PARAM_STR);
 
         return $statement->execute();
+    }
+
+    /** @throws RuntimeException */
+    private function beginAtomicTransaction(bool $sqlite): void
+    {
+        if (!($sqlite ? $this->pdo->exec('BEGIN IMMEDIATE') !== false : $this->pdo->beginTransaction())) {
+            throw new RuntimeException('Unable to begin atomic PDO cache transaction.');
+        }
+    }
+
+    private function canRetryAtomicFailure(Throwable $failure, bool $retryablePhase, int $attempt, int $deadline): bool
+    {
+        $options = $this->options();
+
+        return $retryablePhase && $attempt < 7 && hrtime(true) < $deadline
+            && !$options->allowObjects && !$options->allowClosures && $this->isRetryableAtomicFailure($failure);
+    }
+
+    /** @throws RuntimeException */
+    private function commitAtomicTransaction(bool $sqlite): void
+    {
+        if (!($sqlite ? $this->pdo->exec('COMMIT') !== false : $this->pdo->commit())) {
+            throw new RuntimeException('Unable to commit atomic PDO cache transaction.');
+        }
+    }
+
+    private function isRetryableAtomicFailure(Throwable $failure): bool
+    {
+        if (!$failure instanceof PDOException) {
+            return false;
+        }
+
+        return match ($this->driver) {
+            'pgsql' => in_array($failure->errorInfo[0] ?? null, ['40001', '40P01'], true),
+            'mysql', 'mariadb' => (($failure->errorInfo[0] ?? null) === '40001'
+                && in_array($failure->errorInfo[1] ?? null, [1213, '1213'], true))
+                || (($failure->errorInfo[0] ?? null) === 'HY000'
+                    && in_array($failure->errorInfo[1] ?? null, [1205, '1205'], true)),
+            'sqlite' => in_array($failure->errorInfo[1] ?? null, [5, '5', 261, '261', 517, '517', 773, '773'], true),
+            default => false,
+        };
+    }
+
+    private function rollbackAtomicTransaction(bool $sqlite): bool
+    {
+        try {
+            if ($sqlite) {
+                return $this->pdo->exec('ROLLBACK') !== false;
+            }
+
+            return !$this->pdo->inTransaction() || $this->pdo->rollBack();
+        } catch (Throwable) {
+            return false;
+        }
     }
 }

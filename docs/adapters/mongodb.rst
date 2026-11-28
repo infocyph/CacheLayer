@@ -65,3 +65,8 @@ Example
    $atomic = $cache->atomic();
    $claimed = $atomic?->setIfAbsent('job.claim.42', true, 300);
    $advanced = $atomic?->compareAndSet('job.state.42', 'queued', 'running', 300);
+
+Atomic insert and compare-and-set require confirmed write results. Configure
+acknowledged writes (prefer majority write concern for security-sensitive state)
+and primary reads. Ambiguous writes are not blindly retried by CacheLayer;
+the native driver may implement its own retryable-write protocol.

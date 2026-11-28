@@ -45,7 +45,7 @@ LUA;
     private const string GET_AND_DELETE_SCRIPT = <<<'LUA'
 local value = redis.call('GET', KEYS[1])
 if not value then
-    return false
+    return 0
 end
 redis.call('DEL', KEYS[1])
 return value
@@ -114,7 +114,7 @@ LUA;
         }
 
         $mapped = $this->map($key);
-        $existing = $this->redis->get($mapped);
+        $existing = $this->atomicRead($mapped);
         if (!is_string($existing)) {
             return false;
         }
@@ -130,11 +130,12 @@ LUA;
             1,
         );
 
-        return AdapterValueNormalizer::intOrZero($result) === 1;
+        return $this->atomicScriptResult($result);
     }
 
     /**
      * @throws CacheInvalidArgumentException
+     * @throws RuntimeException
      */
     #[\Override]
     public function atomicGetAndDelete(string $key): CacheItemInterface
@@ -142,8 +143,11 @@ LUA;
         $this->discardDeferredKey($key);
 
         $raw = $this->redis->eval(self::GET_AND_DELETE_SCRIPT, [$this->map($key)], 1);
-        if (!is_string($raw)) {
+        if ($raw === 0) {
             return $this->genericMiss($key);
+        }
+        if (!is_string($raw)) {
+            throw new RuntimeException('Redis atomic consume returned an invalid result.');
         }
 
         $record = $this->decodeRecordFromBlob($raw, $key);
@@ -178,13 +182,13 @@ LUA;
         if ($ttl !== null) {
             $options['ex'] = max(1, $ttl);
         }
-        if ($this->redis->set($key, $blob, $options)) {
+        if ($this->atomicSetNx($key, $blob, $options)) {
             return true;
         }
 
-        $existing = $this->redis->get($key);
+        $existing = $this->atomicRead($key);
         if (!is_string($existing)) {
-            return $this->redis->set($key, $blob, $options) === true;
+            return $this->atomicSetNx($key, $blob, $options);
         }
 
         $record = $this->decodeRecordFromBlob($existing, $item->getKey());
@@ -198,7 +202,7 @@ LUA;
             1,
         );
 
-        return AdapterValueNormalizer::intOrZero($result) === 1;
+        return $this->atomicScriptResult($result);
     }
 
     #[\Override]
@@ -429,6 +433,46 @@ LUA;
     private static function deleteSucceeded(mixed $result): bool
     {
         return is_int($result) && $result >= 0;
+    }
+
+    /** @throws RuntimeException */
+    private function atomicRead(string $key): mixed
+    {
+        $this->redis->clearLastError();
+        $value = $this->redis->get($key);
+        if ($value === false && $this->redis->getLastError() !== null) {
+            throw new RuntimeException('Redis atomic read failed.');
+        }
+
+        return $value;
+    }
+
+    /** @throws RuntimeException */
+    private function atomicScriptResult(mixed $result): bool
+    {
+        if ($result !== 0 && $result !== 1) {
+            throw new RuntimeException('Redis atomic script failed or has an unknown outcome.');
+        }
+
+        return $result === 1;
+    }
+
+    /**
+     * @param array<array-key, mixed> $options
+     * @throws RuntimeException
+     */
+    private function atomicSetNx(string $key, string $blob, array $options): bool
+    {
+        $this->redis->clearLastError();
+        $stored = $this->redis->set($key, $blob, $options);
+        if ($stored === true) {
+            return true;
+        }
+        if ($this->redis->getLastError() !== null) {
+            throw new RuntimeException('Redis conditional set failed or has an unknown outcome.');
+        }
+
+        return false;
     }
 
     /**

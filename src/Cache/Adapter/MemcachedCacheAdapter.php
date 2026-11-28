@@ -85,16 +85,17 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
             $this->namespaceGeneration(),
         );
 
-        return $this->client->cas(
+        return $this->atomicMutationResult($this->client->cas(
             $extended['cas'],
             $mapped,
             $replacementBlob,
             MemcachedExpiration::fromRelative($ttl),
-        );
+        ));
     }
 
     /**
      * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws RuntimeException
      */
     #[\Override]
     public function atomicGetAndDelete(string $key): CacheItemInterface
@@ -114,7 +115,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
             return $this->genericMiss($key);
         }
 
-        if (!$this->client->cas($extended['cas'], $mapped, self::ATOMIC_TOMBSTONE, 1)) {
+        if (!$this->atomicMutationResult($this->client->cas($extended['cas'], $mapped, self::ATOMIC_TOMBSTONE, 1))) {
             return $this->genericMiss($key);
         }
 
@@ -146,13 +147,13 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
             $this->namespaceGeneration(),
         );
 
-        if ($this->client->add($mapped, $blob, MemcachedExpiration::fromRelative($ttl))) {
+        if ($this->atomicMutationResult($this->client->add($mapped, $blob, MemcachedExpiration::fromRelative($ttl)))) {
             return true;
         }
 
         $extended = $this->extendedGet($mapped);
         if ($extended === null) {
-            return $this->client->add($mapped, $blob, MemcachedExpiration::fromRelative($ttl));
+            return $this->atomicMutationResult($this->client->add($mapped, $blob, MemcachedExpiration::fromRelative($ttl)));
         }
 
         $current = $extended['value'];
@@ -165,7 +166,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
             return false;
         }
 
-        return $this->client->cas($extended['cas'], $mapped, $blob, MemcachedExpiration::fromRelative($ttl));
+        return $this->atomicMutationResult($this->client->cas($extended['cas'], $mapped, $blob, MemcachedExpiration::fromRelative($ttl)));
     }
 
     #[\Override]
@@ -402,6 +403,19 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         );
     }
 
+    /** @throws RuntimeException */
+    private function atomicMutationResult(bool $stored): bool
+    {
+        if ($stored) {
+            return true;
+        }
+        if (in_array($this->client->getResultCode(), [\Memcached::RES_NOTSTORED, \Memcached::RES_DATA_EXISTS, \Memcached::RES_NOTFOUND], true)) {
+            return false;
+        }
+
+        throw new RuntimeException('Memcached atomic mutation failed or has an unknown outcome.');
+    }
+
     private function deleteResultSucceeded(): bool
     {
         return in_array(
@@ -411,20 +425,27 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         );
     }
 
-    /** @return array{value:string, cas:string|int|float}|null */
+    /**
+     * @return array{value:string, cas:string|int|float}|null
+     * @throws RuntimeException
+     */
     private function extendedGet(string $key): ?array
     {
         $value = $this->client->get($key, null, \Memcached::GET_EXTENDED);
         if (!is_array($value)) {
-            return null;
+            if ($this->client->getResultCode() === \Memcached::RES_NOTFOUND) {
+                return null;
+            }
+
+            throw new RuntimeException('Memcached atomic read failed.');
         }
         $blob = $value['value'] ?? null;
         if (!is_string($blob)) {
-            return null;
+            throw new RuntimeException('Memcached atomic read returned an invalid payload.');
         }
         $cas = MemcachedValueGuard::casToken($value['cas'] ?? null);
         if ($cas === null) {
-            return null;
+            throw new RuntimeException('Memcached atomic read returned an invalid CAS token.');
         }
 
         return ['value' => $blob, 'cas' => $cas];

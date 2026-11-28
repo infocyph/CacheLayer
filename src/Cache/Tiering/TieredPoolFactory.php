@@ -85,7 +85,7 @@ final class TieredPoolFactory
         $client = $descriptor['client'] ?? $descriptor['session'] ?? null;
 
         return match ($driver) {
-            'apcu' => new Adapter\ApcuCacheAdapter($namespace),
+            'apcu' => new Adapter\ApcuCacheAdapter($namespace, self::bool($descriptor, 'atomic_mode', false)),
             'array', 'memory' => new Adapter\ArrayCacheAdapter($namespace),
             'file' => new Adapter\FileCacheAdapter($namespace, self::nullableString($descriptor, 'dir', 'base_dir')),
             'php_files' => new Adapter\PhpFilesCacheAdapter($namespace, self::nullableString($descriptor, 'dir', 'base_dir')),
@@ -135,6 +135,7 @@ final class TieredPoolFactory
                 self::string($descriptor, 'table', 'cachelayer_entries'),
                 $namespace,
                 self::int($descriptor, 'bucket_count', 128),
+                self::bool($descriptor, 'atomic_mode', false),
             ),
             'shared_memory' => new Adapter\SharedMemoryCacheAdapter(
                 $namespace,

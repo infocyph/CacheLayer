@@ -76,10 +76,10 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
      * @throws CacheInvalidArgumentException
      * @throws \LogicException
      */
-    public static function apcu(string $namespace = 'default', ?CacheOptions $options = null): self
+    public static function apcu(string $namespace = 'default', ?CacheOptions $options = null, bool $atomicMode = false): self
     {
         return new self(
-            new Adapter\ApcuCacheAdapter($namespace),
+            new Adapter\ApcuCacheAdapter($namespace, $atomicMode),
             new FileLockProvider(),
             options: $options,
             namespace: $namespace,
@@ -295,6 +295,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         string $table = 'cachelayer_entries',
         int $bucketCount = 128,
         ?CacheOptions $options = null,
+        bool $atomicMode = false,
     ): self {
         if ($session === null) {
             if (!OptionalCassandra::available()) {
@@ -306,7 +307,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         }
 
         return new self(
-            new Adapter\ScyllaDbCacheAdapter($session, $keyspace, $table, $namespace, $bucketCount),
+            new Adapter\ScyllaDbCacheAdapter($session, $keyspace, $table, $namespace, $bucketCount, $atomicMode),
             options: $options,
             namespace: $namespace,
         );
@@ -358,11 +359,12 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         bool $writeToL1 = true,
         ?CacheOptions $options = null,
         string $namespace = 'tiered',
+        bool $authoritativeOnly = false,
     ): self {
         $metrics = new InMemoryCacheMetricsCollector();
 
         return new self(
-            new Adapter\TieredCacheAdapter(TieredPoolFactory::fromArray($tiers), $writeToL1, $metrics),
+            new Adapter\TieredCacheAdapter(TieredPoolFactory::fromArray($tiers), $writeToL1, $metrics, $authoritativeOnly),
             metrics: $metrics,
             options: $options,
             namespace: $namespace,

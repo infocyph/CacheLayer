@@ -180,3 +180,30 @@ test('Scylla bulk reads isolate both namespace and bucket', function (): void {
     expect($session->execute('SELECT ckey, payload, expires FROM cachelayer_entries', ['arguments' => ['a', 0, 'same']]))
         ->toBe([['ckey' => 'same', 'payload' => 'expected', 'expires' => null]]);
 });
+
+
+test('Scylla opt-in LWT mode supports authoritative claims, replacement and consume', function (): void {
+    $session = new ScyllaSessionDouble();
+    $first = Cache::scylla('lwt-tests', $session, atomicMode: true);
+    $second = Cache::scylla('lwt-tests', $session, atomicMode: true);
+    $atomic = $first->atomic() ?? throw new RuntimeException('Scylla atomic mode required.');
+    $peer = $second->atomic() ?? throw new RuntimeException('Scylla atomic peer required.');
+    expect(Cache::scylla('default', $session)->atomic())->toBeNull()
+        ->and($atomic->setIfAbsent('claim', 1, 60))->toBeTrue()
+        ->and($peer->setIfAbsent('claim', 2))->toBeFalse()
+        ->and($second->set('claim', 3))->toBeTrue()
+        ->and($atomic->compareAndSet('claim', 3, 4))->toBeTrue()
+        ->and($peer->getAndDelete('claim'))->toBe(4)
+        ->and($atomic->getAndDelete('claim', 'missing'))->toBe('missing')
+        ->and($first->set('clear', 5))->toBeTrue()
+        ->and($second->clear())->toBeTrue()
+        ->and($first->has('clear'))->toBeFalse();
+});
+
+test('Scylla LWT unknown result fails closed rather than being replayed', function (): void {
+    $session = new ScyllaSessionDouble();
+    $cache = Cache::scylla('lwt-failure', $session, options: new \Infocyph\CacheLayer\Cache\CacheOptions(failOpen: false), atomicMode: true);
+    $atomic = $cache->atomic() ?? throw new RuntimeException('Scylla atomic mode required.');
+    $session->invalidLwtResponse = true;
+    expect(fn (): bool => $atomic->setIfAbsent('claim', 1))->toThrow(\Infocyph\CacheLayer\Exceptions\CacheBackendException::class);
+});

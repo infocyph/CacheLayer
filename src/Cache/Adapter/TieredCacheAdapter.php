@@ -12,8 +12,13 @@ use InvalidArgumentException;
 use LogicException;
 use Psr\Cache\CacheItemInterface;
 
-final class TieredCacheAdapter extends AbstractCacheAdapter
+final class TieredCacheAdapter extends AbstractCacheAdapter implements ConditionalAtomicCachePoolInterface
 {
+    use DelegatesAtomicOperations;
+
+    /** @var non-empty-list<InternalCachePoolInterface> */
+    private readonly array $pools;
+
     private bool $l1Readable = true;
 
     /**
@@ -21,13 +26,15 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
      * @throws InvalidArgumentException
      */
     public function __construct(
-        private readonly array $pools,
+        array $pools,
         private readonly bool $writeToL1 = true,
         private readonly CacheMetricsCollectorInterface $metrics = new InMemoryCacheMetricsCollector(),
+        bool $authoritativeOnly = false,
     ) {
         if ($pools === []) {
             throw new InvalidArgumentException('A tiered cache requires at least one pool.');
         }
+        $this->pools = $authoritativeOnly ? [$pools[count($pools) - 1]] : $pools;
     }
 
     #[\Override]
@@ -141,7 +148,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
                 continue;
             }
 
-            $copy = $this->copyItem($item);
+            $copy = $this->copyAtomicItem($item);
             if ($index > 0) {
                 $this->promoteOne($copy, $index);
             }
@@ -155,16 +162,11 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
     /**
      * @param list<string> $tags
      * @return array<int|string, string>
-     * @throws LogicException
      */
     #[\Override]
     public function getTagGenerations(array $tags): array
     {
-        foreach (array_reverse($this->pools) as $authoritative) {
-            return $authoritative->getTagGenerations($tags);
-        }
-
-        throw new LogicException('A tiered cache must retain an authoritative pool.');
+        return $this->pools[count($this->pools) - 1]->getTagGenerations($tags);
     }
 
     #[\Override]
@@ -255,17 +257,15 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         return $this->mutate(fn(): bool => $this->writeBatch($items));
     }
 
-    /**
-     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
-     */
-    private function copyItem(CacheItemInterface $source): CacheItem
+    private function atomicAuthority(): ?AtomicCachePoolInterface
     {
-        $expiresAt = $source instanceof CacheItem ? $source->expirationTimestamp() : null;
-        $tags = $source instanceof CacheItem ? $source->getTagGenerations() : [];
+        if (count($this->pools) !== 1) {
+            return null;
+        }
+        $pool = $this->pools[0];
 
-        return new CacheItem($this, $source->getKey(), $source->get(), true)
-            ->expiresAt(CachePayloadCodec::toDateTime($expiresAt))
-            ->setTagGenerations($tags);
+        return $pool instanceof AtomicCachePoolInterface
+            && (!$pool instanceof ConditionalAtomicCachePoolInterface || $pool->supportsAtomicCache()) ? $pool : null;
     }
 
     /**
@@ -281,7 +281,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         foreach ($wanted as $key) {
             $item = $fetched[$key] ?? null;
             if ($item instanceof CacheItemInterface && $item->isHit()) {
-                $hits[$key] = $this->copyItem($item);
+                $hits[$key] = $this->copyAtomicItem($item);
             } else {
                 $misses[] = $key;
             }
@@ -373,15 +373,13 @@ final class TieredCacheAdapter extends AbstractCacheAdapter
         return $pool->saveItems($targets);
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \Psr\Cache\InvalidArgumentException
+     */
     private function saveOneIntoPool(InternalCachePoolInterface $pool, CacheItemInterface $item): bool
     {
-        $target = $pool->createItem($item->getKey())->set($item->get());
-        if ($target instanceof CacheItem && $item instanceof CacheItem) {
-            $target->expiresAt(CachePayloadCodec::toDateTime($item->expirationTimestamp()))
-                ->setTagGenerations($item->getTagGenerations());
-        }
-
-        return $pool->save($target);
+        return $pool->save($this->atomicTarget($pool, $item));
     }
 
     /**

@@ -40,10 +40,15 @@ keeps automatic initialization enabled.
 
 PDO advisory locks remain owned by their creating connection until explicit
 release or connection loss. ``refresh()`` verifies local token ownership and
-connection health; it cannot extend a real server-side timed lease because PDO
+server-side lock ownership; it cannot extend a real server-side timed lease because PDO
 advisory locks are connection-owned. Treat ``leaseSeconds`` as API
 compatibility, not automatic expiry. The provider rejects re-entrant
-acquisition of the same lock through one provider instance.
+acquisition of the same lock across providers sharing one database session.
+Do not externally release and reacquire CacheLayer locks on that session:
+server-side advisory locks have no independent fencing token. MySQL/MariaDB
+schema installation explicitly creates InnoDB tables and rejects existing
+non-InnoDB tables; migrate those tables before use. When schema installation
+is disabled, the deployment must ensure the table uses InnoDB.
 
 For deployments that require native PDO coordination, construct the lock
 provider in strict mode and attach it to the cache. Strict mode supports only
@@ -58,6 +63,11 @@ construction for other PDO drivers; it never falls back to file locking.
 
 The default ``new PdoLockProvider($pdo)`` remains fallback-enabled. It is a
 fallback-backed PDO lock on unsupported drivers, not a distributed PDO lock.
+``effectiveLockProvider()`` exposes the configured coordination provider: the
+PDO provider itself for native drivers, otherwise the exact fallback instance.
+Consumers can select their state-coordination strategy before performing an
+operation. This is not permission to retry a failed native mutation using a
+different lock or to use local file locks for shared multi-host state.
 
 Examples:
 
@@ -107,3 +117,22 @@ and length limit for unquoted table names. When the caller owns the
 transaction, the lock stays held until that transaction ends. PostgreSQL cache
 payload writes bind binary values explicitly so embedded NUL bytes and
 non-UTF-8 bytes are preserved by BYTEA storage.
+
+Atomic PDO operations (conditional insert, compare-and-set and consume) retry
+only classified transaction-abort or contention errors: MySQL/MariaDB 40001
+with native error 1213, HY000 with native error 1205, PostgreSQL 40001 and 40P01,
+and SQLite BUSY (including recognized extended BUSY codes). A started
+transaction must be rolled back before replay; unknown commit outcomes and
+other errors are not retried. Attempts are limited to eight, with jitter and
+a five-second retry scheduling budget. The budget does not interrupt an
+in-flight database call; configure database lock/statement timeouts separately.
+SQLite retains its native busy timeout and will not start another attempt once
+the retry budget is exhausted. Retry is disabled when object or Closure
+payloads are enabled to avoid repeated user serialization hooks.
+Caller-owned transactions are rejected rather than rolled back or replayed.
+PostgreSQL uses explicit signed integer arguments for two-key advisory locks.
+
+Bulk cache writes and deletes may span multiple statement chunks. They are not
+automatically replayed as a single transaction after partial success. The
+caller owns retry policy for application transactions and transactional
+outbox publishing.

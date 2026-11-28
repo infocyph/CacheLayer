@@ -306,3 +306,11 @@ test('Memcached independent processes elect one winner and linearize mixed CAS a
         $foreign->delete('race');
     }
 });
+
+
+test('Memcached fail-closed atomic reads distinguish backend failure from misses', function (): void {
+    $client = new Memcached();
+    $cache = Cache::memcached('atomic-unavailable', client: $client, options: new \Infocyph\CacheLayer\Cache\CacheOptions(failOpen: false));
+    $atomic = $cache->atomic() ?? throw new RuntimeException('Atomic capability required.');
+    expect(fn (): mixed => $atomic->getAndDelete('missing'))->toThrow(\Infocyph\CacheLayer\Exceptions\CacheBackendException::class);
+});

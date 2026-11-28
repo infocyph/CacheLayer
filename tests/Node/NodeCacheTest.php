@@ -598,3 +598,16 @@ test('node SQLite adapter accepts associative PSR-6 delete key arrays', function
         ->and($cache->has('b'))->toBeFalse()
         ->and($cache->get('c'))->toBe(3);
 });
+
+
+test('node L2-only cache delegates native SQLite atomic operations', function () use (&$nodeFixtureConfig): void {
+    $first = NodeCache::create($nodeFixtureConfig);
+    $second = NodeCache::create($nodeFixtureConfig);
+    $atomic = $first->atomic() ?? throw new RuntimeException('Atomic node capability required.');
+    $peer = $second->atomic() ?? throw new RuntimeException('Atomic node peer required.');
+    expect($atomic->setIfAbsent('claim', 1))->toBeTrue()
+        ->and($peer->setIfAbsent('claim', 2))->toBeFalse()
+        ->and($peer->compareAndSet('claim', 1, 3))->toBeTrue()
+        ->and($atomic->getAndDelete('claim'))->toBe(3)
+        ->and($second->has('claim'))->toBeFalse();
+});

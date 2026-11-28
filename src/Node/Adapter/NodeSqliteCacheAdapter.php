@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Infocyph\CacheLayer\Node\Adapter;
 
 use Infocyph\CacheLayer\Cache\Adapter\AbstractCacheAdapter;
+use Infocyph\CacheLayer\Cache\Adapter\AtomicCachePoolInterface;
 use Infocyph\CacheLayer\Cache\Adapter\CachePayloadCodec;
 use Infocyph\CacheLayer\Cache\Adapter\TagGenerationCacheInterface;
 use Infocyph\CacheLayer\Cache\CacheInput;
@@ -14,8 +15,10 @@ use PDO;
 use PDOException;
 use Psr\Cache\CacheItemInterface;
 
-final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGenerationCacheInterface
+final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements AtomicCachePoolInterface, TagGenerationCacheInterface
 {
+    use NodeSqliteAtomicOperations;
+
     private const string TABLE = 'cachelayer_node_entries';
 
     private readonly \PDOStatement $deleteStatement;
@@ -159,6 +162,7 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements TagGe
                 ':current_time' => time(),
             ]);
             $row = $this->lookupStatement->fetch();
+            $this->lookupStatement->closeCursor();
         } catch (PDOException $exception) {
             throw $this->storageException("Unable to read node SQLite cache key '{$key}'.", $exception);
         }

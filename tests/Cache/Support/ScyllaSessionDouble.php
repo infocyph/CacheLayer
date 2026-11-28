@@ -14,6 +14,8 @@ final class ScyllaSessionDouble
 
     public int $bucketReads = 0;
 
+    public bool $invalidLwtResponse = false;
+
     public int $writeBatches = 0;
 
     public function prepare(string $cql): string
@@ -36,11 +38,54 @@ final class ScyllaSessionDouble
         return match (true) {
             str_starts_with($cql, 'CREATE TABLE') => [],
             str_contains($cql, 'cachelayer_entries_metadata') => $this->executeMetadata($cql, $args),
+            str_contains($cql, ' IF ') => $this->executeConditional($cql, $args),
             str_starts_with($cql, 'DELETE FROM') => $this->deleteRows($cql, $args),
             str_starts_with($cql, 'SELECT') => $this->selectRows($cql, $args),
             str_starts_with($cql, 'BEGIN UNLOGGED BATCH'), str_starts_with($cql, 'INSERT INTO') => $this->writeRows($cql, $args),
             default => [],
         };
+    }
+
+    /**
+     * @param list<int|string|null> $args
+     * @return list<array<string, bool>>
+     */
+    private function executeConditional(string $cql, array $args): array
+    {
+        if ($this->invalidLwtResponse) {
+            return [];
+        }
+        $applied = false;
+        if (str_starts_with($cql, 'INSERT')) {
+            $key = $this->rowKey($args);
+            if (!isset($this->rows[$key])) {
+                $this->store($args);
+                $applied = true;
+            }
+        } elseif (str_starts_with($cql, 'UPDATE')) {
+            $applied = $this->conditionalUpdate($args);
+        } elseif (str_starts_with($cql, 'DELETE')) {
+            $key = $this->rowKey($args);
+            if (isset($this->rows[$key]) && (str_contains($cql, 'IF EXISTS') || $this->rows[$key]['payload'] === ($args[3] ?? null))) {
+                unset($this->rows[$key]);
+                $applied = true;
+            }
+        }
+
+        return [['[applied]' => $applied]];
+    }
+
+    /** @param list<int|string|null> $args */
+    private function conditionalUpdate(array $args): bool
+    {
+        $identity = array_slice($args, 3, 3);
+        $key = $this->rowKey($identity);
+        if (!isset($this->rows[$key]) || $this->rows[$key]['payload'] !== ($args[6] ?? null)) {
+            return false;
+        }
+        $this->store([...$identity, $args[1] ?? null, $args[2] ?? null]);
+
+        return true;
     }
 
     /**
@@ -128,6 +173,9 @@ final class ScyllaSessionDouble
             static fn(string $key): bool => str_starts_with($key, $prefix),
             ARRAY_FILTER_USE_KEY,
         ));
+        if (str_starts_with($cql, 'SELECT ckey FROM')) {
+            return array_map(static fn(array $row): array => ['ckey' => $row['ckey']], $rows);
+        }
         if (str_starts_with($cql, 'SELECT expires')) {
             return array_map(static fn(array $row): array => ['expires' => $row['expires']], $rows);
         }

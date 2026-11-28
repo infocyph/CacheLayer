@@ -247,3 +247,18 @@ test('tier descriptors reject invalid namespace and timeout values before openin
             ->toThrow(\Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException::class);
     }
 });
+
+
+test('tiered atomic operations require authoritative-only reads', function (): void {
+    $upper = new \Infocyph\CacheLayer\Cache\Adapter\ArrayCacheAdapter('atomic-upper');
+    $lower = new \Infocyph\CacheLayer\Cache\Adapter\ArrayCacheAdapter('atomic-lower');
+    $normal = \Infocyph\CacheLayer\Cache\Cache::tiered([$upper, $lower]);
+    expect($normal->atomic())->toBeNull();
+    $cache = \Infocyph\CacheLayer\Cache\Cache::tiered([$upper, $lower], authoritativeOnly: true);
+    $atomic = $cache->atomic() ?? throw new \RuntimeException('Atomic authority required.');
+    expect($atomic->setIfAbsent('key', 1))->toBeTrue()
+        ->and($atomic->compareAndSet('key', 1, 2))->toBeTrue()
+        ->and($cache->get('key'))->toBe(2)
+        ->and($atomic->getAndDelete('key'))->toBe(2)
+        ->and($cache->has('key'))->toBeFalse();
+});

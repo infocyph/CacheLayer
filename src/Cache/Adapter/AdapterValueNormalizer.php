@@ -60,6 +60,23 @@ final class AdapterValueNormalizer
         };
     }
 
+    /** @throws \RuntimeException */
+    public static function mongoWriteCount(mixed $result, string $method): int
+    {
+        if (!is_object($result) || !is_callable([$result, $method])) {
+            throw new \RuntimeException('MongoDB atomic write returned no result.');
+        }
+        if (is_callable([$result, 'isAcknowledged']) && $result->isAcknowledged() !== true) {
+            throw new \RuntimeException('MongoDB atomic write was not acknowledged.');
+        }
+        $count = $result->{$method}();
+        if ($count !== 0 && $count !== 1) {
+            throw new \RuntimeException('MongoDB atomic write returned an invalid count.');
+        }
+
+        return $count;
+    }
+
     /**
      * @param array $value The value argument.
      * @phpstan-param array<mixed, mixed> $value

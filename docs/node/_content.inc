@@ -455,3 +455,10 @@ Troubleshooting
    Create the configuration with
    ``options: new CacheOptions(failOpen: false)`` and ensure the application
    handles the resulting exception at the appropriate boundary.
+
+Atomic operations are available for the SQLite-only node configuration
+(``apcuEnabled: false``). Both reads and writes use the authoritative
+SQLite store; atomic read-modify-write operations use an owned immediate
+transaction. With an APCu read-through tier the atomic capability is
+intentionally unavailable. Configure all consumers of a coordination
+namespace in SQLite-only mode.

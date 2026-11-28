@@ -25,7 +25,7 @@ if (!is_array($configuration)
     throw new RuntimeException('Invalid cache race configuration.');
 }
 
-/** @var array{backend:string,namespace:string,operation:string,worker:int,dsn?:mixed,user?:mixed,password?:mixed,host?:mixed,port?:mixed} $configuration */
+/** @var array{backend:string,namespace:string,operation:string,worker:int,dsn?:mixed,user?:mixed,password?:mixed,host?:mixed,port?:mixed,isolation?:mixed} $configuration */
 $requireInteger = static function (mixed $value): int {
     if (!is_int($value)) {
         throw new RuntimeException('Unexpected cache race value type.');
@@ -46,18 +46,31 @@ try {
         $namespace = match ($configuration['namespace']) {
             'sqlite-race' => 'sqlite-race',
             'schema-race' => 'schema-race',
+            'mysql-insert-race' => 'mysql-insert-race',
+            'pgsql-insert-race' => 'pgsql-insert-race',
             default => throw new RuntimeException('Unsupported PDO race namespace.'),
         };
-        $cache = Cache::pdo(
-            $namespace,
-            $dsn,
-            $user,
-            $password,
-            table: $namespace === 'schema-race' && $configuration['worker'] % 2 === 0
-                ? 'CacheLayer_Schema_Race'
-                : 'cachelayer_schema_race',
-            options: $options,
-        );
+        if ($namespace === 'pgsql-insert-race') {
+            $pdo = new PDO($dsn, $user, $password, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+            if (($configuration['isolation'] ?? null) === 'serializable') {
+                $pdo->exec('SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL SERIALIZABLE');
+            }
+            $adapter = new \Infocyph\CacheLayer\Cache\Adapter\PdoCacheAdapter(
+                $namespace, $dsn, pdo: $pdo, table: 'cachelayer_schema_race', initializeSchema: false,
+            );
+            $cache = new Cache($adapter, options: $options, namespace: $namespace);
+        } else {
+            $cache = Cache::pdo(
+                $namespace,
+                $dsn,
+                $user,
+                $password,
+                table: $namespace === 'schema-race' && $configuration['worker'] % 2 === 0
+                    ? 'CacheLayer_Schema_Race'
+                    : 'cachelayer_schema_race',
+                options: $options,
+            );
+        }
     } elseif ($configuration['backend'] === 'memcached') {
         $host = $configuration['host'] ?? null;
         $port = $configuration['port'] ?? null;

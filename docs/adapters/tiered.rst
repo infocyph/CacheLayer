@@ -29,3 +29,10 @@ Example:
        new ArrayCacheAdapter('l1'),
        new RedisCacheAdapter('l2'),
    ]);
+
+Atomic operations are available when there is one atomic-capable pool, or
+when constructing the tiered facade with ``authoritativeOnly: true``.
+The latter bypasses upper tiers for reads and mutations; configure every
+consumer of the coordination namespace consistently. Ordinary multi-tier
+read-through mode intentionally does not advertise atomic capability because
+independent workers could return stale upper-tier values.

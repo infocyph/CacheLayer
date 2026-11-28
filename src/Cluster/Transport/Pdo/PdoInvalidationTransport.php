@@ -183,7 +183,11 @@ final readonly class PdoInvalidationTransport implements InvalidationTransportIn
             return $id;
         } catch (Throwable $exception) {
             if ($transactionStarted) {
-                $this->connection->rollBack();
+                try {
+                    $this->connection->rollBack();
+                } catch (Throwable) {
+                    // Preserve the original publication failure; never replay an unknown outcome.
+                }
             }
             if ($exception instanceof ClusterTransportException) {
                 throw $exception;
