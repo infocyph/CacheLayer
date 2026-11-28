@@ -358,11 +358,12 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         bool $writeToL1 = true,
         ?CacheOptions $options = null,
         string $namespace = 'tiered',
+        bool $authoritativeOnly = false,
     ): self {
         $metrics = new InMemoryCacheMetricsCollector();
 
         return new self(
-            new Adapter\TieredCacheAdapter(TieredPoolFactory::fromArray($tiers), $writeToL1, $metrics),
+            new Adapter\TieredCacheAdapter(TieredPoolFactory::fromArray($tiers), $writeToL1, $metrics, $authoritativeOnly),
             metrics: $metrics,
             options: $options,
             namespace: $namespace,

@@ -6,6 +6,7 @@ namespace Infocyph\CacheLayer\Node\Adapter;
 
 use Infocyph\CacheLayer\Cache\Adapter\AbstractCacheAdapter;
 use Infocyph\CacheLayer\Cache\Adapter\CachePayloadCodec;
+use Infocyph\CacheLayer\Cache\Adapter\ConditionalAtomicCachePoolInterface;
 use Infocyph\CacheLayer\Cache\Adapter\InternalCachePoolInterface;
 use Infocyph\CacheLayer\Cache\Adapter\TagGenerationCacheInterface;
 use Infocyph\CacheLayer\Cache\CacheOptions;
@@ -15,7 +16,7 @@ use Infocyph\CacheLayer\Cache\Metrics\InMemoryCacheMetricsCollector;
 use Psr\Cache\CacheItemInterface;
 use Throwable;
 
-final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerationCacheInterface
+final class NodeCacheAdapter extends AbstractCacheAdapter implements ConditionalAtomicCachePoolInterface, TagGenerationCacheInterface
 {
     private bool $l1Readable = true;
 
@@ -44,6 +45,35 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         if ($this->l1 instanceof AbstractCacheAdapter) {
             $this->l1->assertStorageIdentityCompatible($storageIdentity);
         }
+    }
+
+    #[\Override]
+    public function atomicCompareAndSet(string $key, mixed $expected, CacheItemInterface $replacement): bool
+    {
+        if (!$this->supportsAtomicCache() || !$this->supportsItem($replacement)) {
+            return false;
+        }
+
+        return $this->l2->atomicCompareAndSet($key, $expected, $this->copyItemTo($this->l2, $replacement));
+    }
+
+    #[\Override]
+    public function atomicGetAndDelete(string $key): CacheItemInterface
+    {
+        $this->discardDeferredKey($key);
+        if (!$this->supportsAtomicCache()) {
+            return $this->genericMiss($key);
+        }
+        $item = $this->l2->atomicGetAndDelete($key);
+
+        return $item->isHit() ? $this->nodeItem($item) : $this->genericMiss($key);
+    }
+
+    #[\Override]
+    public function atomicSetIfAbsent(CacheItemInterface $item): bool
+    {
+        return $this->supportsAtomicCache() && $this->supportsItem($item)
+            && $this->l2->atomicSetIfAbsent($this->copyItemTo($this->l2, $item));
     }
 
     /**
@@ -351,6 +381,12 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements TagGenerati
         }
 
         return $stored;
+    }
+
+    #[\Override]
+    public function supportsAtomicCache(): bool
+    {
+        return $this->l1 === null;
     }
 
     /**
