@@ -106,7 +106,11 @@ LUA;
             2,
         );
 
-        return AdapterValueNormalizer::intOrZero($result) === 1;
+        if (!in_array($result, [-1, 0, 1], true)) {
+            throw new \RuntimeException('Redis Cluster atomic compare returned an invalid result.');
+        }
+
+        return $result === 1;
     }
 
     /**
@@ -123,8 +127,8 @@ LUA;
             [$this->generationKey($bucket), $this->mapData($key)],
             2,
         );
-        if (!is_array($result)) {
-            return $this->genericMiss($key);
+        if (!is_array($result) || count($result) !== 2) {
+            throw new \RuntimeException('Redis Cluster atomic consume returned an invalid result.');
         }
 
         $generation = self::normalizeGeneration($result[0] ?? null);
@@ -178,7 +182,10 @@ LUA;
         $generationKey = $this->generationKey($bucket);
         $dataKey = $this->mapData($key);
         $values = $this->call('mget', [$generationKey, $dataKey]);
-        $values = is_array($values) ? array_values($values) : [];
+        if (!is_array($values) || count($values) !== 2) {
+            throw new \RuntimeException('Redis Cluster atomic read returned an invalid result.');
+        }
+        $values = array_values($values);
 
         return [
             'bucket' => $bucket,
@@ -226,6 +233,10 @@ LUA;
             2,
         );
 
-        return AdapterValueNormalizer::intOrZero($result);
+        if ($result !== -1 && $result !== 0 && $result !== 1) {
+            throw new \RuntimeException('Redis Cluster atomic insert returned an invalid result.');
+        }
+
+        return $result;
     }
 }

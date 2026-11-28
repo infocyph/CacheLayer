@@ -96,4 +96,15 @@ final class RedisNativeFailureTest extends TestCase
 
         self::assertFalse($adapter->saveItems(['expires' => $item]));
     }
+
+    public function testAtomicConsumeDistinguishesMissFromBackendFailure(): void
+    {
+        $client = $this->createMock(Redis::class);
+        $client->method('eval')->willReturnOnConsecutiveCalls(0, false);
+        $cache = new Cache(new RedisCacheAdapter('atomic-refused', client: $client), options: new CacheOptions(failOpen: false));
+        $atomic = $cache->atomic() ?? throw new RuntimeException('Atomic capability required.');
+        expect($atomic->getAndDelete('missing', 'default'))->toBe('default')
+            ->and(fn (): mixed => $atomic->getAndDelete('failure'))->toThrow(CacheBackendException::class);
+    }
+
 }

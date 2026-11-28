@@ -177,13 +177,19 @@ test('PostgreSQL independent conditional inserts elect one winner on existing sc
     }
 })->with([false, true]);
 
-test('PostgreSQL conditional inserts recover only from bounded transaction aborts', function (string $key, int $attempts, bool $success, string $operation) use ($dsn, $user, $pass): void {
+test('PostgreSQL atomic operations recover only from bounded transaction aborts', function (string $key, int $attempts, bool $success, string $operation) use ($dsn, $user, $pass): void {
     $pdo = new PDO($dsn, $user, $pass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
     $pdo->exec('CREATE TEMP TABLE cachelayer_retry_test (namespace TEXT NOT NULL, kind TEXT NOT NULL, cache_key TEXT NOT NULL, payload BYTEA NOT NULL, expires BIGINT, PRIMARY KEY (namespace, kind, cache_key))');
     $pdo->exec('CREATE TEMP SEQUENCE cachelayer_retry_attempts');
     $pdo->exec(<<<'SQL'
         CREATE FUNCTION pg_temp.cachelayer_retry_failure() RETURNS trigger LANGUAGE plpgsql AS $$
         BEGIN
+            IF TG_OP = 'DELETE' THEN
+                IF nextval('pg_temp.cachelayer_retry_attempts') = 1 THEN
+                    RAISE EXCEPTION 'test consume serialization failure' USING ERRCODE = '40001';
+                END IF;
+                RETURN OLD;
+            END IF;
             IF nextval('pg_temp.cachelayer_retry_attempts') = 1 OR NEW.cache_key = 'exhausted' THEN
                 IF NEW.cache_key = 'deadlock' THEN
                     RAISE EXCEPTION 'test deadlock' USING ERRCODE = '40P01';
@@ -201,10 +207,13 @@ test('PostgreSQL conditional inserts recover only from bounded transaction abort
     if ($operation !== 'insert') {
         expect($adapter->save($adapter->createItem($key)->set(1)))->toBeTrue();
     }
-    $pdo->exec('CREATE TRIGGER cachelayer_retry_failure BEFORE INSERT OR UPDATE ON cachelayer_retry_test FOR EACH ROW EXECUTE FUNCTION pg_temp.cachelayer_retry_failure()');
+    $pdo->exec('CREATE TRIGGER cachelayer_retry_failure BEFORE INSERT OR UPDATE OR DELETE ON cachelayer_retry_test FOR EACH ROW EXECUTE FUNCTION pg_temp.cachelayer_retry_failure()');
     $item = $adapter->createItem($key)->set(42);
 
-    if ($success) {
+    if ($operation === 'consume') {
+        expect($adapter->atomicGetAndDelete($key)->get())->toBe(1)
+            ->and($adapter->getItem($key)->isHit())->toBeFalse();
+    } elseif ($success) {
         $stored = $operation === 'insert'
             ? $adapter->atomicSetIfAbsent($item)
             : $adapter->atomicCompareAndSet($key, 1, $item);
@@ -229,6 +238,7 @@ test('PostgreSQL conditional inserts recover only from bounded transaction abort
     ['permanent', 1, false, 'insert'],
     ['serialization', 2, true, 'compare'],
     ['deadlock', 2, true, 'compare'],
+    ['serialization', 2, true, 'consume'],
 ]);
 
 test('PostgreSQL native advisory lock is released on session loss', function () use ($dsn, $user, $pass): void {

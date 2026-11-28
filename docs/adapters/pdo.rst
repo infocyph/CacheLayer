@@ -131,3 +131,8 @@ the retry budget is exhausted. Retry is disabled when object or Closure
 payloads are enabled to avoid repeated user serialization hooks.
 Caller-owned transactions are rejected rather than rolled back or replayed.
 PostgreSQL uses explicit signed integer arguments for two-key advisory locks.
+
+Bulk cache writes and deletes may span multiple statement chunks. They are not
+automatically replayed as a single transaction after partial success. The
+caller owns retry policy for application transactions and transactional
+outbox publishing.
