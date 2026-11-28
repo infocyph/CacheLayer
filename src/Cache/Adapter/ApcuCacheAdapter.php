@@ -42,6 +42,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements ConditionalAtomic
         $this->ns = CacheInput::namespace($namespace);
     }
 
+    /** @throws RuntimeException */
     #[\Override]
     public function clear(): bool
     {
@@ -50,6 +51,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements ConditionalAtomic
             : $this->clearUnlocked();
     }
 
+    /** @throws RuntimeException */
     #[\Override]
     public function deleteItem(string $key): bool
     {
@@ -61,6 +63,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements ConditionalAtomic
     /**
      * @param array $keys The keys argument.
      * @phpstan-param array<array-key, string> $keys
+     * @throws RuntimeException
      */
     #[\Override]
     public function deleteItems(array $keys): bool
@@ -175,7 +178,10 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements ConditionalAtomic
         return $generations;
     }
 
-    /** @param list<string> $tags */
+    /**
+     * @param list<string> $tags
+     * @throws RuntimeException
+     */
     #[\Override]
     public function rotateTagGenerations(array $tags): bool
     {
@@ -211,7 +217,10 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements ConditionalAtomic
             : $this->saveItemsUnlocked($items);
     }
 
-    /** @param array<int|string, string> $generations */
+    /**
+     * @param array<int|string, string> $generations
+     * @throws RuntimeException
+     */
     #[\Override]
     public function storeTagGenerations(array $generations): bool
     {
@@ -266,7 +275,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements ConditionalAtomic
         return apcu_delete($mapped);
     }
 
-     /** @param array<array-key,string> $keys */
+    /** @param array<array-key, string> $keys */
     private function deleteItemsUnlocked(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
@@ -318,7 +327,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements ConditionalAtomic
         return $this->ns . ':m:tag:' . $tag;
     }
 
-     /** @param list<string> $tags */
+    /** @param list<string> $tags */
     private function rotateTagGenerationsUnlocked(array $tags): bool
     {
         $generations = [];
@@ -329,7 +338,12 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements ConditionalAtomic
         return $generations === [] || apcu_store($generations) === [];
     }
 
-      /** @param array<string,CacheItemInterface> $items */
+    /**
+     * @param array<string, CacheItemInterface> $items
+     * @throws CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws RuntimeException
+     */
     private function saveItemsUnlocked(array $items): bool
     {
         if (!$this->supportsItems($items)) {
@@ -359,6 +373,11 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements ConditionalAtomic
         );
     }
 
+    /**
+     * @throws CacheInvalidArgumentException
+     * @throws \InvalidArgumentException
+     * @throws RuntimeException
+     */
     private function saveUnlocked(CacheItemInterface $item): bool
     {
         if (!$this->supportsItem($item)) {
@@ -376,7 +395,8 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements ConditionalAtomic
 
         return apcu_store($this->map($item->getKey()), $blob, $ttl ?? 0);
     }
-    /** @param array<int|string,string> $generations */
+
+    /** @param array<int|string, string> $generations */
     private function storeTagGenerationsUnlocked(array $generations): bool
     {
         $mapped = [];
@@ -390,5 +410,4 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements ConditionalAtomic
 
         return $mapped === [] || apcu_store($mapped) === [];
     }
-
 }

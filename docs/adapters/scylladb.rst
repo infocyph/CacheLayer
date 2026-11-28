@@ -41,3 +41,14 @@ Example
    );
 
    $cache->set('homepage.blocks', $blocks, 45);
+
+Native lightweight transaction coordination is opt-in via
+``Cache::scylla('coordination', atomicMode: true)``. Use a fresh, dedicated,
+untagged namespace; every consumer must enable the same mode. Data writes
+and deletes use conditional CQL, reads use SERIAL, and LWT commits use
+QUORUM with SERIAL consensus. Do not mix ordinary non-LWT clients with
+this namespace. Conditional failure retries are bounded; a missing
+``[applied]`` result or transport exception is never replayed blindly.
+Bulk operations and clear apply per row, not as a global transaction.
+The injected session must honor the native driver consistency options.
+The existing hosted Alternator probe does not certify CQL LWT behavior.

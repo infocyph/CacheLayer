@@ -11,8 +11,10 @@ use Psr\Cache\CacheItemInterface;
 use RuntimeException;
 use Traversable;
 
-final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGenerationCacheInterface
+final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements ConditionalAtomicCachePoolInterface, TagGenerationCacheInterface
 {
+    use ScyllaAtomicOperations;
+
     private const int WRITE_BATCH_SIZE = 50;
 
     private readonly string $metadataTable;
@@ -34,6 +36,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
         string $table = 'cachelayer_entries',
         string $namespace = 'default',
         private readonly int $bucketCount = 128,
+        private readonly bool $atomicMode = false,
     ) {
         if (!$this->supportsSessionMethod('execute')) {
             throw new RuntimeException('ScyllaDbCacheAdapter requires session method `execute()`.');
@@ -57,6 +60,9 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
     #[\Override]
     public function clear(): bool
     {
+        if ($this->atomicMode) {
+            return $this->clearAtomicRows();
+        }
         for ($bucket = 0; $bucket < $this->bucketCount; $bucket++) {
             $this->executeCql(
                 "DELETE FROM {$this->qualifiedTable} WHERE ns = ? AND bucket = ?",
@@ -80,6 +86,11 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
     public function deleteItem(string $key): bool
     {
         $this->discardDeferredKey($key);
+        if ($this->atomicMode) {
+            $this->atomicApplied("DELETE FROM {$this->qualifiedTable} WHERE ns = ? AND bucket = ? AND ckey = ? IF EXISTS", $this->atomicIdentity($key));
+
+            return true;
+        }
         $this->executeCql(
             "DELETE FROM {$this->qualifiedTable} WHERE ns = ? AND bucket = ? AND ckey = ?",
             [$this->ns, $this->bucket($key), $this->mapData($key)],
@@ -99,6 +110,9 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
     {
         $this->discardDeferredKeys($keys);
         $keys = array_values($keys);
+        if ($this->atomicMode) {
+            return array_all($keys, $this->deleteItem(...));
+        }
         foreach ($this->groupByBucket($keys) as $bucket => $group) {
             $marks = implode(',', array_fill(0, count($group), '?'));
             $this->executeCql(
@@ -248,6 +262,10 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
     #[\Override]
     public function save(CacheItemInterface $item): bool
     {
+        if ($this->atomicMode) {
+            return $this->saveAtomic($item);
+        }
+
         return $this->saveEncoded($item, function (CacheItemInterface $saveItem, array $expires): bool {
             $cql = "INSERT INTO {$this->qualifiedTable} (ns, bucket, ckey, payload, expires) "
                 . 'VALUES (?, ?, ?, ?, ?)';
@@ -277,6 +295,9 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
     #[\Override]
     public function saveItems(array $items): bool
     {
+        if ($this->atomicMode) {
+            return $this->supportsItems($items) && array_all($items, $this->saveAtomic(...));
+        }
         $active = [];
         $expired = [];
         foreach ($items as $item) {
@@ -398,7 +419,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
     private function executeCql(string $cql, array $arguments = []): mixed
     {
         $statement = $this->statementFor($cql);
-        $options = $this->executionOptions($arguments);
+        $options = $this->executionOptions($arguments, $cql);
 
         return $this->callSession('execute', [$statement, $options]);
     }
@@ -407,9 +428,13 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
      * @param array $arguments The arguments argument.
      * @phpstan-param array<int, mixed> $arguments
      */
-    private function executionOptions(array $arguments): mixed
+    private function executionOptions(array $arguments, string $cql): array
     {
-        return OptionalCassandra::executionOptions($arguments);
+        return OptionalCassandra::executionOptions(
+            $arguments,
+            $this->atomicMode && str_starts_with($cql, 'SELECT'),
+            $this->atomicMode && str_contains($cql, ' IF '),
+        );
     }
 
     /**
@@ -521,7 +546,13 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements TagGene
         if (is_object($result) && is_callable([$result, 'toArray'])) {
             $rows = $result->toArray();
 
-            return is_array($rows) ? $this->normalizeRows($rows) : [];
+            if (is_array($rows)) {
+                return $this->normalizeRows($rows);
+            }
+        }
+
+        if ($this->atomicMode) {
+            throw new RuntimeException('ScyllaDB atomic query returned an invalid response.');
         }
 
         return [];

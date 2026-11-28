@@ -295,6 +295,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         string $table = 'cachelayer_entries',
         int $bucketCount = 128,
         ?CacheOptions $options = null,
+        bool $atomicMode = false,
     ): self {
         if ($session === null) {
             if (!OptionalCassandra::available()) {
@@ -306,7 +307,7 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
         }
 
         return new self(
-            new Adapter\ScyllaDbCacheAdapter($session, $keyspace, $table, $namespace, $bucketCount),
+            new Adapter\ScyllaDbCacheAdapter($session, $keyspace, $table, $namespace, $bucketCount, $atomicMode),
             options: $options,
             namespace: $namespace,
         );

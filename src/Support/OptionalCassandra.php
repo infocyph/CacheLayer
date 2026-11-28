@@ -59,11 +59,19 @@ final class OptionalCassandra
 
     /**
      * @param array<int, mixed> $arguments
-     * @return array{arguments:array<int, mixed>}
+     * @return array{arguments:array<int, mixed>,consistency?:int,serial_consistency?:int}
      */
-    public static function executionOptions(array $arguments): array
+    public static function executionOptions(array $arguments, bool $serialRead = false, bool $lwt = false): array
     {
-        return ['arguments' => $arguments];
+        $options = ['arguments' => $arguments];
+        if ($serialRead) {
+            $options['consistency'] = 8; // Native Cassandra SERIAL consistency.
+        } elseif ($lwt) {
+            $options['consistency'] = 4; // QUORUM commit.
+            $options['serial_consistency'] = 8;
+        }
+
+        return $options;
     }
 
     public static function simpleStatement(string $cql): mixed

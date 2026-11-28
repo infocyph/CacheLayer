@@ -135,6 +135,7 @@ final class TieredPoolFactory
                 self::string($descriptor, 'table', 'cachelayer_entries'),
                 $namespace,
                 self::int($descriptor, 'bucket_count', 128),
+                self::bool($descriptor, 'atomic_mode', false),
             ),
             'shared_memory' => new Adapter\SharedMemoryCacheAdapter(
                 $namespace,
