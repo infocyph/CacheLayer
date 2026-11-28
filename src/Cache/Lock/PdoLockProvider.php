@@ -10,6 +10,13 @@ final class PdoLockProvider implements LockProviderInterface
 {
     use GeneratesLockTokens;
 
+    private const string PGSQL_KEYS = 'WITH lock_keys AS (SELECT CAST(:k1 AS integer) AS first_key, CAST(:k2 AS integer) AS second_key) ';
+
+    private const string PGSQL_OWNED = "EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' "
+        . 'AND pid = pg_backend_pid() AND granted AND objsubid = 2 '
+        . 'AND classid = CAST((CAST(first_key AS bigint) & 4294967295) AS oid) '
+        . 'AND objid = CAST((CAST(second_key AS bigint) & 4294967295) AS oid))';
+
     /** @var array<string, string> */
     private array $activeTokens = [];
 
@@ -98,7 +105,7 @@ final class PdoLockProvider implements LockProviderInterface
         }
 
         return match ($this->driver) {
-            'mysql', 'mariadb', 'pgsql' => $this->owns($handle) && $this->connectionAlive(),
+            'mysql', 'mariadb', 'pgsql' => $this->owns($handle) && $this->refreshNative($handle),
             default => $this->fallback?->refresh($handle, $leaseSeconds) ?? false,
         };
     }
@@ -166,8 +173,8 @@ final class PdoLockProvider implements LockProviderInterface
 
         do {
             try {
-                $stmt = $this->pdo->prepare('SELECT GET_LOCK(:k, 0)');
-                $stmt->execute([':k' => $lockKey]);
+                $stmt = $this->pdo->prepare('SELECT CASE WHEN IS_USED_LOCK(:owned) = CONNECTION_ID() THEN 0 ELSE GET_LOCK(:k, 0) END');
+                $stmt->execute([':owned' => $lockKey, ':k' => $lockKey]);
                 $result = $stmt->fetchColumn();
                 if ((string) $result === '1') {
                     $this->activeTokens[$lockKey] = $token;
@@ -201,7 +208,8 @@ final class PdoLockProvider implements LockProviderInterface
 
         do {
             try {
-                $stmt = $this->pdo->prepare('SELECT pg_try_advisory_lock(CAST(:k1 AS integer), CAST(:k2 AS integer))');
+                $stmt = $this->pdo->prepare(self::PGSQL_KEYS . 'SELECT CASE WHEN ' . self::PGSQL_OWNED
+                    . ' THEN FALSE ELSE pg_try_advisory_lock(first_key, second_key) END FROM lock_keys');
                 $stmt->execute([':k1' => $advisoryKeys[0], ':k2' => $advisoryKeys[1]]);
                 $result = $stmt->fetchColumn();
                 if (self::isDatabaseTrue($result)) {
@@ -221,20 +229,33 @@ final class PdoLockProvider implements LockProviderInterface
         } while (true);
     }
 
-    private function connectionAlive(): bool
-    {
-        try {
-            return $this->pdo->query('SELECT 1') !== false;
-        } catch (Throwable) {
-            return false;
-        }
-    }
-
     private function owns(LockHandle $handle): bool
     {
         $token = $this->activeTokens[$handle->key] ?? null;
 
         return is_string($token) && hash_equals($token, $handle->token);
+    }
+
+    private function refreshNative(LockHandle $handle): bool
+    {
+        try {
+            if ($this->driver === 'pgsql') {
+                $keys = self::advisoryKeys($handle->key);
+                $stmt = $this->pdo->prepare(self::PGSQL_KEYS . 'SELECT ' . self::PGSQL_OWNED . ' FROM lock_keys');
+                $stmt->execute([':k1' => $keys[0], ':k2' => $keys[1]]);
+            } else {
+                $stmt = $this->pdo->prepare('SELECT IS_USED_LOCK(:k) = CONNECTION_ID()');
+                $stmt->execute([':k' => $handle->key]);
+            }
+            if (self::isDatabaseTrue($stmt->fetchColumn())) {
+                return true;
+            }
+            unset($this->activeTokens[$handle->key]);
+        } catch (Throwable) {
+            // A failed ownership probe cannot establish ownership.
+        }
+
+        return false;
     }
 
     private function releaseMysql(LockHandle $handle): bool

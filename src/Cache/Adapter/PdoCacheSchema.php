@@ -7,6 +7,7 @@ namespace Infocyph\CacheLayer\Cache\Adapter;
 use PDO;
 use PDOException;
 use RuntimeException;
+use Throwable;
 
 final class PdoCacheSchema
 {
@@ -35,10 +36,17 @@ final class PdoCacheSchema
             return;
         }
 
-        self::installTable($pdo, $table, $identifier, $payload);
-        if (in_array($driver, ['mysql', 'mariadb'], true)
-            && !self::mysqlIdentityColumnsAreBinary($pdo, $table)) {
-            self::hardenMysqlIdentityColumns($pdo, $table);
+        $mysql = in_array($driver, ['mysql', 'mariadb'], true);
+        self::installTable($pdo, $table, $identifier, $payload, $mysql);
+        if ($mysql) {
+            $engine = $pdo->prepare('SELECT ENGINE FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?');
+            $engine->execute([$table]);
+            if (strtolower((string) $engine->fetchColumn()) !== 'innodb') {
+                throw new RuntimeException('PDO MySQL cache tables must use InnoDB.');
+            }
+            if (!self::mysqlIdentityColumnsAreBinary($pdo, $table)) {
+                self::hardenMysqlIdentityColumns($pdo, $table);
+            }
         }
 
         self::installExpiryIndex($pdo, $table, $driver);
@@ -97,14 +105,20 @@ final class PdoCacheSchema
             if ($ownsTransaction) {
                 $pdo->commit();
             }
-        } finally {
-            if ($ownsTransaction && $pdo->inTransaction()) {
-                $pdo->rollBack();
+        } catch (Throwable $failure) {
+            try {
+                if ($ownsTransaction && $pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+            } catch (Throwable) {
+                // Preserve the original schema installation failure.
             }
+
+            throw $failure;
         }
     }
 
-    private static function installTable(PDO $pdo, string $table, string $identifier, string $payload): void
+    private static function installTable(PDO $pdo, string $table, string $identifier, string $payload, bool $mysql = false): void
     {
         $pdo->exec(
             "CREATE TABLE IF NOT EXISTS {$table} (
@@ -114,7 +128,7 @@ final class PdoCacheSchema
                 payload {$payload} NOT NULL,
                 expires BIGINT NULL,
                 PRIMARY KEY (namespace, kind, cache_key)
-            )",
+            )" . ($mysql ? ' ENGINE=InnoDB' : ''),
         );
     }
 

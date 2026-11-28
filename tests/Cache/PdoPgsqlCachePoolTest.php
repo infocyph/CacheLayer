@@ -259,3 +259,28 @@ test('PostgreSQL native advisory lock is released on session loss', function () 
         $contender->release($replacement);
     }
 });
+
+
+test('PostgreSQL native locks reject same-session reentry and detect external unlock', function () use ($dsn, $user, $pass): void {
+    $pdo = new PDO($dsn, $user, $pass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+    $holder = PdoLockProvider::strict($pdo);
+    $peer = PdoLockProvider::strict($pdo);
+    $key = 'pgsql-session-' . bin2hex(random_bytes(8));
+    $handle = $holder->acquire($key, 0.0);
+    try {
+        expect($handle)->not->toBeNull()
+            ->and($peer->acquire($key, 0.0))->toBeNull()
+            ->and($holder->refresh($handle, 30.0))->toBeTrue();
+        $pdo->query('SELECT pg_advisory_unlock_all()');
+        expect($holder->refresh($handle, 30.0))->toBeFalse();
+    } finally {
+        $holder->release($handle);
+    }
+    $replacement = $peer->acquire($key, 0.0);
+    try {
+        expect($replacement)->not->toBeNull()
+            ->and($holder->refresh($handle, 30.0))->toBeFalse();
+    } finally {
+        $peer->release($replacement);
+    }
+});

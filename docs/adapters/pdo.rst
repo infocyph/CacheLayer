@@ -40,10 +40,15 @@ keeps automatic initialization enabled.
 
 PDO advisory locks remain owned by their creating connection until explicit
 release or connection loss. ``refresh()`` verifies local token ownership and
-connection health; it cannot extend a real server-side timed lease because PDO
+server-side lock ownership; it cannot extend a real server-side timed lease because PDO
 advisory locks are connection-owned. Treat ``leaseSeconds`` as API
 compatibility, not automatic expiry. The provider rejects re-entrant
-acquisition of the same lock through one provider instance.
+acquisition of the same lock across providers sharing one database session.
+Do not externally release and reacquire CacheLayer locks on that session:
+server-side advisory locks have no independent fencing token. MySQL/MariaDB
+schema installation explicitly creates InnoDB tables and rejects existing
+non-InnoDB tables; migrate those tables before use. When schema installation
+is disabled, the deployment must ensure the table uses InnoDB.
 
 For deployments that require native PDO coordination, construct the lock
 provider in strict mode and attach it to the cache. Strict mode supports only

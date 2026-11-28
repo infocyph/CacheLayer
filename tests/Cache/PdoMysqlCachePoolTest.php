@@ -94,3 +94,26 @@ test('MySQL independent conditional inserts elect one persisted winner', functio
         $cache->clear();
     }
 });
+
+
+test('MySQL native locks reject same-session reentry across providers', function () use ($dsn, $user, $pass): void {
+    $pdo = new PDO($dsn, $user, $pass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+    $holder = \Infocyph\CacheLayer\Cache\Lock\PdoLockProvider::strict($pdo);
+    $peer = \Infocyph\CacheLayer\Cache\Lock\PdoLockProvider::strict($pdo);
+    $key = 'mysql-session-' . bin2hex(random_bytes(8));
+    $handle = $holder->acquire($key, 0.0);
+    try {
+        expect($handle)->not->toBeNull()
+            ->and($peer->acquire($key, 0.0))->toBeNull()
+            ->and($holder->refresh($handle, 30.0))->toBeTrue();
+    } finally {
+        $holder->release($handle);
+    }
+    $replacement = $peer->acquire($key, 0.0);
+    try {
+        expect($replacement)->not->toBeNull()
+            ->and($holder->refresh($handle, 30.0))->toBeFalse();
+    } finally {
+        $peer->release($replacement);
+    }
+});

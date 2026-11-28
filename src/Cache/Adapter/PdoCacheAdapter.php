@@ -475,9 +475,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
 
             return $this->pdo->commit();
         } catch (PDOException $failure) {
-            if ($this->pdo->inTransaction()) {
-                $this->pdo->rollBack();
-            }
+            $this->rollbackAtomicTransaction(false);
 
             throw $failure;
         }
