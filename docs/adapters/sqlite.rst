@@ -27,6 +27,9 @@ The PDO adapter configures a 5-second SQLite busy timeout before enabling WAL
 journal mode, so concurrent initialization can wait for a competing writer.
 The timeout does not replace the application lock used by ``remember()`` or
 make SQLite a distributed cache across unrelated filesystems.
+PDO atomic mutations use an owned immediate transaction and retry classified
+SQLite BUSY errors within the bounded policy described in :doc:`pdo`.
+Caller-owned transactions are not replayed.
 
 Example
 -------

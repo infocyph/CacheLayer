@@ -6,7 +6,7 @@ ScyllaDB Adapter (``scylla``)
 
 Factory:
 
-``Cache::scylla(string $namespace = 'default', ?object $session = null, string $keyspace = 'cachelayer', string $table = 'cachelayer_entries', int $bucketCount = 128)``
+``Cache::scylla(string $namespace = 'default', ?object $session = null, string $keyspace = 'cachelayer', string $table = 'cachelayer_entries', int $bucketCount = 128, ?CacheOptions $options = null, bool $atomicMode = false)``
 
 Requirements:
 

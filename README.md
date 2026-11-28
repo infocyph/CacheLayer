@@ -117,14 +117,16 @@ $state = $atomic->getAndDelete('oauth.state.42');
 | PostgreSQL PDO | Yes | supplied PostgreSQL database |
 | MySQL / MariaDB PDO | Yes | supplied transactional database |
 | File / PHP files | Yes | one reliable filesystem lock domain |
-| APCu | No | no arbitrary-value CAS / consume primitive |
+| APCu | Opt-in | one shared APCu segment and reliable local lock domain (`atomicMode: true`) |
 | Generic / unknown PDO | No | no portable cross-driver atomic contract |
-| ScyllaDB | No | ordinary cache writes do not use the LWT architecture required for the full contract |
-| Null / Tiered | No | no single retained authoritative coordination domain |
+| ScyllaDB / Cassandra | Opt-in | dedicated untagged LWT namespace (`atomicMode: true`) |
+| Tiered | Conditional | one atomic-capable pool or authoritative-only final tier |
+| Node | Conditional | SQLite-only configuration (`apcuEnabled: false`) |
+| Null | No | non-authoritative sink |
 
-Memcached uses native `add()`/CAS primitives and a reserved tombstone for linearizable logical consumption. File and PHP-file caches route ordinary key writers and atomic mutations through the same deterministic per-key `flock()`; their guarantee is therefore limited to a filesystem where that lock domain is reliable. PDO capability is runtime-qualified: SQLite, PostgreSQL, and MySQL/MariaDB expose it, while unknown PDO drivers do not. SQLite coordinates writers with `BEGIN IMMEDIATE`; PostgreSQL and MySQL/MariaDB use transactional row locking. Atomic PDO calls require CacheLayer to own the transaction and reject execution inside a caller-owned active transaction.
+Memcached uses native `add()`/CAS primitives and a reserved tombstone for linearizable logical consumption. File and PHP-file caches route ordinary key writers and atomic mutations through the same deterministic per-key `flock()`; their guarantee is therefore limited to a filesystem where that lock domain is reliable. PDO capability is runtime-qualified: SQLite, PostgreSQL, and MySQL/MariaDB expose it, while unknown PDO drivers do not. SQLite coordinates writers with `BEGIN IMMEDIATE`; PostgreSQL and MySQL/MariaDB use transactional row locking. Atomic PDO calls require CacheLayer to own the transaction and reject execution inside a caller-owned active transaction. The three atomic operations retry classified transaction aborts or contention only after confirmed rollback, with at most eight attempts and a five-second retry scheduling budget (not a hard database-call timeout). MySQL/MariaDB schema installation requires InnoDB; migrate existing non-InnoDB cache tables before upgrading. See the [PDO guide](docs/adapters/pdo.rst) for SQLSTATE details and migration constraints.
 
-Use dedicated, untagged keys for portable replay claims, nonces, challenges, state transitions, and one-time state. Tag rotation is a separate invalidation mechanism and is not part of the portable atomic linearization boundary. Redis/Valkey, Redis Cluster, and MongoDB therefore reject `compareAndSet()` on tagged records. Array memory and SharedMemory can validate tag generations inside their own local atomic domain, but callers should not depend on tagged CAS when code must be portable across backends. Tiered caches remain non-atomic even when an individual tier supports the capability.
+Use dedicated, untagged keys for portable replay claims, nonces, challenges, state transitions, and one-time state. Tag rotation is a separate invalidation mechanism and is not part of the portable atomic linearization boundary. Redis/Valkey, Redis Cluster, and MongoDB therefore reject `compareAndSet()` on tagged records. Array memory and SharedMemory can validate tag generations inside their own local atomic domain, but callers should not depend on tagged CAS when code must be portable across backends. APCu and ScyllaDB atomic mode is explicitly opt-in; all consumers of a coordination namespace must use the same mode. ScyllaDB requires a fresh untagged namespace and a session honoring SERIAL/QUORUM consistency options. Tiered caches expose atomic operations only with a single atomic-capable pool or `authoritativeOnly: true` and an atomic-capable final tier. Node exposes atomic operations with `apcuEnabled: false`. Active upper-tier read-through caching is not supported for atomic coordination. Atomic capability alone does not establish authentication-state lock suitability.
 
 For security-sensitive coordination, use `failOpen: false` when the caller must distinguish a backend outage from a normal conditional miss. With fail-open enabled, `setIfAbsent()` and `compareAndSet()` fall back to `false`, `getAndDelete()` returns the supplied default, and `backend_failure` is recorded.
 
@@ -153,7 +155,7 @@ Bulk methods validate once and call the adapter’s native bulk contract. Deferr
 | Memcached | `getMulti`, TTL-grouped `setMulti` |
 | PDO | chunked `IN (...)`, multi-row upsert |
 | MongoDB | `$in`, `bulkWrite` |
-| ScyllaDB | partition-bucketed `IN`, bounded unlogged batches |
+| ScyllaDB | partition-bucketed `IN`, bounded unlogged batches (per-row LWT mutations in atomic mode) |
 | Shared memory | one lock per batch operation |
 | File / PHP files | optimized sequential filesystem access |
 | Redis Cluster | fixed hash buckets and same-slot grouped operations |
@@ -186,7 +188,7 @@ $cache = Cache::tiered([
 ]);
 ```
 
-A bulk read asks L1 for the full batch, asks later tiers only for remaining keys, and promotes hits upward in batches. Writes and deletes are one batch per participating tier. The tiered facade intentionally does not expose atomic cache coordination because multiple tiers cannot form one linearizable authority.
+A bulk read asks L1 for the full batch, asks later tiers only for remaining keys, and promotes hits upward in batches. Writes and deletes are one batch per participating tier. Ordinary multi-tier read-through mode does not expose atomic coordination. Pass `authoritativeOnly: true` to bypass upper tiers for reads and mutations and delegate atomic operations to an atomic-capable final tier. A single atomic-capable tier also exposes atomic operations. Configure all consumers of coordination keys consistently.
 
 ## Immutable security and failure policy
 
