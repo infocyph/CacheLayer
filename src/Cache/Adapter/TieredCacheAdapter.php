@@ -14,7 +14,10 @@ use Psr\Cache\CacheItemInterface;
 
 final class TieredCacheAdapter extends AbstractCacheAdapter implements ConditionalAtomicCachePoolInterface
 {
-    private readonly bool $authoritativeOnly;
+    use DelegatesAtomicOperations;
+
+    /** @var non-empty-list<InternalCachePoolInterface> */
+    private readonly array $pools;
 
     private bool $l1Readable = true;
 
@@ -23,7 +26,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter implements Condition
      * @throws InvalidArgumentException
      */
     public function __construct(
-        private readonly array $pools,
+        array $pools,
         private readonly bool $writeToL1 = true,
         private readonly CacheMetricsCollectorInterface $metrics = new InMemoryCacheMetricsCollector(),
         bool $authoritativeOnly = false,
@@ -31,8 +34,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter implements Condition
         if ($pools === []) {
             throw new InvalidArgumentException('A tiered cache requires at least one pool.');
         }
-        $this->l1Readable = !$authoritativeOnly;
-        $this->authoritativeOnly = $authoritativeOnly;
+        $this->pools = $authoritativeOnly ? [$pools[array_key_last($pools)]] : $pools;
     }
 
     #[\Override]
@@ -57,55 +59,12 @@ final class TieredCacheAdapter extends AbstractCacheAdapter implements Condition
         }
     }
 
-    /**
-     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
-     * @throws \Psr\Cache\InvalidArgumentException
-     */
-    #[\Override]
-    public function atomicCompareAndSet(string $key, mixed $expected, CacheItemInterface $replacement): bool
-    {
-        $pool = $this->atomicAuthority();
-
-        return $pool !== null && $this->supportsItem($replacement)
-            && $pool->atomicCompareAndSet($key, $expected, $this->atomicTarget($pool, $replacement));
-    }
-
-    /**
-     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
-     * @throws \Psr\Cache\InvalidArgumentException
-     */
-    #[\Override]
-    public function atomicGetAndDelete(string $key): CacheItemInterface
-    {
-        $this->discardDeferredKey($key);
-        $pool = $this->atomicAuthority();
-        if ($pool === null) {
-            return $this->genericMiss($key);
-        }
-        $item = $pool->atomicGetAndDelete($key);
-
-        return $item->isHit() ? $this->copyItem($item) : $this->genericMiss($key);
-    }
-
-    /**
-     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
-     * @throws \Psr\Cache\InvalidArgumentException
-     */
-    #[\Override]
-    public function atomicSetIfAbsent(CacheItemInterface $item): bool
-    {
-        $pool = $this->atomicAuthority();
-
-        return $pool !== null && $this->supportsItem($item)
-            && $pool->atomicSetIfAbsent($this->atomicTarget($pool, $item));
-    }
-
     #[\Override]
     public function clear(): bool
     {
         return $this->mutate(function (): bool {
             $cleared = true;
-            foreach ($this->authoritativeOnly ? $this->readablePools() : $this->pools as $pool) {
+            foreach ($this->pools as $pool) {
                 $cleared = $pool->clear() && $cleared;
             }
             $this->deferred = [];
@@ -151,7 +110,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter implements Condition
 
         return $this->mutate(function () use ($key): bool {
             $deleted = true;
-            foreach ($this->authoritativeOnly ? $this->readablePools() : $this->pools as $pool) {
+            foreach ($this->pools as $pool) {
                 $deleted = $pool->deleteItem($key) && $deleted;
             }
 
@@ -167,7 +126,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter implements Condition
 
         return $this->mutate(function () use ($keys): bool {
             $deleted = true;
-            foreach ($this->authoritativeOnly ? $this->readablePools() : $this->pools as $pool) {
+            foreach ($this->pools as $pool) {
                 $deleted = $pool->deleteItems($keys) && $deleted;
             }
 
@@ -189,7 +148,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter implements Condition
                 continue;
             }
 
-            $copy = $this->copyItem($item);
+            $copy = $this->copyAtomicItem($item);
             if ($index > 0) {
                 $this->promoteOne($copy, $index);
             }
@@ -259,7 +218,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter implements Condition
     public function rotateTagGenerations(array $tags): bool
     {
         $incremented = true;
-        foreach ($this->authoritativeOnly ? $this->readablePools() : $this->pools as $pool) {
+        foreach ($this->pools as $pool) {
             $incremented = $pool->rotateTagGenerations($tags) && $incremented;
         }
 
@@ -283,7 +242,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter implements Condition
                 $written = $this->saveOneIntoPool($this->pools[$index], $item) && $written;
             }
 
-            return $start === 0 || $this->authoritativeOnly
+            return $start === 0
                 ? $written
                 : $this->invalidateSkippedL1([$item->getKey()], $written);
         });
@@ -302,50 +261,15 @@ final class TieredCacheAdapter extends AbstractCacheAdapter implements Condition
 
         return $this->mutate(fn(): bool => $this->writeBatch($items));
     }
-
-    #[\Override]
-    public function supportsAtomicCache(): bool
-    {
-        return $this->atomicAuthority() !== null;
-    }
-
     private function atomicAuthority(): ?AtomicCachePoolInterface
     {
-        if (!$this->authoritativeOnly && count($this->pools) !== 1) {
+        if (count($this->pools) !== 1) {
             return null;
         }
-        $pool = $this->pools[count($this->pools) - 1];
+        $pool = $this->pools[0];
 
         return $pool instanceof AtomicCachePoolInterface
             && (!$pool instanceof ConditionalAtomicCachePoolInterface || $pool->supportsAtomicCache()) ? $pool : null;
-    }
-
-    /**
-     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
-     * @throws \Psr\Cache\InvalidArgumentException
-     */
-    private function atomicTarget(InternalCachePoolInterface $pool, CacheItemInterface $item): CacheItemInterface
-    {
-        $target = $pool->createItem($item->getKey())->set($item->get());
-        if ($target instanceof CacheItem && $item instanceof CacheItem) {
-            $target->expiresAt(CachePayloadCodec::toDateTime($item->expirationTimestamp()))
-                ->setTagGenerations($item->getTagGenerations());
-        }
-
-        return $target;
-    }
-
-    /**
-     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
-     */
-    private function copyItem(CacheItemInterface $source): CacheItem
-    {
-        $expiresAt = $source instanceof CacheItem ? $source->expirationTimestamp() : null;
-        $tags = $source instanceof CacheItem ? $source->getTagGenerations() : [];
-
-        return new CacheItem($this, $source->getKey(), $source->get(), true)
-            ->expiresAt(CachePayloadCodec::toDateTime($expiresAt))
-            ->setTagGenerations($tags);
     }
 
     /**
@@ -361,7 +285,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter implements Condition
         foreach ($wanted as $key) {
             $item = $fetched[$key] ?? null;
             if ($item instanceof CacheItemInterface && $item->isHit()) {
-                $hits[$key] = $this->copyItem($item);
+                $hits[$key] = $this->copyAtomicItem($item);
             } else {
                 $misses[] = $key;
             }
@@ -392,7 +316,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter implements Condition
         // Fence before entering a backend: an exception must leave upper tiers bypassed.
         $this->l1Readable = false;
         $success = $operation();
-        $this->l1Readable = !$this->authoritativeOnly && $success && ($wasReadable || $reconcile);
+        $this->l1Readable = $success && ($wasReadable || $reconcile);
 
         return $success;
     }
@@ -453,6 +377,10 @@ final class TieredCacheAdapter extends AbstractCacheAdapter implements Condition
         return $pool->saveItems($targets);
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \Psr\Cache\InvalidArgumentException
+     */
     private function saveOneIntoPool(InternalCachePoolInterface $pool, CacheItemInterface $item): bool
     {
         return $pool->save($this->atomicTarget($pool, $item));
@@ -470,7 +398,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter implements Condition
             $written = $this->saveIntoPool($this->pools[$index], $items) && $written;
         }
 
-        if ($start === 0 || $this->authoritativeOnly) {
+        if ($start === 0) {
             return $written;
         }
 
@@ -484,6 +412,6 @@ final class TieredCacheAdapter extends AbstractCacheAdapter implements Condition
 
     private function writeStart(): int
     {
-        return $this->authoritativeOnly ? count($this->pools) - 1 : ($this->writeToL1 || count($this->pools) === 1 ? 0 : 1);
+        return $this->writeToL1 || count($this->pools) === 1 ? 0 : 1;
     }
 }

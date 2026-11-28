@@ -432,6 +432,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements Conditi
     /**
      * @param array $arguments The arguments argument.
      * @phpstan-param array<int, mixed> $arguments
+     * @return array{arguments:array<int, mixed>,consistency?:int,serial_consistency?:int}
      */
     private function executionOptions(array $arguments, string $cql): array
     {

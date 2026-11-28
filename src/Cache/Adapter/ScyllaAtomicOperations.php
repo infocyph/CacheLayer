@@ -71,18 +71,9 @@ trait ScyllaAtomicOperations
             return false;
         }
         for ($attempt = 0; $attempt < 3; ++$attempt) {
-            if ($this->atomicInsert($item, $expiry)) {
-                return true;
-            }
-            $row = $this->atomicRow($item->getKey());
-            if ($row === null) {
-                continue;
-            }
-            if ($this->decodeRecordFromBlob($row, $item->getKey()) instanceof CacheRecord) {
-                return false;
-            }
-            if ($this->atomicReplace($item, $expiry, $row)) {
-                return true;
+            $result = $this->atomicClaimAttempt($item, $expiry);
+            if ($result !== null) {
+                return $result;
             }
         }
 
@@ -101,11 +92,32 @@ trait ScyllaAtomicOperations
     private function atomicApplied(string $cql, array $arguments): bool
     {
         $row = $this->firstRow($cql, $arguments);
-        if (!is_bool($row['[applied]'] ?? null)) {
+        $applied = $row['[applied]'] ?? null;
+        if (!is_bool($applied)) {
             throw new RuntimeException('ScyllaDB LWT returned no definitive applied result.');
         }
 
-        return $row['[applied]'];
+        return $applied;
+    }
+
+    /**
+     * @param array{ttl:int|null,expiresAt:int|null} $expiry
+     * @throws \Throwable
+     */
+    private function atomicClaimAttempt(CacheItemInterface $item, array $expiry): ?bool
+    {
+        if ($this->atomicInsert($item, $expiry)) {
+            return true;
+        }
+        $row = $this->atomicRow($item->getKey());
+        if ($row === null) {
+            return null;
+        }
+        if ($this->decodeRecordFromBlob($row, $item->getKey()) instanceof CacheRecord) {
+            return false;
+        }
+
+        return $this->atomicReplace($item, $expiry, $row) ? true : null;
     }
 
     /** @return list<int|string> */

@@ -63,12 +63,7 @@ final class ScyllaSessionDouble
                 $applied = true;
             }
         } elseif (str_starts_with($cql, 'UPDATE')) {
-            $identity = array_slice($args, 3, 3);
-            $key = $this->rowKey($identity);
-            if (isset($this->rows[$key]) && $this->rows[$key]['payload'] === ($args[6] ?? null)) {
-                $this->store([...$identity, $args[1] ?? null, $args[2] ?? null]);
-                $applied = true;
-            }
+            $applied = $this->conditionalUpdate($args);
         } elseif (str_starts_with($cql, 'DELETE')) {
             $key = $this->rowKey($args);
             if (isset($this->rows[$key]) && (str_contains($cql, 'IF EXISTS') || $this->rows[$key]['payload'] === ($args[3] ?? null))) {
@@ -78,6 +73,19 @@ final class ScyllaSessionDouble
         }
 
         return [['[applied]' => $applied]];
+    }
+
+    /** @param list<int|string|null> $args */
+    private function conditionalUpdate(array $args): bool
+    {
+        $identity = array_slice($args, 3, 3);
+        $key = $this->rowKey($identity);
+        if (!isset($this->rows[$key]) || $this->rows[$key]['payload'] !== ($args[6] ?? null)) {
+            return false;
+        }
+        $this->store([...$identity, $args[1] ?? null, $args[2] ?? null]);
+
+        return true;
     }
 
     /**

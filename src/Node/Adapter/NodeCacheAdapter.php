@@ -5,7 +5,8 @@ declare(strict_types=1);
 namespace Infocyph\CacheLayer\Node\Adapter;
 
 use Infocyph\CacheLayer\Cache\Adapter\AbstractCacheAdapter;
-use Infocyph\CacheLayer\Cache\Adapter\CachePayloadCodec;
+use Infocyph\CacheLayer\Cache\Adapter\AtomicCachePoolInterface;
+use Infocyph\CacheLayer\Cache\Adapter\DelegatesAtomicOperations;
 use Infocyph\CacheLayer\Cache\Adapter\ConditionalAtomicCachePoolInterface;
 use Infocyph\CacheLayer\Cache\Adapter\InternalCachePoolInterface;
 use Infocyph\CacheLayer\Cache\Adapter\TagGenerationCacheInterface;
@@ -18,6 +19,8 @@ use Throwable;
 
 final class NodeCacheAdapter extends AbstractCacheAdapter implements ConditionalAtomicCachePoolInterface, TagGenerationCacheInterface
 {
+    use DelegatesAtomicOperations;
+
     private bool $l1Readable = true;
 
     public function __construct(
@@ -45,47 +48,6 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements Conditional
         if ($this->l1 instanceof AbstractCacheAdapter) {
             $this->l1->assertStorageIdentityCompatible($storageIdentity);
         }
-    }
-
-    /**
-     * @throws Throwable
-     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
-     */
-    #[\Override]
-    public function atomicCompareAndSet(string $key, mixed $expected, CacheItemInterface $replacement): bool
-    {
-        if (!$this->supportsAtomicCache() || !$this->supportsItem($replacement)) {
-            return false;
-        }
-
-        return $this->l2->atomicCompareAndSet($key, $expected, $this->copyItemTo($this->l2, $replacement));
-    }
-
-    /**
-     * @throws Throwable
-     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
-     */
-    #[\Override]
-    public function atomicGetAndDelete(string $key): CacheItemInterface
-    {
-        $this->discardDeferredKey($key);
-        if (!$this->supportsAtomicCache()) {
-            return $this->genericMiss($key);
-        }
-        $item = $this->l2->atomicGetAndDelete($key);
-
-        return $item->isHit() ? $this->nodeItem($item) : $this->genericMiss($key);
-    }
-
-    /**
-     * @throws Throwable
-     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
-     */
-    #[\Override]
-    public function atomicSetIfAbsent(CacheItemInterface $item): bool
-    {
-        return $this->supportsAtomicCache() && $this->supportsItem($item)
-            && $this->l2->atomicSetIfAbsent($this->copyItemTo($this->l2, $item));
     }
 
     /**
@@ -186,7 +148,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements Conditional
                 'l1_failure',
             );
             if ($l1->isHit()) {
-                return $this->nodeItem($l1);
+                return $this->copyAtomicItem($l1);
             }
         }
 
@@ -199,7 +161,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements Conditional
             return $this->genericMiss($key);
         }
 
-        $item = $this->nodeItem($l2);
+        $item = $this->copyAtomicItem($l2);
         if ($this->l1 !== null && $this->l1Readable
             && !$this->saveOneInto($this->l1, $item, 'l1_failure')) {
             $this->disableL1();
@@ -394,13 +356,6 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements Conditional
 
         return $stored;
     }
-
-    #[\Override]
-    public function supportsAtomicCache(): bool
-    {
-        return $this->l1 === null;
-    }
-
     /**
      * @template T
      * @param callable(): T $operation
@@ -423,17 +378,9 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements Conditional
         }
     }
 
-    private function copyItemTo(InternalCachePoolInterface $pool, CacheItemInterface $item): CacheItemInterface
+    private function atomicAuthority(): ?AtomicCachePoolInterface
     {
-        $target = $pool->createItem($item->getKey())->set($item->get());
-        if ($item instanceof CacheItem) {
-            $target->expiresAt(CachePayloadCodec::toDateTime($item->expirationTimestamp()));
-            if ($target instanceof CacheItem) {
-                $target->setTagGenerations($item->getTagGenerations());
-            }
-        }
-
-        return $target;
+        return $this->l1 === null ? $this->l2 : null;
     }
 
     private function disableL1(): void
@@ -473,19 +420,6 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements Conditional
     }
 
     /**
-     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
-     */
-    private function nodeItem(CacheItemInterface $item): CacheItem
-    {
-        $expiresAt = $item instanceof CacheItem ? $item->expirationTimestamp() : null;
-        $tags = $item instanceof CacheItem ? $item->getTagGenerations() : [];
-
-        return new CacheItem($this, $item->getKey(), $item->get(), true)
-            ->expiresAt(CachePayloadCodec::toDateTime($expiresAt))
-            ->setTagGenerations($tags);
-    }
-
-    /**
      * @param list<string> $keys
      * @return array{array<string, CacheItem>, list<string>}
      * @throws Throwable
@@ -502,7 +436,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements Conditional
         foreach ($keys as $key) {
             $item = $l1Items[$key] ?? null;
             if ($item instanceof CacheItemInterface && $item->isHit()) {
-                $results[$key] = $this->nodeItem($item);
+                $results[$key] = $this->copyAtomicItem($item);
 
                 continue;
             }
@@ -531,7 +465,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements Conditional
         foreach ($keys as $key) {
             $item = $items[$key] ?? null;
             if ($item instanceof CacheItemInterface && $item->isHit()) {
-                $hits[$key] = $this->nodeItem($item);
+                $hits[$key] = $this->copyAtomicItem($item);
                 $results[$key] = $hits[$key];
             }
         }
@@ -562,7 +496,7 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements Conditional
         return $this->attempt(function () use ($pool, $items): bool {
             $targets = [];
             foreach ($items as $item) {
-                $targets[$item->getKey()] = $this->copyItemTo($pool, $item);
+                $targets[$item->getKey()] = $this->atomicTarget($pool, $item);
             }
 
             return $pool->saveItems($targets);
@@ -577,6 +511,6 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements Conditional
         CacheItemInterface $item,
         string $failureMetric,
     ): bool {
-        return $this->attempt(fn(): bool => $pool->save($this->copyItemTo($pool, $item)), false, $failureMetric);
+        return $this->attempt(fn(): bool => $pool->save($this->atomicTarget($pool, $item)), false, $failureMetric);
     }
 }

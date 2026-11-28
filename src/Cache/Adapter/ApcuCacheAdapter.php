@@ -264,6 +264,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements ConditionalAtomic
         return true;
     }
 
+    /** @throws CacheInvalidArgumentException */
     private function deleteItemUnlocked(string $key): bool
     {
         $this->discardDeferredKey($key);
@@ -275,7 +276,10 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements ConditionalAtomic
         return apcu_delete($mapped);
     }
 
-    /** @param array<array-key, string> $keys */
+    /**
+     * @param array<array-key, string> $keys
+     * @throws CacheInvalidArgumentException
+     */
     private function deleteItemsUnlocked(array $keys): bool
     {
         $this->discardDeferredKeys($keys);
