@@ -12,6 +12,8 @@ final class MongoCollectionDouble
     /** @var array<string, array<string, mixed>> */
     public array $docs = [];
 
+    public bool $acknowledged = true;
+
     public int $bulkWrites = 0;
 
     public int $findCalls = 0;
@@ -118,8 +120,15 @@ final class MongoCollectionDouble
         }
         $this->docs[$id] = $document;
 
-        return new class
+        return new class($this->acknowledged)
         {
+            public function __construct(private readonly bool $acknowledged) {}
+
+            public function isAcknowledged(): bool
+            {
+                return $this->acknowledged;
+            }
+
             public function getInsertedCount(): int
             {
                 return 1;
@@ -180,9 +189,14 @@ final class MongoCollectionDouble
 
     private function writeResult(int $matched): object
     {
-        return new class($matched)
+        return new class($matched, $this->acknowledged)
         {
-            public function __construct(private readonly int $matched) {}
+            public function __construct(private readonly int $matched, private readonly bool $acknowledged) {}
+
+            public function isAcknowledged(): bool
+            {
+                return $this->acknowledged;
+            }
 
             public function getMatchedCount(): int
             {

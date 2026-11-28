@@ -68,7 +68,9 @@ trait PdoAtomicOperations
             }
 
             $record = $this->atomicRecordFromRow($key, $row);
-            $this->deleteItem($key);
+            if (!$this->deleteItem($key)) {
+                throw new RuntimeException('Atomic PDO cache deletion failed.');
+            }
             if (!$record instanceof CacheRecord || !$this->atomicRecordTagsAreCurrent($record)) {
                 return $this->genericMiss($key);
             }
@@ -224,17 +226,16 @@ trait PdoAtomicOperations
         for ($attempt = 0; ; ++$attempt) {
             $started = false;
             try {
-                if ($sqlite) {
-                    $this->pdo->exec('BEGIN IMMEDIATE');
-                } else {
-                    $this->pdo->beginTransaction();
+                $started = $sqlite
+                    ? $this->pdo->exec('BEGIN IMMEDIATE') !== false
+                    : $this->pdo->beginTransaction();
+                if (!$started) {
+                    throw new RuntimeException('Unable to begin atomic PDO cache transaction.');
                 }
-                $started = true;
                 $result = $callback();
-                if ($sqlite) {
-                    $this->pdo->exec('COMMIT');
-                } else {
-                    $this->pdo->commit();
+                $committed = $sqlite ? $this->pdo->exec('COMMIT') !== false : $this->pdo->commit();
+                if (!$committed) {
+                    throw new RuntimeException('Unable to commit atomic PDO cache transaction.');
                 }
 
                 return $result;
@@ -303,5 +304,4 @@ trait PdoAtomicOperations
             return false;
         }
     }
-
 }

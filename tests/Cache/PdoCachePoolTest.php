@@ -123,3 +123,31 @@ test('SQLite independent workers initialize a fresh database and share one cold 
         }
     }
 });
+
+
+test('SQLite atomic busy exhaustion leaves the connection usable', function (): void {
+    $file = sys_get_temp_dir() . '/cachelayer-busy-' . bin2hex(random_bytes(8)) . '.sqlite';
+    $dsn = 'sqlite:' . $file;
+    try {
+        $holder = new PDO($dsn, options: [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+        $peer = new PDO($dsn, options: [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+        $adapter = new PdoCacheAdapter('busy', $dsn, pdo: $peer);
+        $peer->exec('PRAGMA busy_timeout = 1');
+        $holder->exec('BEGIN IMMEDIATE');
+        try {
+            $item = $adapter->createItem('claim')->set(1);
+            expect(fn (): bool => $adapter->atomicSetIfAbsent($item))->toThrow(\PDOException::class);
+        } finally {
+            $holder->exec('ROLLBACK');
+        }
+        expect($adapter->atomicSetIfAbsent($item))->toBeTrue()
+            ->and($adapter->getItem('claim')->get())->toBe(1);
+    } finally {
+        unset($adapter, $peer, $holder);
+        foreach ([$file, $file . '-wal', $file . '-shm'] as $path) {
+            if (is_file($path)) {
+                unlink($path);
+            }
+        }
+    }
+});

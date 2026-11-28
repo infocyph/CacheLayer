@@ -500,10 +500,17 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
     private function matchedCount(mixed $result): int
     {
         if (!is_object($result) || !is_callable([$result, 'getMatchedCount'])) {
-            return 0;
+            throw new RuntimeException('MongoDB atomic update returned no write result.');
+        }
+        if (is_callable([$result, 'isAcknowledged']) && $result->isAcknowledged() !== true) {
+            throw new RuntimeException('MongoDB atomic update was not acknowledged.');
+        }
+        $matched = $result->getMatchedCount();
+        if ($matched !== 0 && $matched !== 1) {
+            throw new RuntimeException('MongoDB atomic update returned an invalid matched count.');
         }
 
-        return AdapterValueNormalizer::intOrZero($result->getMatchedCount());
+        return $matched;
     }
 
     /** @param array<string, mixed> $row */
@@ -549,7 +556,12 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
     private function tryAtomicInsert(string $id, array $replacement): bool
     {
         try {
-            $this->collection->insertOne(['_id' => $id, ...$replacement]);
+            $result = $this->collection->insertOne(['_id' => $id, ...$replacement]);
+            if (!is_object($result) || !is_callable([$result, 'getInsertedCount'])
+                || (is_callable([$result, 'isAcknowledged']) && $result->isAcknowledged() !== true)
+                || $result->getInsertedCount() !== 1) {
+                throw new RuntimeException('MongoDB atomic insert was not confirmed.');
+            }
 
             return true;
         } catch (Throwable $failure) {

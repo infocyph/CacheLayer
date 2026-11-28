@@ -149,7 +149,7 @@ test('PostgreSQL independent workers initialize a fresh schema with mixed spelli
 });
 
 
-test('PostgreSQL independent conditional inserts elect one winner on existing schema', function (bool $expired) use ($dsn, $user, $pass): void {
+test('PostgreSQL independent conditional inserts elect one winner on existing schema', function (bool $expired, string $isolation) use ($dsn, $user, $pass): void {
     $pdo = new PDO($dsn, $user, $pass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
     $cache = Cache::pdo('pgsql-insert-race', $dsn, $user, $pass, table: 'cachelayer_schema_race');
     $cache->clear();
@@ -164,6 +164,7 @@ test('PostgreSQL independent conditional inserts elect one winner on existing sc
             'backend' => 'pdo',
             'operation' => 'insert',
             'namespace' => 'pgsql-insert-race',
+            'isolation' => $isolation,
             'dsn' => $dsn,
             'user' => $user,
             'password' => $pass,
@@ -175,7 +176,7 @@ test('PostgreSQL independent conditional inserts elect one winner on existing sc
     } finally {
         $cache->clear();
     }
-})->with([false, true]);
+})->with([[false, 'default'], [true, 'default'], [false, 'serializable'], [true, 'serializable']]);
 
 test('PostgreSQL atomic operations recover only from bounded transaction aborts', function (string $key, int $attempts, bool $success, string $operation) use ($dsn, $user, $pass): void {
     $pdo = new PDO($dsn, $user, $pass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
