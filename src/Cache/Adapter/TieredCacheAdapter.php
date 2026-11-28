@@ -455,13 +455,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter implements Condition
 
     private function saveOneIntoPool(InternalCachePoolInterface $pool, CacheItemInterface $item): bool
     {
-        $target = $pool->createItem($item->getKey())->set($item->get());
-        if ($target instanceof CacheItem && $item instanceof CacheItem) {
-            $target->expiresAt(CachePayloadCodec::toDateTime($item->expirationTimestamp()))
-                ->setTagGenerations($item->getTagGenerations());
-        }
-
-        return $pool->save($target);
+        return $pool->save($this->atomicTarget($pool, $item));
     }
 
     /**

@@ -98,6 +98,7 @@ trait ApcuAtomicOperations
      * @param callable(): T $operation
      * @return T
      * @throws RuntimeException
+     * @throws \InvalidArgumentException
      */
     private function withAtomicLock(callable $operation): mixed
     {

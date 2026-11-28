@@ -45,4 +45,37 @@ $assert($cache->get('plain') === null, 'Scylla CQL delete did not remove the val
 $assert($cache->clear(), 'Scylla CQL namespace clear failed.');
 $assert($cache->get('batch-1') === null, 'Scylla CQL clear did not remove namespace values.');
 
-fwrite(STDOUT, "CacheLayer real Scylla CQL smoke passed.\n");
+$coordination = Cache::scylla(
+    'release-cql-atomic',
+    bucketCount: 16,
+    options: new CacheOptions(failOpen: false),
+    atomicMode: true,
+);
+$peer = Cache::scylla(
+    'release-cql-atomic',
+    bucketCount: 16,
+    options: new CacheOptions(failOpen: false),
+    atomicMode: true,
+);
+$atomic = $coordination->atomic() ?? throw new RuntimeException('Scylla LWT capability unavailable.');
+$other = $peer->atomic() ?? throw new RuntimeException('Scylla peer LWT capability unavailable.');
+$assert($coordination->clear(), 'Scylla LWT initial clear failed.');
+$assert($atomic->setIfAbsent('claim', "a\\0\\xff", 60), 'Scylla LWT claim failed.');
+$assert(!$other->setIfAbsent('claim', 'other', 60), 'Scylla LWT allowed a second winner.');
+$assert(!$other->compareAndSet('claim', 'wrong', 'bad'), 'Scylla LWT accepted incorrect comparison.');
+$assert($other->compareAndSet('claim', "a\\0\\xff", 'updated'), 'Scylla LWT CAS failed.');
+$assert($coordination->get('claim') === 'updated', 'Scylla SERIAL read did not observe LWT write.');
+$assert($coordination->set('claim', 'ordinary'), 'Scylla LWT-mode ordinary write failed.');
+$assert($other->getAndDelete('claim') === 'ordinary', 'Scylla LWT consume failed.');
+$assert($atomic->getAndDelete('claim', 'missing') === 'missing', 'Scylla LWT consumed twice.');
+$assert($atomic->setIfAbsent('ttl', 'old', 1), 'Scylla LWT TTL write failed.');
+usleep(2_000_000);
+$assert($other->setIfAbsent('ttl', 'fresh', 60), 'Scylla LWT expired entry could not be reclaimed.');
+$assert($peer->get('ttl') === 'fresh', 'Scylla LWT reclaimed value is missing.');
+$assert($coordination->setMultiple(['batch-a' => 1, 'batch-b' => 2]), 'Scylla LWT batch write failed.');
+$assert($peer->getMultiple(['batch-a', 'batch-b']) === ['batch-a' => 1, 'batch-b' => 2], 'Scylla LWT batch read failed.');
+$assert($peer->deleteMultiple(['batch-a', 'batch-b']), 'Scylla LWT batch delete failed.');
+$assert($coordination->clear(), 'Scylla LWT clear failed.');
+$assert(!$peer->has('ttl'), 'Scylla LWT clear left a value.');
+
+fwrite(STDOUT, "CacheLayer real Scylla CQL and LWT smoke passed.\n");

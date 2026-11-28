@@ -24,8 +24,11 @@ trait ScyllaAtomicOperations
             return false;
         }
         $row = $this->atomicRow($key);
-        $record = $row === null ? null : $this->decodeRecordFromBlob($row, $key);
-        if (!$record instanceof CacheRecord || $record->tags !== [] || $record->value !== $expected || $row === null) {
+        if ($row === null) {
+            return false;
+        }
+        $record = $this->decodeRecordFromBlob($row, $key);
+        if (!$record instanceof CacheRecord || $record->tags !== [] || $record->value !== $expected) {
             return false;
         }
 

@@ -56,6 +56,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements Conditi
 
     /**
      * @throws RuntimeException
+     * @throws \Throwable
      */
     #[\Override]
     public function clear(): bool
@@ -81,6 +82,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements Conditi
     /**
      * @throws RuntimeException
      * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \Throwable
      */
     #[\Override]
     public function deleteItem(string $key): bool
@@ -104,6 +106,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements Conditi
      * @phpstan-param array<array-key, string> $keys
      * @throws RuntimeException
      * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \Throwable
      */
     #[\Override]
     public function deleteItems(array $keys): bool
@@ -258,6 +261,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements Conditi
 
     /**
      * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \Throwable
      */
     #[\Override]
     public function save(CacheItemInterface $item): bool
@@ -291,6 +295,7 @@ final class ScyllaDbCacheAdapter extends AbstractCacheAdapter implements Conditi
      * @throws \Psr\Cache\InvalidArgumentException
      * @throws RuntimeException
      * @throws \InvalidArgumentException
+     * @throws \Throwable
      */
     #[\Override]
     public function saveItems(array $items): bool

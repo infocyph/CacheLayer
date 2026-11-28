@@ -13,7 +13,6 @@ final class PdoCacheSchema
 {
     /**
      * @throws RuntimeException
-     * @throws Throwable
      */
     public static function install(PDO $pdo, string $table = 'cachelayer_entries'): void
     {
@@ -88,7 +87,6 @@ final class PdoCacheSchema
 
     /**
      * @throws PDOException
-     * @throws Throwable
      */
     private static function installPostgres(PDO $pdo, string $table, string $identifier, string $payload): void
     {
@@ -109,7 +107,7 @@ final class PdoCacheSchema
             if ($ownsTransaction) {
                 $pdo->commit();
             }
-        } catch (Throwable $failure) {
+        } catch (PDOException $failure) {
             try {
                 if ($ownsTransaction && $pdo->inTransaction()) {
                     $pdo->rollBack();

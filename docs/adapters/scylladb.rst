@@ -51,4 +51,6 @@ this namespace. Conditional failure retries are bounded; a missing
 ``[applied]`` result or transport exception is never replayed blindly.
 Bulk operations and clear apply per row, not as a global transaction.
 The injected session must honor the native driver consistency options.
-The existing hosted Alternator probe does not certify CQL LWT behavior.
+The hosted native CQL release smoke exercises these operations on PHP 8.4
+and 8.5. PHP 8.6 native-driver certification remains unavailable until an
+upstream binary is provided.
