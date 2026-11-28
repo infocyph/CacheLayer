@@ -105,7 +105,7 @@ trait PdoAtomicOperations
             }
 
             return $this->atomicInsertIfMissing($key, $payload, $expiration['expiresAt']);
-        }, retryInsert: true);
+        });
     }
 
     public function supportsAtomicCache(): bool
@@ -147,7 +147,7 @@ trait PdoAtomicOperations
             $sql = "INSERT INTO {$this->table} (namespace, kind, cache_key, payload, expires) "
                 . 'VALUES (?, ?, ?, ?, ?) ON CONFLICT (namespace, kind, cache_key) DO NOTHING';
         } else {
-            $sql = "INSERT IGNORE INTO {$this->table} "
+            $sql = "INSERT INTO {$this->table} "
                 . '(namespace, kind, cache_key, payload, expires) VALUES (?, ?, ?, ?, ?)';
         }
         $statement = $this->pdo->prepare($sql);
@@ -159,26 +159,21 @@ trait PdoAtomicOperations
             $this->bindExpiration($statement, 5, $expires);
             $statement->execute();
         } else {
-            $statement->execute([$this->namespace, self::KIND_DATA, $key, $payload, $expires]);
+            try {
+                $statement->execute([$this->namespace, self::KIND_DATA, $key, $payload, $expires]);
+            } catch (PDOException $failure) {
+                if (in_array($this->driver, ['mysql', 'mariadb'], true)
+                    && ($failure->errorInfo[0] ?? null) === '23000'
+                    && in_array($failure->errorInfo[1] ?? null, [1062, '1062'], true)
+                    && $this->atomicFetchRow($key) !== null) {
+                    return false;
+                }
+
+                throw $failure;
+            }
         }
 
         return $statement->rowCount() === 1;
-    }
-
-    private function isRetryableInsertFailure(Throwable $failure): bool
-    {
-        if (!$failure instanceof PDOException) {
-            return false;
-        }
-
-        $state = $failure->errorInfo[0] ?? null;
-
-        return match ($this->driver) {
-            'pgsql' => in_array($state, ['40001', '40P01'], true),
-            'mysql', 'mariadb' => $state === '40001'
-                && in_array($failure->errorInfo[1] ?? null, [1213, '1213'], true),
-            default => false,
-        };
     }
 
     /** @param array{payload:string, expires:int|null} $row */
@@ -217,21 +212,24 @@ trait PdoAtomicOperations
      * @throws RuntimeException
      * @throws Throwable
      */
-    private function atomicTransaction(callable $callback, bool $retryInsert = false): mixed
+    private function atomicTransaction(callable $callback): mixed
     {
         if ($this->pdo->inTransaction()) {
             throw new RuntimeException('Atomic PDO cache operations require ownership of the PDO transaction.');
         }
 
         $sqlite = $this->driver === 'sqlite';
+        $deadline = hrtime(true) + 5_000_000_000;
+        $options = $this->options();
         for ($attempt = 0; ; ++$attempt) {
-            if ($sqlite) {
-                $this->pdo->exec('BEGIN IMMEDIATE');
-            } else {
-                $this->pdo->beginTransaction();
-            }
-
+            $started = false;
             try {
+                if ($sqlite) {
+                    $this->pdo->exec('BEGIN IMMEDIATE');
+                } else {
+                    $this->pdo->beginTransaction();
+                }
+                $started = true;
                 $result = $callback();
                 if ($sqlite) {
                     $this->pdo->exec('COMMIT');
@@ -241,24 +239,16 @@ trait PdoAtomicOperations
 
                 return $result;
             } catch (Throwable $failure) {
-                try {
-                    if ($sqlite) {
-                        $this->pdo->exec('ROLLBACK');
-                    } elseif ($this->pdo->inTransaction() && !$this->pdo->rollBack()) {
-                        throw $failure;
-                    }
-                } catch (Throwable) {
-                    // An unconfirmed rollback must not be retried.
+                if ($started && !$this->rollbackAtomicTransaction($sqlite)) {
+                    throw $failure;
+                }
+                if ((!$started && !$sqlite) || $attempt >= 7 || hrtime(true) >= $deadline
+                    || $options->allowObjects || $options->allowClosures
+                    || !$this->isRetryableAtomicFailure($failure)) {
                     throw $failure;
                 }
 
-                if (!$retryInsert || $attempt >= 7 || !$this->isRetryableInsertFailure($failure)
-                    || $this->pdo->inTransaction()) {
-                    throw $failure;
-                }
-
-                // Only definitive transaction-abort errors reach this point.
-                // Re-read authoritative state in a fresh owned transaction.
+                // Re-read authoritative state only after a definitive abort.
                 usleep(mt_rand(500, 1_000) * ($attempt + 1));
             }
         }
@@ -283,4 +273,35 @@ trait PdoAtomicOperations
 
         return $statement->execute();
     }
+
+    private function isRetryableAtomicFailure(Throwable $failure): bool
+    {
+        if (!$failure instanceof PDOException) {
+            return false;
+        }
+
+        return match ($this->driver) {
+            'pgsql' => in_array($failure->errorInfo[0] ?? null, ['40001', '40P01'], true),
+            'mysql', 'mariadb' => (($failure->errorInfo[0] ?? null) === '40001'
+                && in_array($failure->errorInfo[1] ?? null, [1213, '1213'], true))
+                || (($failure->errorInfo[0] ?? null) === 'HY000'
+                    && in_array($failure->errorInfo[1] ?? null, [1205, '1205'], true)),
+            'sqlite' => in_array($failure->errorInfo[1] ?? null, [5, '5', 261, '261', 517, '517', 773, '773'], true),
+            default => false,
+        };
+    }
+
+    private function rollbackAtomicTransaction(bool $sqlite): bool
+    {
+        try {
+            if ($sqlite) {
+                return $this->pdo->exec('ROLLBACK') !== false;
+            }
+
+            return !$this->pdo->inTransaction() || $this->pdo->rollBack();
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
 }

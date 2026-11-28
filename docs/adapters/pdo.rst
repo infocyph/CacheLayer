@@ -113,11 +113,16 @@ transaction, the lock stays held until that transaction ends. PostgreSQL cache
 payload writes bind binary values explicitly so embedded NUL bytes and
 non-UTF-8 bytes are preserved by BYTEA storage.
 
-Conditional inserts retry only definitive transaction-abort errors: MySQL/MariaDB
-SQLSTATE 40001 with native error 1213, or PostgreSQL SQLSTATE 40001 (serialization
-failure) and 40P01 (deadlock). Each retry follows confirmed rollback and performs
-a fresh authoritative read, with bounded jittered delay and at most eight total
-attempts. Other database errors and unknown commit outcomes are not retried.
-Atomic mutations require ownership of the PDO transaction; caller-owned
-transactions are rejected rather than rolled back or retried. PostgreSQL uses
-explicit signed integer arguments for its two-key session advisory locks.
+Atomic PDO operations (conditional insert, compare-and-set and consume) retry
+only classified transaction-abort or contention errors: MySQL/MariaDB 40001
+with native error 1213, HY000 with native error 1205, PostgreSQL 40001 and 40P01,
+and SQLite BUSY (including recognized extended BUSY codes). A started
+transaction must be rolled back before replay; unknown commit outcomes and
+other errors are not retried. Attempts are limited to eight, with jitter and
+a five-second retry scheduling budget. The budget does not interrupt an
+in-flight database call; configure database lock/statement timeouts separately.
+SQLite retains its native busy timeout and will not start another attempt once
+the retry budget is exhausted. Retry is disabled when object or Closure
+payloads are enabled to avoid repeated user serialization hooks.
+Caller-owned transactions are rejected rather than rolled back or replayed.
+PostgreSQL uses explicit signed integer arguments for two-key advisory locks.

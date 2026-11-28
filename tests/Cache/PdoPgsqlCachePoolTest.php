@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Infocyph\CacheLayer\Tests\Cache;
 
-use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Cache\Adapter\PdoCacheAdapter;
-use Infocyph\CacheLayer\Tests\Support\CacheFixture;
-use PDOException;
 use Infocyph\CacheLayer\Cache\Adapter\PdoCacheSchema;
+use Infocyph\CacheLayer\Cache\Cache;
 use Infocyph\CacheLayer\Cache\Lock\PdoLockProvider;
+use Infocyph\CacheLayer\Tests\Support\CacheFixture;
 use PDO;
+use PDOException;
 use RuntimeException;
 use Throwable;
 
@@ -177,7 +177,7 @@ test('PostgreSQL independent conditional inserts elect one winner on existing sc
     }
 })->with([false, true]);
 
-test('PostgreSQL conditional inserts recover only from bounded transaction aborts', function (string $key, int $attempts, bool $success) use ($dsn, $user, $pass): void {
+test('PostgreSQL conditional inserts recover only from bounded transaction aborts', function (string $key, int $attempts, bool $success, string $operation) use ($dsn, $user, $pass): void {
     $pdo = new PDO($dsn, $user, $pass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
     $pdo->exec('CREATE TEMP TABLE cachelayer_retry_test (namespace TEXT NOT NULL, kind TEXT NOT NULL, cache_key TEXT NOT NULL, payload BYTEA NOT NULL, expires BIGINT, PRIMARY KEY (namespace, kind, cache_key))');
     $pdo->exec('CREATE TEMP SEQUENCE cachelayer_retry_attempts');
@@ -197,13 +197,18 @@ test('PostgreSQL conditional inserts recover only from bounded transaction abort
         END;
         $$
         SQL);
-    $pdo->exec('CREATE TRIGGER cachelayer_retry_failure BEFORE INSERT ON cachelayer_retry_test FOR EACH ROW EXECUTE FUNCTION pg_temp.cachelayer_retry_failure()');
     $adapter = new PdoCacheAdapter('retry-test', $dsn, pdo: $pdo, table: 'cachelayer_retry_test', initializeSchema: false);
-    $item = $adapter->getItem($key);
-    $item->set(42);
+    if ($operation !== 'insert') {
+        expect($adapter->save($adapter->createItem($key)->set(1)))->toBeTrue();
+    }
+    $pdo->exec('CREATE TRIGGER cachelayer_retry_failure BEFORE INSERT OR UPDATE ON cachelayer_retry_test FOR EACH ROW EXECUTE FUNCTION pg_temp.cachelayer_retry_failure()');
+    $item = $adapter->createItem($key)->set(42);
 
     if ($success) {
-        expect($adapter->atomicSetIfAbsent($item))->toBeTrue()
+        $stored = $operation === 'insert'
+            ? $adapter->atomicSetIfAbsent($item)
+            : $adapter->atomicCompareAndSet($key, 1, $item);
+        expect($stored)->toBeTrue()
             ->and($adapter->getItem($key)->get())->toBe(42);
     } else {
         try {
@@ -218,10 +223,12 @@ test('PostgreSQL conditional inserts recover only from bounded transaction abort
     expect($pdo->inTransaction())->toBeFalse()
         ->and(CacheFixture::countRows($pdo, 'SELECT last_value FROM pg_temp.cachelayer_retry_attempts'))->toBe($attempts);
 })->with([
-    ['serialization', 2, true],
-    ['deadlock', 2, true],
-    ['exhausted', 8, false],
-    ['permanent', 1, false],
+    ['serialization', 2, true, 'insert'],
+    ['deadlock', 2, true, 'insert'],
+    ['exhausted', 8, false, 'insert'],
+    ['permanent', 1, false, 'insert'],
+    ['serialization', 2, true, 'compare'],
+    ['deadlock', 2, true, 'compare'],
 ]);
 
 test('PostgreSQL native advisory lock is released on session loss', function () use ($dsn, $user, $pass): void {
@@ -237,9 +244,9 @@ test('PostgreSQL native advisory lock is released on session loss', function () 
         ->and($contender->acquire($key, 0.0))->toBeNull();
 
     $pid = CacheFixture::countRows($pdo, 'SELECT pg_backend_pid()');
-    $statement = $peer->prepare('SELECT pg_terminate_backend(CAST(? AS integer))');
+    $statement = $peer->prepare('SELECT CAST(pg_terminate_backend(CAST(? AS integer)) AS integer)');
     $statement->execute([$pid]);
-    expect($statement->fetchColumn())->toBeTrue();
+    expect((int) $statement->fetchColumn())->toBe(1);
     $statement->closeCursor();
 
     $replacement = $contender->acquire($key, 2.0);
