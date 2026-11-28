@@ -85,6 +85,14 @@ trait ScyllaAtomicOperations
         return $this->atomicMode;
     }
 
+    /** @throws RuntimeException */
+    private function assertAtomicUntagged(CacheItemInterface $item): void
+    {
+        if ($item instanceof CacheItem && $item->getTagGenerations() !== []) {
+            throw new RuntimeException('ScyllaDB atomic namespaces require untagged entries.');
+        }
+    }
+
     /**
      * @param array<int, mixed> $arguments
      * @throws RuntimeException
@@ -170,14 +178,6 @@ trait ScyllaAtomicOperations
         }
 
         return $payload;
-    }
-
-    /** @throws RuntimeException */
-    private function assertAtomicUntagged(CacheItemInterface $item): void
-    {
-        if ($item instanceof CacheItem && $item->getTagGenerations() !== []) {
-            throw new RuntimeException('ScyllaDB atomic namespaces require untagged entries.');
-        }
     }
 
     /** @throws \Throwable */

@@ -69,7 +69,7 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
         $driver = $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
         $this->driver = is_string($driver) ? $driver : '';
         if ($this->driver === 'sqlite') {
-            $this->pdo->exec('PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;');
+            $this->configureSqlite();
         }
         if ($initializeSchema) {
             PdoCacheSchema::install($this->pdo, $this->table);
@@ -307,6 +307,26 @@ final class PdoCacheAdapter extends AbstractCacheAdapter implements ConditionalA
     private function bindExpiration(PDOStatement $statement, int $position, ?int $expires): void
     {
         $statement->bindValue($position, $expires, $expires === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
+    }
+
+    /** @throws PDOException */
+    private function configureSqlite(): void
+    {
+        $this->pdo->exec('PRAGMA busy_timeout=5000');
+        $deadline = hrtime(true) + 5_000_000_000;
+        for ($attempt = 0; ; ++$attempt) {
+            try {
+                $this->pdo->exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;');
+
+                return;
+            } catch (PDOException $failure) {
+                if ($attempt >= 7 || hrtime(true) >= $deadline || !$this->isRetryableAtomicFailure($failure)) {
+                    throw $failure;
+                }
+
+                usleep(mt_rand(10_000, 20_000) * ($attempt + 1));
+            }
+        }
     }
 
     /** @param list<string> $keys */

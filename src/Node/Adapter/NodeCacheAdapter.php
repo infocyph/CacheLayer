@@ -6,8 +6,8 @@ namespace Infocyph\CacheLayer\Node\Adapter;
 
 use Infocyph\CacheLayer\Cache\Adapter\AbstractCacheAdapter;
 use Infocyph\CacheLayer\Cache\Adapter\AtomicCachePoolInterface;
-use Infocyph\CacheLayer\Cache\Adapter\DelegatesAtomicOperations;
 use Infocyph\CacheLayer\Cache\Adapter\ConditionalAtomicCachePoolInterface;
+use Infocyph\CacheLayer\Cache\Adapter\DelegatesAtomicOperations;
 use Infocyph\CacheLayer\Cache\Adapter\InternalCachePoolInterface;
 use Infocyph\CacheLayer\Cache\Adapter\TagGenerationCacheInterface;
 use Infocyph\CacheLayer\Cache\CacheOptions;
@@ -356,6 +356,11 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements Conditional
 
         return $stored;
     }
+    private function atomicAuthority(): ?AtomicCachePoolInterface
+    {
+        return $this->l1 === null ? $this->l2 : null;
+    }
+
     /**
      * @template T
      * @param callable(): T $operation
@@ -376,11 +381,6 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements Conditional
 
             return $fallback;
         }
-    }
-
-    private function atomicAuthority(): ?AtomicCachePoolInterface
-    {
-        return $this->l1 === null ? $this->l2 : null;
     }
 
     private function disableL1(): void

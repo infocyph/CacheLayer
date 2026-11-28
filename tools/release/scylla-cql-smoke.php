@@ -60,10 +60,10 @@ $peer = Cache::scylla(
 $atomic = $coordination->atomic() ?? throw new RuntimeException('Scylla LWT capability unavailable.');
 $other = $peer->atomic() ?? throw new RuntimeException('Scylla peer LWT capability unavailable.');
 $assert($coordination->clear(), 'Scylla LWT initial clear failed.');
-$assert($atomic->setIfAbsent('claim', "a\\0\\xff", 60), 'Scylla LWT claim failed.');
+$assert($atomic->setIfAbsent('claim', "a\0\xff", 60), 'Scylla LWT claim failed.');
 $assert(!$other->setIfAbsent('claim', 'other', 60), 'Scylla LWT allowed a second winner.');
 $assert(!$other->compareAndSet('claim', 'wrong', 'bad'), 'Scylla LWT accepted incorrect comparison.');
-$assert($other->compareAndSet('claim', "a\\0\\xff", 'updated'), 'Scylla LWT CAS failed.');
+$assert($other->compareAndSet('claim', "a\0\xff", 'updated'), 'Scylla LWT CAS failed.');
 $assert($coordination->get('claim') === 'updated', 'Scylla SERIAL read did not observe LWT write.');
 $assert($coordination->set('claim', 'ordinary'), 'Scylla LWT-mode ordinary write failed.');
 $assert($other->getAndDelete('claim') === 'ordinary', 'Scylla LWT consume failed.');

@@ -84,13 +84,8 @@ trait ApcuAtomicOperations
             return true;
         }
         $actual = $this->readTagGenerations(array_map(static fn(int|string $tag): string => (string) $tag, array_keys($tags)));
-        foreach ($tags as $tag => $generation) {
-            if (($actual[$tag] ?? null) !== $generation) {
-                return false;
-            }
-        }
 
-        return true;
+        return array_all($tags, static fn(string $generation, int|string $tag): bool => ($actual[$tag] ?? null) === $generation);
     }
 
     /**
@@ -107,6 +102,7 @@ trait ApcuAtomicOperations
         if ($handle === null) {
             throw new RuntimeException('Unable to acquire APCu atomic namespace lock.');
         }
+
         try {
             return $operation();
         } finally {

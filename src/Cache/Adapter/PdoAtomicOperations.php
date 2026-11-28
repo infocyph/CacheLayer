@@ -227,6 +227,7 @@ trait PdoAtomicOperations
         $deadline = hrtime(true) + 5_000_000_000;
         for ($attempt = 0; ; ++$attempt) {
             $started = false;
+
             try {
                 $this->beginAtomicTransaction($sqlite);
                 $started = true;

@@ -34,7 +34,7 @@ final class TieredCacheAdapter extends AbstractCacheAdapter implements Condition
         if ($pools === []) {
             throw new InvalidArgumentException('A tiered cache requires at least one pool.');
         }
-        $this->pools = $authoritativeOnly ? [$pools[array_key_last($pools)]] : $pools;
+        $this->pools = $authoritativeOnly ? [$pools[count($pools) - 1]] : $pools;
     }
 
     #[\Override]

@@ -600,26 +600,14 @@ test('node SQLite adapter accepts associative PSR-6 delete key arrays', function
 });
 
 
-test('node L2-only cache delegates native SQLite atomic operations', function (): void {
-    $file = sys_get_temp_dir() . '/cachelayer-node-atomic-' . bin2hex(random_bytes(8)) . '.sqlite';
-    $config = new NodeCacheConfig($file, 'atomic-node', apcuEnabled: false);
-    $atomic = $peer = $first = $second = null;
-    try {
-        $first = NodeCache::create($config);
-        $second = NodeCache::create($config);
-        $atomic = $first->atomic() ?? throw new RuntimeException('Atomic node capability required.');
-        $peer = $second->atomic() ?? throw new RuntimeException('Atomic node peer required.');
-        expect($atomic->setIfAbsent('claim', 1))->toBeTrue()
-            ->and($peer->setIfAbsent('claim', 2))->toBeFalse()
-            ->and($peer->compareAndSet('claim', 1, 3))->toBeTrue()
-            ->and($atomic->getAndDelete('claim'))->toBe(3)
-            ->and($second->has('claim'))->toBeFalse();
-    } finally {
-        unset($atomic, $peer, $first, $second);
-        foreach ([$file, $file . '-wal', $file . '-shm'] as $path) {
-            if (is_file($path)) {
-                unlink($path);
-            }
-        }
-    }
+test('node L2-only cache delegates native SQLite atomic operations', function () use (&$nodeFixtureConfig): void {
+    $first = NodeCache::create($nodeFixtureConfig);
+    $second = NodeCache::create($nodeFixtureConfig);
+    $atomic = $first->atomic() ?? throw new RuntimeException('Atomic node capability required.');
+    $peer = $second->atomic() ?? throw new RuntimeException('Atomic node peer required.');
+    expect($atomic->setIfAbsent('claim', 1))->toBeTrue()
+        ->and($peer->setIfAbsent('claim', 2))->toBeFalse()
+        ->and($peer->compareAndSet('claim', 1, 3))->toBeTrue()
+        ->and($atomic->getAndDelete('claim'))->toBe(3)
+        ->and($second->has('claim'))->toBeFalse();
 });

@@ -93,13 +93,8 @@ trait NodeSqliteAtomicOperations
             return true;
         }
         $actual = $this->readTagGenerations(array_map(static fn(int|string $tag): string => (string) $tag, array_keys($tags)));
-        foreach ($tags as $tag => $generation) {
-            if (($actual[$tag] ?? null) !== $generation) {
-                return false;
-            }
-        }
 
-        return true;
+        return array_all($tags, static fn(string $generation, int|string $tag): bool => ($actual[$tag] ?? null) === $generation);
     }
 
     /**
@@ -117,6 +112,7 @@ trait NodeSqliteAtomicOperations
             throw new NodeCacheStorageException('Unable to begin node atomic transaction.');
         }
         $this->ownsTransaction = true;
+
         try {
             $result = $operation();
             if ($this->connection->exec('COMMIT') === false) {
