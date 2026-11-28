@@ -540,8 +540,11 @@ final class MongoDbCacheAdapter extends AbstractCacheAdapter implements AtomicCa
     private function tryAtomicInsert(string $id, array $replacement): bool
     {
         try {
-            $result = $this->collection->insertOne(['_id' => $id, ...$replacement]);
-            if (AdapterValueNormalizer::mongoWriteCount($result, 'getInsertedCount') !== 1) {
+            $insert = [$this->collection, 'insertOne'];
+            if (!is_callable($insert)) {
+                throw new RuntimeException('MongoDB atomic insert is unavailable.');
+            }
+            if (AdapterValueNormalizer::mongoWriteCount($insert(['_id' => $id, ...$replacement]), 'getInsertedCount') !== 1) {
                 throw new RuntimeException('MongoDB atomic insert was not confirmed.');
             }
 

@@ -162,16 +162,11 @@ final class TieredCacheAdapter extends AbstractCacheAdapter implements Condition
     /**
      * @param list<string> $tags
      * @return array<int|string, string>
-     * @throws LogicException
      */
     #[\Override]
     public function getTagGenerations(array $tags): array
     {
-        foreach (array_reverse($this->pools) as $authoritative) {
-            return $authoritative->getTagGenerations($tags);
-        }
-
-        throw new LogicException('A tiered cache must retain an authoritative pool.');
+        return $this->pools[count($this->pools) - 1]->getTagGenerations($tags);
     }
 
     #[\Override]
