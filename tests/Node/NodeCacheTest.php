@@ -603,6 +603,7 @@ test('node SQLite adapter accepts associative PSR-6 delete key arrays', function
 test('node L2-only cache delegates native SQLite atomic operations', function (): void {
     $file = sys_get_temp_dir() . '/cachelayer-node-atomic-' . bin2hex(random_bytes(8)) . '.sqlite';
     $config = new NodeCacheConfig($file, 'atomic-node', apcuEnabled: false);
+    $atomic = $peer = $first = $second = null;
     try {
         $first = NodeCache::create($config);
         $second = NodeCache::create($config);

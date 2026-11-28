@@ -135,6 +135,7 @@ LUA;
 
     /**
      * @throws CacheInvalidArgumentException
+     * @throws RuntimeException
      */
     #[\Override]
     public function atomicGetAndDelete(string $key): CacheItemInterface
@@ -467,7 +468,7 @@ LUA;
         if ($stored === true) {
             return true;
         }
-        if ($stored !== false || $this->redis->getLastError() !== null) {
+        if ($this->redis->getLastError() !== null) {
             throw new RuntimeException('Redis conditional set failed or has an unknown outcome.');
         }
 

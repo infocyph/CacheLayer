@@ -47,6 +47,10 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements Conditional
         }
     }
 
+    /**
+     * @throws Throwable
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     #[\Override]
     public function atomicCompareAndSet(string $key, mixed $expected, CacheItemInterface $replacement): bool
     {
@@ -57,6 +61,10 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements Conditional
         return $this->l2->atomicCompareAndSet($key, $expected, $this->copyItemTo($this->l2, $replacement));
     }
 
+    /**
+     * @throws Throwable
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     #[\Override]
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
@@ -69,6 +77,10 @@ final class NodeCacheAdapter extends AbstractCacheAdapter implements Conditional
         return $item->isHit() ? $this->nodeItem($item) : $this->genericMiss($key);
     }
 
+    /**
+     * @throws Throwable
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     #[\Override]
     public function atomicSetIfAbsent(CacheItemInterface $item): bool
     {

@@ -115,6 +115,7 @@ LUA;
 
     /**
      * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \RuntimeException
      */
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {

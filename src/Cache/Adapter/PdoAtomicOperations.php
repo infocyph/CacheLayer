@@ -143,6 +143,9 @@ trait PdoAtomicOperations
         ];
     }
 
+    /**
+     * @throws PDOException
+     */
     private function atomicInsertIfMissing(string $key, string $payload, ?int $expires): bool
     {
         if (in_array($this->driver, ['pgsql', 'sqlite'], true)) {
@@ -222,30 +225,20 @@ trait PdoAtomicOperations
 
         $sqlite = $this->driver === 'sqlite';
         $deadline = hrtime(true) + 5_000_000_000;
-        $options = $this->options();
         for ($attempt = 0; ; ++$attempt) {
             $started = false;
             try {
-                $started = $sqlite
-                    ? $this->pdo->exec('BEGIN IMMEDIATE') !== false
-                    : $this->pdo->beginTransaction();
-                if (!$started) {
-                    throw new RuntimeException('Unable to begin atomic PDO cache transaction.');
-                }
+                $this->beginAtomicTransaction($sqlite);
+                $started = true;
                 $result = $callback();
-                $committed = $sqlite ? $this->pdo->exec('COMMIT') !== false : $this->pdo->commit();
-                if (!$committed) {
-                    throw new RuntimeException('Unable to commit atomic PDO cache transaction.');
-                }
+                $this->commitAtomicTransaction($sqlite);
 
                 return $result;
             } catch (Throwable $failure) {
                 if ($started && !$this->rollbackAtomicTransaction($sqlite)) {
                     throw $failure;
                 }
-                if ((!$started && !$sqlite) || $attempt >= 7 || hrtime(true) >= $deadline
-                    || $options->allowObjects || $options->allowClosures
-                    || !$this->isRetryableAtomicFailure($failure)) {
+                if (!$this->canRetryAtomicFailure($failure, $started || $sqlite, $attempt, $deadline)) {
                     throw $failure;
                 }
 
@@ -273,6 +266,30 @@ trait PdoAtomicOperations
         $statement->bindValue(5, $key, PDO::PARAM_STR);
 
         return $statement->execute();
+    }
+
+    /** @throws RuntimeException */
+    private function beginAtomicTransaction(bool $sqlite): void
+    {
+        if (!($sqlite ? $this->pdo->exec('BEGIN IMMEDIATE') !== false : $this->pdo->beginTransaction())) {
+            throw new RuntimeException('Unable to begin atomic PDO cache transaction.');
+        }
+    }
+
+    private function canRetryAtomicFailure(Throwable $failure, bool $retryablePhase, int $attempt, int $deadline): bool
+    {
+        $options = $this->options();
+
+        return $retryablePhase && $attempt < 7 && hrtime(true) < $deadline
+            && !$options->allowObjects && !$options->allowClosures && $this->isRetryableAtomicFailure($failure);
+    }
+
+    /** @throws RuntimeException */
+    private function commitAtomicTransaction(bool $sqlite): void
+    {
+        if (!($sqlite ? $this->pdo->exec('COMMIT') !== false : $this->pdo->commit())) {
+            throw new RuntimeException('Unable to commit atomic PDO cache transaction.');
+        }
     }
 
     private function isRetryableAtomicFailure(Throwable $failure): bool

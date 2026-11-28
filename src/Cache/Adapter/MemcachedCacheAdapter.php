@@ -95,6 +95,7 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
 
     /**
      * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws RuntimeException
      */
     #[\Override]
     public function atomicGetAndDelete(string $key): CacheItemInterface
@@ -424,7 +425,10 @@ final class MemcachedCacheAdapter extends AbstractCacheAdapter implements Atomic
         );
     }
 
-    /** @return array{value:string, cas:string|int|float}|null */
+    /**
+     * @return array{value:string, cas:string|int|float}|null
+     * @throws RuntimeException
+     */
     private function extendedGet(string $key): ?array
     {
         $value = $this->client->get($key, null, \Memcached::GET_EXTENDED);

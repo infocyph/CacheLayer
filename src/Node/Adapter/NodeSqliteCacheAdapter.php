@@ -55,6 +55,11 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements Atomi
         );
     }
 
+    /**
+     * @throws Throwable
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws NodeCacheStorageException
+     */
     #[\Override]
     public function atomicCompareAndSet(string $key, mixed $expected, CacheItemInterface $replacement): bool
     {
@@ -76,6 +81,11 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements Atomi
         });
     }
 
+    /**
+     * @throws Throwable
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws NodeCacheStorageException
+     */
     #[\Override]
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
@@ -91,6 +101,11 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements Atomi
         });
     }
 
+    /**
+     * @throws Throwable
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws NodeCacheStorageException
+     */
     #[\Override]
     public function atomicSetIfAbsent(CacheItemInterface $item): bool
     {
@@ -218,6 +233,7 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements Atomi
                 ':current_time' => time(),
             ]);
             $row = $this->lookupStatement->fetch();
+            $this->lookupStatement->closeCursor();
         } catch (PDOException $exception) {
             throw $this->storageException("Unable to read node SQLite cache key '{$key}'.", $exception);
         }
@@ -502,7 +518,10 @@ final class NodeSqliteCacheAdapter extends AbstractCacheAdapter implements Atomi
         return $this->upsertRows($rows);
     }
 
-    /** @throws NodeCacheStorageException */
+    /**
+     * @throws NodeCacheStorageException
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     */
     private function atomicTagsCurrent(CacheItem $item): bool
     {
         $tags = $item->getTagGenerations();

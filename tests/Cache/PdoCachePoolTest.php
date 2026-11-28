@@ -128,6 +128,7 @@ test('SQLite independent workers initialize a fresh database and share one cold 
 test('SQLite atomic busy exhaustion leaves the connection usable', function (): void {
     $file = sys_get_temp_dir() . '/cachelayer-busy-' . bin2hex(random_bytes(8)) . '.sqlite';
     $dsn = 'sqlite:' . $file;
+    $adapter = $peer = $holder = null;
     try {
         $holder = new PDO($dsn, options: [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
         $peer = new PDO($dsn, options: [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);

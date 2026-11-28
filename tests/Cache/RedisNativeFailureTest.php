@@ -97,6 +97,11 @@ final class RedisNativeFailureTest extends TestCase
         self::assertFalse($adapter->saveItems(['expires' => $item]));
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \LogicException
+     * @throws RuntimeException
+     */
     public function testAtomicConsumeDistinguishesMissFromBackendFailure(): void
     {
         $client = $this->createMock(Redis::class);

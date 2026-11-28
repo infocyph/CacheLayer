@@ -13,6 +13,7 @@ final class PdoCacheSchema
 {
     /**
      * @throws RuntimeException
+     * @throws Throwable
      */
     public static function install(PDO $pdo, string $table = 'cachelayer_entries'): void
     {
@@ -85,7 +86,10 @@ final class PdoCacheSchema
         $pdo->exec("CREATE INDEX IF NOT EXISTS {$index} ON {$table}(namespace, kind, expires)");
     }
 
-    /** @throws PDOException */
+    /**
+     * @throws PDOException
+     * @throws Throwable
+     */
     private static function installPostgres(PDO $pdo, string $table, string $identifier, string $payload): void
     {
         $ownsTransaction = !$pdo->inTransaction();

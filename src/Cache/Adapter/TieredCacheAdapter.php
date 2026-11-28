@@ -57,6 +57,10 @@ final class TieredCacheAdapter extends AbstractCacheAdapter implements Condition
         }
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \Psr\Cache\InvalidArgumentException
+     */
     #[\Override]
     public function atomicCompareAndSet(string $key, mixed $expected, CacheItemInterface $replacement): bool
     {
@@ -66,6 +70,10 @@ final class TieredCacheAdapter extends AbstractCacheAdapter implements Condition
             && $pool->atomicCompareAndSet($key, $expected, $this->atomicTarget($pool, $replacement));
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \Psr\Cache\InvalidArgumentException
+     */
     #[\Override]
     public function atomicGetAndDelete(string $key): CacheItemInterface
     {
@@ -79,6 +87,10 @@ final class TieredCacheAdapter extends AbstractCacheAdapter implements Condition
         return $item->isHit() ? $this->copyItem($item) : $this->genericMiss($key);
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \Psr\Cache\InvalidArgumentException
+     */
     #[\Override]
     public function atomicSetIfAbsent(CacheItemInterface $item): bool
     {
@@ -302,12 +314,16 @@ final class TieredCacheAdapter extends AbstractCacheAdapter implements Condition
         if (!$this->authoritativeOnly && count($this->pools) !== 1) {
             return null;
         }
-        $pool = $this->pools[array_key_last($this->pools)];
+        $pool = $this->pools[count($this->pools) - 1];
 
         return $pool instanceof AtomicCachePoolInterface
             && (!$pool instanceof ConditionalAtomicCachePoolInterface || $pool->supportsAtomicCache()) ? $pool : null;
     }
 
+    /**
+     * @throws \Infocyph\CacheLayer\Exceptions\CacheInvalidArgumentException
+     * @throws \Psr\Cache\InvalidArgumentException
+     */
     private function atomicTarget(InternalCachePoolInterface $pool, CacheItemInterface $item): CacheItemInterface
     {
         $target = $pool->createItem($item->getKey())->set($item->get());
