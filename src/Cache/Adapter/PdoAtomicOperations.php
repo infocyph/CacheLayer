@@ -165,6 +165,31 @@ trait PdoAtomicOperations
         return $statement->rowCount() === 1;
     }
 
+    /**
+     * @param callable(): bool $callback
+     * @throws Throwable
+     */
+    private function atomicInsertTransaction(callable $callback): bool
+    {
+        for ($attempt = 0; ; ++$attempt) {
+            try {
+                return $this->atomicTransaction($callback);
+            } catch (PDOException $failure) {
+                if ($attempt >= 7
+                    || !in_array($this->driver, ['mysql', 'mariadb'], true)
+                    || ($failure->errorInfo[0] ?? null) !== '40001'
+                    || !in_array($failure->errorInfo[1] ?? null, [1213, '1213'], true)
+                    || $this->pdo->inTransaction()) {
+                    throw $failure;
+                }
+
+                // InnoDB error 1213 rolls back the whole transaction. A fresh
+                // transaction must re-read state; never retry unknown outcomes.
+                usleep(1_000 * ($attempt + 1));
+            }
+        }
+    }
+
     /** @param array{payload:string, expires:int|null} $row */
     private function atomicRecordFromRow(string $key, array $row): ?CacheRecord
     {
@@ -192,31 +217,6 @@ trait PdoAtomicOperations
         }
 
         return true;
-    }
-
-    /**
-     * @param callable(): bool $callback
-     * @throws Throwable
-     */
-    private function atomicInsertTransaction(callable $callback): bool
-    {
-        for ($attempt = 0; ; ++$attempt) {
-            try {
-                return $this->atomicTransaction($callback);
-            } catch (PDOException $failure) {
-                if ($attempt >= 7
-                    || !in_array($this->driver, ['mysql', 'mariadb'], true)
-                    || ($failure->errorInfo[0] ?? null) !== '40001'
-                    || !in_array($failure->errorInfo[1] ?? null, [1213, '1213'], true)
-                    || $this->pdo->inTransaction()) {
-                    throw $failure;
-                }
-
-                // InnoDB error 1213 rolls back the whole transaction. A fresh
-                // transaction must re-read state; never retry unknown outcomes.
-                usleep(1_000 * ($attempt + 1));
-            }
-        }
     }
 
     /**
@@ -252,7 +252,7 @@ trait PdoAtomicOperations
             try {
                 if ($sqlite) {
                     $this->pdo->exec('ROLLBACK');
-                } elseif ($this->pdo->inTransaction()) {
+                } else {
                     $this->pdo->rollBack();
                 }
             } catch (Throwable) {
