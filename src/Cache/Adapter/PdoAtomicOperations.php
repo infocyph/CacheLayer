@@ -6,6 +6,7 @@ namespace Infocyph\CacheLayer\Cache\Adapter;
 
 use Infocyph\CacheLayer\Cache\CacheRecord;
 use PDO;
+use PDOException;
 use Psr\Cache\CacheItemInterface;
 use RuntimeException;
 use Throwable;
@@ -90,7 +91,7 @@ trait PdoAtomicOperations
             return false;
         }
 
-        return $this->atomicTransaction(function () use ($item, $expiration): bool {
+        return $this->atomicInsertTransaction(function () use ($item, $expiration): bool {
             $key = $item->getKey();
             $row = $this->atomicFetchRow($key);
             $record = $row === null ? null : $this->atomicRecordFromRow($key, $row);
@@ -194,6 +195,31 @@ trait PdoAtomicOperations
     }
 
     /**
+     * @param callable(): bool $callback
+     * @throws Throwable
+     */
+    private function atomicInsertTransaction(callable $callback): bool
+    {
+        for ($attempt = 0; ; ++$attempt) {
+            try {
+                return $this->atomicTransaction($callback);
+            } catch (PDOException $failure) {
+                if ($attempt >= 7
+                    || !in_array($this->driver, ['mysql', 'mariadb'], true)
+                    || ($failure->errorInfo[0] ?? null) !== '40001'
+                    || !in_array($failure->errorInfo[1] ?? null, [1213, '1213'], true)
+                    || $this->pdo->inTransaction()) {
+                    throw $failure;
+                }
+
+                // InnoDB error 1213 rolls back the whole transaction. A fresh
+                // transaction must re-read state; never retry unknown outcomes.
+                usleep(1_000 * ($attempt + 1));
+            }
+        }
+    }
+
+    /**
      * @template T
      * @param callable(): T $callback
      * @return T
@@ -223,10 +249,14 @@ trait PdoAtomicOperations
 
             return $result;
         } catch (Throwable $failure) {
-            if ($sqlite) {
-                $this->pdo->exec('ROLLBACK');
-            } else {
-                $this->pdo->rollBack();
+            try {
+                if ($sqlite) {
+                    $this->pdo->exec('ROLLBACK');
+                } elseif ($this->pdo->inTransaction()) {
+                    $this->pdo->rollBack();
+                }
+            } catch (Throwable) {
+                // Preserve the original backend failure.
             }
 
             throw $failure;

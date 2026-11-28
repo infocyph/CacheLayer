@@ -76,6 +76,15 @@ final class PdoLockProvider implements LockProviderInterface
     }
 
     /**
+     * Reports the actual coordination provider selected at construction, not a
+     * fallback to use after a native lock failure.
+     */
+    public function effectiveLockProvider(): LockProviderInterface
+    {
+        return self::supportsNativeDriver($this->driver) ? $this : ($this->fallback ?? $this);
+    }
+
+    /**
      * @throws \InvalidArgumentException
      */
     #[\Override]

@@ -72,3 +72,25 @@ test('MySQL bulk preserves binary, null, false, zero and misses', function () us
     }
     expect($pdomysqlFixtureCache->has('missing'))->toBeFalse();
 });
+
+test('MySQL independent conditional inserts elect one persisted winner', function () use ($dsn, $user, $pass): void {
+    $cache = Cache::pdo('mysql-insert-race', $dsn, $user, $pass, table: 'cachelayer_schema_race');
+    $cache->clear();
+
+    try {
+        $results = \Infocyph\CacheLayer\Tests\Support\CacheFixture::cacheRace([
+            'backend' => 'pdo',
+            'operation' => 'insert',
+            'namespace' => 'mysql-insert-race',
+            'dsn' => $dsn,
+            'user' => $user,
+            'password' => $pass,
+        ]);
+        $winners = array_values(array_filter($results, static fn(int $result): bool => $result > 0));
+
+        expect($winners)->toHaveCount(1)
+            ->and($cache->get('race'))->toBe($winners[0] ?? null);
+    } finally {
+        $cache->clear();
+    }
+});

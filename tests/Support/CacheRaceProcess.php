@@ -46,6 +46,7 @@ try {
         $namespace = match ($configuration['namespace']) {
             'sqlite-race' => 'sqlite-race',
             'schema-race' => 'schema-race',
+            'mysql-insert-race' => 'mysql-insert-race',
             default => throw new RuntimeException('Unsupported PDO race namespace.'),
         };
         $cache = Cache::pdo(

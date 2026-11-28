@@ -58,6 +58,11 @@ construction for other PDO drivers; it never falls back to file locking.
 
 The default ``new PdoLockProvider($pdo)`` remains fallback-enabled. It is a
 fallback-backed PDO lock on unsupported drivers, not a distributed PDO lock.
+``effectiveLockProvider()`` exposes the configured coordination provider: the
+PDO provider itself for native drivers, otherwise the exact fallback instance.
+Consumers can select their state-coordination strategy before performing an
+operation. This is not permission to retry a failed native mutation using a
+different lock or to use local file locks for shared multi-host state.
 
 Examples:
 
@@ -107,3 +112,8 @@ and length limit for unquoted table names. When the caller owns the
 transaction, the lock stays held until that transaction ends. PostgreSQL cache
 payload writes bind binary values explicitly so embedded NUL bytes and
 non-UTF-8 bytes are preserved by BYTEA storage.
+
+MySQL/MariaDB conditional insert contention can roll back a transaction with
+SQLSTATE 40001 and native error 1213. Conditional inserts retry only that
+confirmed rollback, at most eight attempts, with a fresh authoritative read.
+Other database errors propagate; unknown commit outcomes are not retried.
