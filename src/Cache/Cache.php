@@ -76,10 +76,10 @@ final class Cache implements AuthenticationStateCacheInterface, AtomicCacheProvi
      * @throws CacheInvalidArgumentException
      * @throws \LogicException
      */
-    public static function apcu(string $namespace = 'default', ?CacheOptions $options = null): self
+    public static function apcu(string $namespace = 'default', ?CacheOptions $options = null, bool $atomicMode = false): self
     {
         return new self(
-            new Adapter\ApcuCacheAdapter($namespace),
+            new Adapter\ApcuCacheAdapter($namespace, $atomicMode),
             new FileLockProvider(),
             options: $options,
             namespace: $namespace,

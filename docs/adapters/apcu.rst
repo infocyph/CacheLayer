@@ -39,3 +39,11 @@ Example
    if ($cache->has('feature_flag.new_checkout')) {
        // fast local hit
    }
+
+Atomic coordination is opt-in via ``Cache::apcu('namespace', atomicMode: true)``.
+All mutations in that namespace share a bounded local filesystem lock because
+APCu cannot compare-and-swap arbitrary serialized strings natively. The default
+mode retains its existing lock-free write path. All consumers of an atomic
+namespace must enable this mode and share the same lock directory and APCu
+segment; direct APCu writes or global APCu resets bypass coordination. APCu
+remains volatile and local, not a distributed authentication-state store.

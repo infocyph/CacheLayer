@@ -20,8 +20,10 @@ use RuntimeException;
  * This This adapter requires the APCu extension to be installed and enabled.
      * @param string $namespace A namespace prefix to avoid key collisions.
  */
-class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCacheInterface
+class ApcuCacheAdapter extends AbstractCacheAdapter implements ConditionalAtomicCachePoolInterface, TagGenerationCacheInterface
 {
+    use ApcuAtomicOperations;
+
     private readonly string $ns;
 
     /**
@@ -32,7 +34,7 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
      * @param string $namespace A namespace prefix to avoid key collisions.
      * @throws CacheInvalidArgumentException
      */
-    public function __construct(string $namespace = 'default')
+    public function __construct(string $namespace = 'default', private readonly bool $atomicMode = false)
     {
         if (!extension_loaded('apcu') || !apcu_enabled()) {
             throw new RuntimeException('APCu extension is not enabled');
@@ -43,24 +45,17 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
     #[\Override]
     public function clear(): bool
     {
-        foreach ($this->listKeys() as $apcuKey) {
-            apcu_delete($apcuKey);
-        }
-        $this->deferred = [];
-
-        return true;
+        return $this->atomicMode
+            ? $this->withAtomicLock(fn(): bool => $this->clearUnlocked())
+            : $this->clearUnlocked();
     }
 
     #[\Override]
     public function deleteItem(string $key): bool
     {
-        $this->discardDeferredKey($key);
-        $mapped = $this->map($key);
-        if (!apcu_exists($mapped)) {
-            return true;
-        }
-
-        return apcu_delete($mapped);
+        return $this->atomicMode
+            ? $this->withAtomicLock(fn(): bool => $this->deleteItemUnlocked($key))
+            : $this->deleteItemUnlocked($key);
     }
 
     /**
@@ -70,13 +65,9 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
     #[\Override]
     public function deleteItems(array $keys): bool
     {
-        $this->discardDeferredKeys($keys);
-        $keys = array_values($keys);
-        if ($keys === []) {
-            return true;
-        }
-
-        return apcu_delete(array_map($this->map(...), $keys)) === [];
+        return $this->atomicMode
+            ? $this->withAtomicLock(fn(): bool => $this->deleteItemsUnlocked($keys))
+            : $this->deleteItemsUnlocked($keys);
     }
 
     #[\Override]
@@ -188,12 +179,9 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
     #[\Override]
     public function rotateTagGenerations(array $tags): bool
     {
-        $generations = [];
-        foreach ($tags as $tag) {
-            $generations[$this->mapTag($tag)] = self::newGeneration();
-        }
-
-        return $generations === [] || apcu_store($generations) === [];
+        return $this->atomicMode
+            ? $this->withAtomicLock(fn(): bool => $this->rotateTagGenerationsUnlocked($tags))
+            : $this->rotateTagGenerationsUnlocked($tags);
     }
 
     /**
@@ -204,20 +192,9 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
     #[\Override]
     public function save(CacheItemInterface $item): bool
     {
-        if (!$this->supportsItem($item)) {
-            throw new CacheInvalidArgumentException('Wrong item type for ApcuCacheAdapter');
-        }
-        $expires = CachePayloadCodec::expirationFromItem($item);
-        $ttl = $expires['ttl'];
-        if ($ttl !== null && $ttl <= 0) {
-            apcu_delete($this->map($item->getKey()));
-
-            return true;
-        }
-
-        $blob = $this->encodeItem($item, $expires['expiresAt']);
-
-        return apcu_store($this->map($item->getKey()), $blob, $ttl ?? 0);
+        return $this->atomicMode
+            ? $this->withAtomicLock(fn(): bool => $this->saveUnlocked($item))
+            : $this->saveUnlocked($item);
     }
 
     /**
@@ -229,47 +206,18 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
     #[\Override]
     public function saveItems(array $items): bool
     {
-        if (!$this->supportsItems($items)) {
-            return false;
-        }
-
-        $groups = [];
-        $expired = [];
-        foreach ($items as $item) {
-            $expiration = CachePayloadCodec::expirationFromItem($item);
-            if ($expiration['ttl'] !== null && $expiration['ttl'] <= 0) {
-                $expired[] = $this->map($item->getKey());
-
-                continue;
-            }
-            $ttl = $expiration['ttl'] ?? 0;
-            $groups[$ttl][$this->map($item->getKey())] = $this->encodeItem($item, $expiration['expiresAt']);
-        }
-
-        if ($expired !== []) {
-            apcu_delete($expired);
-        }
-
-        return array_all(
-            $groups,
-            static fn(array $records, int $ttl): bool => apcu_store($records, null, $ttl) === [],
-        );
+        return $this->atomicMode
+            ? $this->withAtomicLock(fn(): bool => $this->saveItemsUnlocked($items))
+            : $this->saveItemsUnlocked($items);
     }
 
     /** @param array<int|string, string> $generations */
     #[\Override]
     public function storeTagGenerations(array $generations): bool
     {
-        $mapped = [];
-        foreach ($generations as $tag => $generation) {
-            $tag = (string) $tag;
-            if (!self::isGeneration($generation)) {
-                return false;
-            }
-            $mapped[$this->mapTag($tag)] = strtolower($generation);
-        }
-
-        return $mapped === [] || apcu_store($mapped) === [];
+        return $this->atomicMode
+            ? $this->withAtomicLock(fn(): bool => $this->storeTagGenerationsUnlocked($generations))
+            : $this->storeTagGenerationsUnlocked($generations);
     }
 
     /**
@@ -295,6 +243,39 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
         }
 
         return false;
+    }
+
+    private function clearUnlocked(): bool
+    {
+        foreach ($this->listKeys() as $apcuKey) {
+            apcu_delete($apcuKey);
+        }
+        $this->deferred = [];
+
+        return true;
+    }
+
+    private function deleteItemUnlocked(string $key): bool
+    {
+        $this->discardDeferredKey($key);
+        $mapped = $this->map($key);
+        if (!apcu_exists($mapped)) {
+            return true;
+        }
+
+        return apcu_delete($mapped);
+    }
+
+     /** @param array<array-key,string> $keys */
+    private function deleteItemsUnlocked(array $keys): bool
+    {
+        $this->discardDeferredKeys($keys);
+        $keys = array_values($keys);
+        if ($keys === []) {
+            return true;
+        }
+
+        return apcu_delete(array_map($this->map(...), $keys)) === [];
     }
 
     /**
@@ -336,4 +317,78 @@ class ApcuCacheAdapter extends AbstractCacheAdapter implements TagGenerationCach
     {
         return $this->ns . ':m:tag:' . $tag;
     }
+
+     /** @param list<string> $tags */
+    private function rotateTagGenerationsUnlocked(array $tags): bool
+    {
+        $generations = [];
+        foreach ($tags as $tag) {
+            $generations[$this->mapTag($tag)] = self::newGeneration();
+        }
+
+        return $generations === [] || apcu_store($generations) === [];
+    }
+
+      /** @param array<string,CacheItemInterface> $items */
+    private function saveItemsUnlocked(array $items): bool
+    {
+        if (!$this->supportsItems($items)) {
+            return false;
+        }
+
+        $groups = [];
+        $expired = [];
+        foreach ($items as $item) {
+            $expiration = CachePayloadCodec::expirationFromItem($item);
+            if ($expiration['ttl'] !== null && $expiration['ttl'] <= 0) {
+                $expired[] = $this->map($item->getKey());
+
+                continue;
+            }
+            $ttl = $expiration['ttl'] ?? 0;
+            $groups[$ttl][$this->map($item->getKey())] = $this->encodeItem($item, $expiration['expiresAt']);
+        }
+
+        if ($expired !== []) {
+            apcu_delete($expired);
+        }
+
+        return array_all(
+            $groups,
+            static fn(array $records, int $ttl): bool => apcu_store($records, null, $ttl) === [],
+        );
+    }
+
+    private function saveUnlocked(CacheItemInterface $item): bool
+    {
+        if (!$this->supportsItem($item)) {
+            throw new CacheInvalidArgumentException('Wrong item type for ApcuCacheAdapter');
+        }
+        $expires = CachePayloadCodec::expirationFromItem($item);
+        $ttl = $expires['ttl'];
+        if ($ttl !== null && $ttl <= 0) {
+            apcu_delete($this->map($item->getKey()));
+
+            return true;
+        }
+
+        $blob = $this->encodeItem($item, $expires['expiresAt']);
+
+        return apcu_store($this->map($item->getKey()), $blob, $ttl ?? 0);
+    }
+    /** @param array<int|string,string> $generations */
+    private function storeTagGenerationsUnlocked(array $generations): bool
+    {
+        $mapped = [];
+        foreach ($generations as $tag => $generation) {
+            $tag = (string) $tag;
+            if (!self::isGeneration($generation)) {
+                return false;
+            }
+            $mapped[$this->mapTag($tag)] = strtolower($generation);
+        }
+
+        return $mapped === [] || apcu_store($mapped) === [];
+    }
+
 }
