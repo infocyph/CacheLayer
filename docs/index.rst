@@ -51,6 +51,7 @@ Quick Start
 
    cache
    release-4.0
+   release-4.2
    upgrade-4.0
    counters
    adapters/index

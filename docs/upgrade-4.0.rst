@@ -1,6 +1,50 @@
 Upgrading CacheLayer 4.x
 ========================
 
+Upgrading to 4.2
+================
+
+Review :doc:`release-4.2` for atomic coordination changes. Default APCu and
+ScyllaDB modes remain unchanged; enable their new atomic modes only in
+dedicated, consistently configured namespaces.
+
+MySQL/MariaDB cache tables must use InnoDB. Before deploying, check the actual
+configured table's engine, for example:
+
+.. code-block:: sql
+
+   SELECT TABLE_NAME, ENGINE
+   FROM information_schema.TABLES
+   WHERE TABLE_SCHEMA = DATABASE()
+     AND TABLE_NAME = 'cachelayer_entries';
+
+If the engine is not InnoDB, stop cache writers, back up or discard disposable
+cache data as appropriate, and have the database operator migrate the table
+during a maintenance window:
+
+.. code-block:: sql
+
+   ALTER TABLE cachelayer_entries ENGINE=InnoDB;
+
+Substitute the actual configured table name. Automatic schema installation
+rejects non-InnoDB tables; installations using ``initializeSchema: false``
+must enforce the requirement themselves. No automatic engine conversion is
+performed. Review the binary identity columns and deployment DDL permissions
+with :doc:`adapters/pdo`.
+
+Use ``failOpen: false`` for security-sensitive state: backend failures or
+ambiguous mutations are distinct from ordinary misses and contention. Owned
+PDO atomic transactions may retry classified aborts; caller-owned transactions,
+unknown commit outcomes and partially committed bulk operations are not
+automatically replayed. Configure database timeouts separately.
+
+For APCu atomic mode, ensure all consumers share the APCu segment and local
+lock domain. For ScyllaDB, use a fresh dedicated untagged LWT namespace and
+an authoritative session honoring SERIAL and QUORUM. Do not mix old and new
+writer modes on the same coordination namespace. Tiered authoritative-only
+mode bypasses upper tiers; SQLite-only Node mode disables APCu. Neither makes
+a local cache distributed.
+
 Upgrading to 4.1
 ================
 

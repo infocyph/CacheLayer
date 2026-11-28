@@ -107,27 +107,27 @@ never implements these methods as public ``has()/get()`` followed by
 
 The supported facade backends are:
 
-==========================  ======  ====================================================
-Backend                     Atomic  Consistency domain
-==========================  ======  ====================================================
-Array memory                yes     one PHP process
-WeakMap                     yes     one PHP process / adapter instance
-Shared memory               yes     one host / shared SysV segment
-Redis / Valkey              yes     the supplied authoritative Redis-compatible store
-Redis Cluster               yes     the key's stable CacheLayer hash-slot bucket
-MongoDB                     yes     the supplied authoritative MongoDB collection
-Memcached                   yes     the supplied authoritative Memcached CAS domain
-PDO: SQLite                 yes     the supplied SQLite database
-PDO: PostgreSQL             yes     the supplied PostgreSQL database
-PDO: MySQL / MariaDB        yes     the supplied transactional database
-File                        yes     one reliable filesystem ``flock()`` domain
-PHP files                   yes     one reliable filesystem ``flock()`` domain
-APCu                        no      no arbitrary-value CAS/consume primitive
-PDO: other drivers          no      no portable transaction/locking contract is claimed
-ScyllaDB                    no      LWT is not mixed with ordinary cache writes
-Null store                  no      non-authoritative sink
-Tiered cache                no      tiers cannot form one linearizable authority
-==========================  ======  ====================================================
+==========================  ===========  ======================================================
+Backend                     Atomic       Consistency domain
+==========================  ===========  ======================================================
+Array memory                yes          one PHP process
+WeakMap                     yes          one PHP process / adapter instance
+Shared memory               yes          one host / shared SysV segment
+Redis / Valkey              yes          authoritative Redis-compatible store
+Redis Cluster               yes          stable CacheLayer hash-slot bucket
+MongoDB                     yes          authoritative MongoDB collection
+Memcached                   yes          authoritative Memcached CAS domain
+PDO: SQLite                 yes          supplied SQLite database
+PDO: PostgreSQL             yes          supplied PostgreSQL database
+PDO: MySQL / MariaDB        yes          transactional InnoDB database
+File / PHP files            yes          reliable filesystem lock domain
+APCu                        opt-in       shared APCu segment and local lock domain
+PDO: other drivers          no           no portable transaction/locking contract
+ScyllaDB / Cassandra        opt-in       dedicated untagged LWT namespace
+Tiered cache                conditional  single atomic pool or authoritative-only final tier
+Node cache                  conditional  SQLite-only configuration
+Null store                  no           non-authoritative sink
+==========================  ===========  ======================================================
 
 Memcached uses native CAS tokens for replacement. Atomic consume linearizes by
 CAS-replacing the value with an internal short-lived tombstone; ordinary reads
@@ -145,7 +145,10 @@ transaction; PostgreSQL and MySQL/MariaDB use transactional row locking plus
 conflict-safe inserts. Other PDO drivers return no atomic capability rather than
 claiming a cross-driver guarantee. Atomic PDO operations require ownership of
 the PDO transaction and reject execution inside an already-active caller
-transaction.
+transaction. Classified transaction aborts and contention are retried only
+within the owned atomic transaction, subject to bounded attempts and retry
+scheduling. MySQL/MariaDB cache tables must use InnoDB. See :doc:`adapters/pdo`
+for the exact retry policy and migration requirements.
 
 Use dedicated, untagged keys for portable replay claims, nonces, challenges,
 state transitions, one-time state, and similar coordination. Tag invalidation
@@ -157,8 +160,15 @@ single-lock-domain backends can validate tag generations inside their atomic
 domain, but portable protocols should not depend on tagged CAS behavior.
 
 ``atomic()`` returns ``null`` rather than emulating missing backend primitives.
-This remains true for a tiered facade even when one or more individual tiers
-support atomic operations.
+APCu and ScyllaDB expose this capability only with ``atomicMode: true``;
+all consumers must use the same mode and ScyllaDB requires untagged entries.
+Tiered caches expose it with a single atomic-capable pool or
+``authoritativeOnly: true`` and an atomic-capable final pool. Node caches
+expose it with ``apcuEnabled: false``. Ordinary multi-tier or APCu-backed
+Node read-through mode remains non-atomic. These conditions concern atomic
+operations, not the separate authentication-state lock capability.
+See :doc:`adapters/apcu`, :doc:`adapters/scylladb`, :doc:`adapters/tiered`
+and :doc:`node/index`.
 
 For security-sensitive coordination, prefer ``failOpen: false`` when the caller
 must distinguish a backend failure from an ordinary conditional miss. With
@@ -241,3 +251,5 @@ Tiering
 
 A batch is read once per tier for only the keys still missing, and lower-tier
 hits are promoted upward in a batch. Writes and deletes are one batch per tier.
+With ``authoritativeOnly: true``, reads and mutations bypass upper tiers and
+use the final pool exclusively.

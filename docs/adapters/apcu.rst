@@ -4,7 +4,7 @@
 APCu Adapter (``apcu``)
 =======================
 
-Factory: ``Cache::apcu(string $namespace = 'default')``
+Factory: ``Cache::apcu(string $namespace = 'default', ?CacheOptions $options = null, bool $atomicMode = false)``
 
 Requirements:
 
